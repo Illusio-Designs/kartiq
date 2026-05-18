@@ -85,6 +85,13 @@
     transition: background-color 200ms ease;
   }
 
+  /* Headings keep the Agency brand display font; body text is Poppins
+     (Tailwind `font-sans`). Anything that needs Agency elsewhere can use
+     the `font-display` utility. */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-agency), ui-sans-serif, system-ui, sans-serif;
+  }
+
   * { border-color: hsl(var(--border)); }
 
   /* Dark-mode pragmatic fallbacks — pages still using bare slate-50 / white

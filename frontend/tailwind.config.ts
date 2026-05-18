@@ -12,11 +12,12 @@ const config: Config = {
     container: { center: true, padding: '2rem', screens: { '2xl': '1400px' } },
     extend: {
       fontFamily: {
-        // Default sans now points at the local Agency font registered
-        // in app/layout.tsx via next/font/local. The system-ui fallbacks
-        // stay so anything that fails to load (rare with next/font) keeps
-        // a sensible UI.
-        sans: ['var(--font-agency)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        // Body / UI font — Poppins (registered in app/layout.tsx). Headings
+        // opt into the Agency display font via the h1–h6 rule in globals.css
+        // or the `font-display` utility. system-ui fallbacks stay so a failed
+        // font fetch still renders a sensible UI.
+        sans: ['var(--font-poppins)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        display: ['var(--font-agency)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
       colors: {
         // Brand override: every existing `emerald-*` class now renders in the

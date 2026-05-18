@@ -9,9 +9,10 @@
  *      so no call site needs to change.
  *
  *   2. RN's <Text> and <TextInput> are render-patched so every instance
- *      — even ones with no className / style — gets `fontFamily: 'Agency'`
+ *      — even ones with no className / style — gets `fontFamily: 'Poppins'`
  *      as the FIRST entry in its style array. A user-provided style still
- *      overrides because RN merges styles left-to-right with later wins.
+ *      overrides because RN merges styles left-to-right with later wins,
+ *      so a heading can opt into Agency via the `font-agency` utility.
  *      Why patch render instead of defaultProps: on RN 0.81 / React 19,
  *      Text and TextInput are forwardRef function components and
  *      defaultProps no longer propagates to function components.
@@ -43,7 +44,7 @@ export function installGlobalOverrides() {
   };
 
   // ── 2. Text / TextInput global font ───────────────────────────────
-  const FONT_STYLE = { fontFamily: 'Agency' };
+  const FONT_STYLE = { fontFamily: 'Poppins' };
 
   // Wrap the existing render so the override is non-destructive. If RN
   // ever upgrades to a different internal shape (functional component

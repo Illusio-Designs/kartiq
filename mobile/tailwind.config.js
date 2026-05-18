@@ -4,13 +4,15 @@ module.exports = {
   presets: [require('nativewind/preset')],
   theme: {
     extend: {
-      // Brand display font — loaded at boot via expo-font in
-      // app/_layout.tsx. The string here must match the family key
-      // passed to useFonts (`Agency`). Both the `font-sans` default
-      // and any explicit `font-agency` Tailwind utility resolve here.
+      // Fonts are loaded at boot via expo-font in app/_layout.tsx; the
+      // strings here must match the family keys passed to useFonts.
+      // `font-sans` (the default body font) resolves to Poppins, while
+      // `font-agency` / `font-display` opt into the Agency display font.
       fontFamily: {
-        sans:   ['Agency'],
-        agency: ['Agency'],
+        sans:    ['Poppins'],
+        poppins: ['Poppins'],
+        agency:  ['Agency'],
+        display: ['Agency'],
       },
       colors: {
         // Brand override — every existing `emerald-*` class in the mobile app

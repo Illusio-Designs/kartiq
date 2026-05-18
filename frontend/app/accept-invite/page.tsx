@@ -19,7 +19,8 @@
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Sparkles, ArrowRight, CheckCircle2, AlertCircle, Building2 } from 'lucide-react';
+import { ArrowRight, CheckCircle2, AlertCircle, Building2 } from 'lucide-react';
+import { BrandLogo } from '@/components/BrandLogo';
 import { inviteApi, authApi } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 
@@ -92,11 +93,8 @@ export default function AcceptInvitePage() {
       {/* Left: form */}
       <div className="flex-1 flex items-center justify-center p-6 sm:p-12 bg-white">
         <div className="w-full max-w-md">
-          <Link href="/" className="inline-flex items-center gap-2.5 mb-10">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 via-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
-              <Sparkles size={17} className="text-white" />
-            </div>
-            <span className="font-bold text-lg text-slate-900">Kartriq</span>
+          <Link href="/" className="inline-flex items-center mb-10" aria-label="Kartriq home">
+            <BrandLogo variant="dark" priority className="h-9" />
           </Link>
 
           {loading ? (

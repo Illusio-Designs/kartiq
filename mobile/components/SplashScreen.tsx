@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Animated, Text, View } from 'react-native';
+import { Animated, Image, Text, View } from 'react-native';
 
 type Props = {
   onFinish: () => void;
@@ -91,7 +91,11 @@ export default function AnimatedSplash({ onFinish }: Props) {
             elevation: 10,
           }}
         >
-          <Text className="text-white text-4xl font-extrabold">O</Text>
+          <Image
+            source={require('../assets/logo-mark-white.png')}
+            style={{ width: 48, height: 48 }}
+            resizeMode="contain"
+          />
         </View>
       </Animated.View>
 
