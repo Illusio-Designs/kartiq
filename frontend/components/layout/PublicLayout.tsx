@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  Sparkles, Menu, X, Twitter, Linkedin, Instagram, Youtube, Heart, ChevronDown, ArrowRight,
+  Menu, X, Twitter, Linkedin, Instagram, Youtube, Heart, ChevronDown, ArrowRight,
   Mail, Phone,
 } from 'lucide-react';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { publicApi } from '@/lib/api';
 import { getIcon } from '@/lib/icon';
 import { Loader } from '@/components/ui/Loader';
+import { BrandLogo } from '@/components/BrandLogo';
 
 interface NavLink {
   id: string;
@@ -79,11 +80,8 @@ export function PublicNav() {
   return (
     <header className="sticky top-0 z-40 backdrop-blur-xl bg-[#0B1220]/85 border-b border-white/10">
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 group">
-          <div className="relative w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 via-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30 group-hover:shadow-emerald-500/50 transition-shadow">
-            <Sparkles size={16} className="text-white" />
-          </div>
-          <span className="font-bold text-lg tracking-tight text-white">Kartriq</span>
+        <Link href="/" className="flex items-center" aria-label="Kartriq home">
+          <BrandLogo variant="light" priority className="h-8" />
         </Link>
 
         <nav className="hidden md:flex items-center gap-1">
@@ -290,11 +288,9 @@ export function PublicFooter() {
         <div className="bg-white rounded-3xl border border-slate-200/70 shadow-sm px-6 sm:px-12 py-12 dark:bg-slate-900 dark:border-slate-800">
           <div className="grid grid-cols-2 md:grid-cols-12 gap-10">
             <div className="col-span-2 md:col-span-5">
-              <Link href="/" className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[#0B1220] flex items-center justify-center shadow-md">
-                  <Sparkles size={18} className="text-white" />
-                </div>
-                <span className="font-bold text-xl tracking-tight text-slate-900 dark:text-slate-100">Kartriq</span>
+              <Link href="/" className="flex items-center" aria-label="Kartriq home">
+                <BrandLogo variant="dark" className="h-9 dark:hidden" />
+                <BrandLogo variant="light" className="h-9 hidden dark:block" />
               </Link>
               <p className="text-sm text-slate-500 mt-5 max-w-md leading-relaxed dark:text-slate-400">
                 One platform for all your channels — curated catalogs, automated payouts, and built-in workflows for omnichannel commerce.

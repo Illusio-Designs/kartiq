@@ -55,8 +55,8 @@ const queryPersister = createAsyncStoragePersister({
   throttleTime: 1000,
 });
 
-// Note: Agency font is now applied globally to every Text / TextInput
-// via the render-patch in lib/global-overrides.ts. The earlier
+// Note: Poppins (the body font) is applied globally to every Text /
+// TextInput via the render-patch in lib/global-overrides.ts. The earlier
 // Text.defaultProps mutation only worked on class components and was
 // a no-op on RN 0.81's function-component Text.
 
@@ -67,6 +67,7 @@ export default function RootLayout() {
   // with defaultProps falling through to the platform font — better
   // than showing nothing.
   const [fontsLoaded, fontError] = useFonts({
+    Poppins: require('../assets/fonts/Poppins-Regular.ttf'),
     Agency: require('../assets/fonts/agency.otf'),
   });
 

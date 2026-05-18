@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
+import { Poppins } from 'next/font/google';
 import './globals.css';
 import { Providers } from '@/components/layout/Providers';
 import { PageLoader } from '@/components/PageLoader';
@@ -10,12 +11,20 @@ import { WebVitalsReporter } from '@/components/WebVitalsReporter';
 import { loadSeo } from '@/lib/seo';
 
 // Brand display font — Agency, served from /public/font/agency.otf.
-// Wrapped in next/font/local so Next handles preloading + size-adjust to
-// minimise CLS, and exposes a CSS variable Tailwind's font-sans points
-// at. `display:'swap'` keeps text visible during font fetch.
+// Used for headings (Tailwind `font-display`). Wrapped in next/font/local
+// so Next handles preloading + size-adjust to minimise CLS.
 const agency = localFont({
   src: '../public/font/agency.otf',
   variable: '--font-agency',
+  display: 'swap',
+});
+
+// Body / UI font — Poppins. Tailwind's `font-sans` points at this, so it
+// is the default for all text; headings opt back into Agency via globals.css.
+const poppins = Poppins({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-poppins',
   display: 'swap',
 });
 
@@ -108,7 +117,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={agency.variable}>
+    <html lang="en" className={`${agency.variable} ${poppins.variable}`}>
       <head>
         {/* Structured data — Organization */}
         <script
