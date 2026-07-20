@@ -214,6 +214,7 @@ If a channel isn't in the catalog yet:
 ---
 
 ### Related docs
+- [`docs/CHANNEL_REGISTRATION.md`](./CHANNEL_REGISTRATION.md) — step-by-step: how to register / get API credentials on each channel's own portal.
 - [`docs/INTEGRATIONS.md`](./INTEGRATIONS.md) — deep platform-OAuth setup and per-provider registration.
 - [`docs/CHANNELS.md`](./CHANNELS.md) — full channel inventory matrix and status legend.
 - [`docs/CHANNEL_ROADMAP.md`](./CHANNEL_ROADMAP.md) — planned/pending channels.
