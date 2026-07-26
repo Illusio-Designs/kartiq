@@ -45,11 +45,11 @@ export function Topbar() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 bg-[#0B1220]/95 backdrop-blur-xl border-b border-white/10 px-4 md:px-6 h-16 flex items-center gap-3">
+    <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xl border-b border-slate-200 px-4 md:px-6 h-16 flex items-center gap-3">
       {/* Mobile menu toggle */}
       <button
         onClick={() => setMobileSidebar(true)}
-        className="lg:hidden w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/10 text-white/70 transition-colors"
+        className="lg:hidden w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-600 transition-colors"
       >
         <Menu size={18} />
       </button>
@@ -59,7 +59,7 @@ export function Topbar() {
           click the kbd chip on the right) to open the global command
           palette instead. */}
       <div className="relative flex-1 min-w-0 max-w-xl group">
-        <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50 group-focus-within:text-emerald-300 transition-colors" />
+        <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
         <input
           // Short placeholder so it doesn't truncate on a 375px phone
           // where the input shrinks to ~210px. The visible ⌘K chip on
@@ -68,14 +68,14 @@ export function Topbar() {
           placeholder="Search…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          className="w-full pl-11 pr-12 sm:pr-20 py-2.5 text-sm text-white bg-white/[0.06] hover:bg-white/[0.08] border border-white/10 hover:border-white/20 rounded-xl focus:outline-none focus:ring-4 focus:ring-emerald-500/15 focus:border-emerald-400/60 placeholder:text-white/45 transition-all"
+          className="w-full pl-11 pr-12 sm:pr-20 py-2.5 text-sm text-slate-900 bg-slate-100 hover:bg-slate-100 border border-slate-200 hover:border-slate-300 rounded-xl focus:outline-none focus:ring-4 focus:ring-emerald-500/15 focus:border-emerald-400 placeholder:text-slate-400 transition-all"
         />
         {query ? (
           <button
             type="button"
             onClick={clear}
             aria-label="Clear search"
-            className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 rounded-md transition-colors"
+            className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
           >
             <X size={14} />
           </button>
@@ -88,7 +88,7 @@ export function Topbar() {
             // Hidden below `sm:` so the input doesn't have to share its
             // already-tight width with a non-essential keyboard hint on
             // phones — the same shortcut still works regardless.
-            className="hidden sm:inline-flex absolute right-2 top-1/2 -translate-y-1/2 items-center px-2 py-1 text-[11px] font-bold tracking-tight text-white/70 hover:text-white bg-white/10 hover:bg-white/20 border border-white/15 rounded-md shadow-inner transition-colors whitespace-nowrap"
+            className="hidden sm:inline-flex absolute right-2 top-1/2 -translate-y-1/2 items-center px-2 py-1 text-[11px] font-bold tracking-tight text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md transition-colors whitespace-nowrap"
           >
             {shortcutLabel}
           </button>
@@ -99,7 +99,7 @@ export function Topbar() {
         {/* AI — tenant-only, already md+ only */}
         {showAskAi && (
           <Tooltip content="Ask AI" side="bottom">
-            <button className="hidden md:flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-emerald-300 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 rounded-xl transition-colors">
+            <button className="hidden md:flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-colors">
               <Sparkles size={12} /> Ask AI
             </button>
           </Tooltip>
