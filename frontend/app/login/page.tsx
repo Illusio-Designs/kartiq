@@ -173,10 +173,11 @@ export default function LoginPage() {
           {!mfaToken && (
           <form onSubmit={handleLogin} className="mt-8 space-y-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">Email</label>
+              <label htmlFor="email" className="block text-xs font-bold text-slate-700 mb-1.5">Email</label>
               <div className="relative">
                 <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
+                  id="email"
                   type="email"
                   name="email"
                   autoComplete="email"
