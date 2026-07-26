@@ -32,17 +32,17 @@ export function Loader({ size = 'md', label, fullScreen, className }: LoaderProp
         <div className={cn('absolute -top-1 left-1/2 -translate-x-1/2 rounded-full bg-emerald-400 animate-orbit', s.dot)} />
         <div className={cn('absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-full bg-teal-400 animate-orbit', s.dot)} style={{ animationDelay: '0.5s' }} />
       </div>
-      <div className={cn(s.bar, 'bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden')} aria-hidden="true">
+      <div className={cn(s.bar, 'bg-slate-100 rounded-full overflow-hidden')} aria-hidden="true">
         <div className="h-full bg-gradient-to-r from-emerald-400 via-teal-500 to-emerald-400 rounded-full animate-loading-bar" />
       </div>
-      {label && <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">{label}</p>}
+      {label && <p className="text-xs text-slate-500 font-medium">{label}</p>}
       {!label && <span className="sr-only">{a11yLabel}</span>}
     </div>
   );
 
   if (fullScreen) {
     return (
-      <div role="status" aria-live="polite" aria-label={a11yLabel} className="min-h-screen flex items-center justify-center bg-white dark:bg-slate-900">
+      <div role="status" aria-live="polite" aria-label={a11yLabel} className="min-h-screen flex items-center justify-center bg-white">
         {content}
       </div>
     );

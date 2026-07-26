@@ -604,7 +604,7 @@ function DataPrivacyCard() {
 
       <Modal open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete your account" size="md">
         <div className="space-y-4">
-          <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg p-3 text-xs dark:bg-rose-500/10 dark:border-rose-500/30 dark:text-rose-200">
+          <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg p-3 text-xs">
             <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
             <div className="space-y-2">
               <p className="font-semibold">Login disabled immediately.</p>
@@ -614,7 +614,7 @@ function DataPrivacyCard() {
               </p>
             </div>
           </div>
-          <div className="rounded-lg border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 p-3 text-xs text-emerald-900 dark:text-emerald-200 space-y-1.5">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900 space-y-1.5">
             <p className="font-semibold">Changed your mind? You have 30 days.</p>
             <p>
               Email{' '}
@@ -623,8 +623,8 @@ function DataPrivacyCard() {
               login, team access, and all business data come back as if nothing happened.
             </p>
           </div>
-          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-3 text-xs text-slate-600 dark:text-slate-300 space-y-1.5">
-            <p className="font-semibold text-slate-900 dark:text-slate-100">After 30 days</p>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 space-y-1.5">
+            <p className="font-semibold text-slate-900">After 30 days</p>
             <p>
               Personal identifiers (name, email, phone) are permanently scrubbed and the account becomes unrecoverable.
               Business records (invoices, orders, audit logs) are retained per Indian GST/accounting rules — typically up to 8 years —

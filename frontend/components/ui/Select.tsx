@@ -44,7 +44,7 @@ export function Select({
   return (
     <div ref={ref} className={cn('relative', fullWidth && 'w-full', className)}>
       {label && (
-        <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+        <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
           {label}
         </label>
       )}
@@ -53,21 +53,20 @@ export function Select({
         onClick={() => setOpen(!open)}
         className={cn(
           'flex items-center justify-between gap-2 bg-white text-slate-900 border border-slate-200 hover:border-slate-300 transition-all',
-          'dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700 dark:hover:border-slate-600',
-          'focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-400 dark:focus:border-emerald-500',
+          'focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-400',
           SIZE_CLASSES[size],
           fullWidth && 'w-full'
         )}
       >
-        <span className={cn('flex items-center gap-2 truncate', !selected && 'text-slate-400 dark:text-slate-500')}>
+        <span className={cn('flex items-center gap-2 truncate', !selected && 'text-slate-400')}>
           {selected?.icon}
           {selected?.label || placeholder}
         </span>
-        <ChevronDown size={15} className={cn('text-slate-400 dark:text-slate-500 transition-transform', open && 'rotate-180')} />
+        <ChevronDown size={15} className={cn('text-slate-400 transition-transform', open && 'rotate-180')} />
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 right-0 mt-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl shadow-slate-900/10 dark:shadow-black/40 p-1 z-50 max-h-64 overflow-y-auto animate-slide-up">
+        <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl shadow-slate-900/10 p-1 z-50 max-h-64 overflow-y-auto animate-slide-up">
           {options.map(opt => (
             <button
               key={opt.value}
@@ -76,15 +75,15 @@ export function Select({
               className={cn(
                 'w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors',
                 opt.value === value
-                  ? 'bg-emerald-50 text-emerald-700 font-semibold dark:bg-emerald-500/15 dark:text-emerald-300'
-                  : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700/50'
+                  ? 'bg-emerald-50 text-emerald-700 font-semibold'
+                  : 'text-slate-700 hover:bg-slate-50'
               )}
             >
               <span className="flex items-center gap-2 truncate">
                 {opt.icon}
                 {opt.label}
               </span>
-              {opt.value === value && <Check size={14} className="text-emerald-600 dark:text-emerald-400" />}
+              {opt.value === value && <Check size={14} className="text-emerald-600" />}
             </button>
           ))}
         </div>

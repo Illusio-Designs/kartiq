@@ -137,7 +137,7 @@ export function Sidebar({
 
       <aside
         className={cn(
-          'fixed lg:sticky top-0 z-50 flex flex-col h-screen bg-[#0B1220] border-r border-white/10 transition-[width,transform] duration-300 ease-out',
+          'fixed lg:sticky top-0 z-50 flex flex-col h-screen bg-white border-r border-slate-200 transition-[width,transform] duration-300 ease-out',
           'w-64',
           c ? 'lg:w-[76px]' : 'lg:w-64',
           mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
@@ -157,11 +157,11 @@ export function Sidebar({
               <Sparkles size={16} className="text-white" />
             </div>
             <div className={cn('min-w-0 truncate', c && 'lg:hidden')}>
-              <div className="font-bold text-lg tracking-tight text-white leading-none">
+              <div className="font-bold text-lg tracking-tight text-slate-900 leading-none">
                 {brandName}
               </div>
               {brandSubtitle && (
-                <div className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider mt-0.5">
+                <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mt-0.5">
                   {brandSubtitle}
                 </div>
               )}
@@ -174,7 +174,7 @@ export function Sidebar({
               onClick={toggleSidebar}
               aria-label={c ? 'Expand sidebar' : 'Collapse sidebar'}
               className={cn(
-                'ml-auto w-8 h-8 items-center justify-center rounded-lg text-white/55 hover:text-white hover:bg-white/10 transition-colors flex-shrink-0',
+                'ml-auto w-8 h-8 items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors flex-shrink-0',
                 'hidden lg:flex',
                 c && 'lg:hidden'
               )}
@@ -187,7 +187,7 @@ export function Sidebar({
           <button
             onClick={() => setMobileSidebar(false)}
             aria-label="Close navigation"
-            className="ml-auto w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 text-white/60 lg:hidden flex-shrink-0"
+            className="ml-auto w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 lg:hidden flex-shrink-0"
           >
             <X size={16} aria-hidden="true" />
           </button>
@@ -200,7 +200,7 @@ export function Sidebar({
               <button
                 onClick={toggleSidebar}
                 aria-label="Expand sidebar"
-                className="w-10 h-8 flex items-center justify-center rounded-lg text-white/55 hover:text-white hover:bg-white/10 transition-colors"
+                className="w-10 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
               >
                 <PanelLeftOpen size={16} aria-hidden="true" />
               </button>
@@ -225,7 +225,7 @@ export function Sidebar({
                 type="button"
                 onClick={() => toggleNavGroup(group.label)}
                 className={cn(
-                  'w-full flex items-center justify-between px-3 mb-1 text-[10px] font-bold tracking-widest uppercase text-white/55 hover:text-white/80 transition-colors',
+                  'w-full flex items-center justify-between px-3 mb-1 text-[10px] font-bold tracking-widest uppercase text-slate-400 hover:text-slate-600 transition-colors',
                   c && 'lg:hidden'
                 )}
                 aria-expanded={!collapsed}
@@ -234,13 +234,13 @@ export function Sidebar({
                 <ChevronDown
                   size={12}
                   className={cn(
-                    'transition-transform duration-200 text-white/55',
+                    'transition-transform duration-200 text-slate-400',
                     collapsed && '-rotate-90'
                   )}
                 />
               </button>
               {/* Collapsed (icon-only sidebar) separator */}
-              <div className={cn('hidden h-px bg-white/10 mx-3 mb-1', c && 'lg:block')} />
+              <div className={cn('hidden h-px bg-slate-200 mx-3 mb-1', c && 'lg:block')} />
 
               <div className={cn(
                 'space-y-0.5 overflow-hidden transition-all duration-200',
@@ -261,15 +261,15 @@ export function Sidebar({
                         'group relative flex items-center gap-3 px-3 h-10 rounded-xl text-sm font-medium transition-colors',
                         c && 'lg:justify-center lg:px-0 lg:mx-auto lg:w-11',
                         active
-                          ? 'bg-emerald-500/15 text-emerald-300'
-                          : 'text-white/70 hover:bg-white/5 hover:text-white'
+                          ? 'bg-emerald-50 text-emerald-700'
+                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                       )}
                     >
                       <Icon
                         size={17}
                         className={cn(
                           'flex-shrink-0',
-                          active ? 'text-emerald-300' : 'text-white/55 group-hover:text-white/70'
+                          active ? 'text-emerald-600' : 'text-slate-400 group-hover:text-slate-600'
                         )}
                       />
                       <span className={cn('flex-1 min-w-0 truncate', c && 'lg:hidden')}>{label}</span>
@@ -280,7 +280,7 @@ export function Sidebar({
                           className={cn(
                             'px-1.5 py-0.5 rounded-md text-[10px] font-bold flex-shrink-0',
                             c && 'lg:hidden',
-                            active ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/10 text-white/60'
+                            active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
                           )}
                         >
                           {badge}
@@ -289,7 +289,7 @@ export function Sidebar({
 
                       {/* Collapsed dot indicator */}
                       {badge !== undefined && c && (
-                        <span className="hidden lg:block absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-[#0B1220]" />
+                        <span className="hidden lg:block absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
                       )}
                     </Link>
                   );
@@ -332,11 +332,11 @@ export function Sidebar({
           if (!nextCode) {
             return (
               <div className={cn('px-3 mb-3', c && 'lg:hidden')}>
-                <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-emerald-200">
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-emerald-700">
                   <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider">
                     <Sparkles size={12} /> Enterprise plan
                   </div>
-                  <p className="text-[11px] mt-1 text-emerald-200/80 leading-snug">
+                  <p className="text-[11px] mt-1 text-emerald-600 leading-snug">
                     Top tier — every feature unlocked.
                   </p>
                 </div>
@@ -369,14 +369,14 @@ export function Sidebar({
         })()}
 
         {/* ── Log out ────────────────────────────────────── */}
-        <div className="px-3 py-3 border-t border-white/10">
+        <div className="px-3 py-3 border-t border-slate-200">
           {/* Collapsed version (desktop) */}
           <div className={cn('hidden', c && 'lg:block')}>
             <Tooltip content="Log out" side="right">
               <button
                 onClick={handleLogout}
                 aria-label="Log out"
-                className="w-11 h-10 mx-auto flex items-center justify-center rounded-xl text-white/60 hover:text-rose-300 hover:bg-rose-500/15 transition-colors"
+                className="w-11 h-10 mx-auto flex items-center justify-center rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors"
               >
                 <LogOut size={17} aria-hidden="true" />
               </button>
@@ -386,7 +386,7 @@ export function Sidebar({
           <button
             onClick={handleLogout}
             className={cn(
-              'flex items-center gap-3 w-full px-3 h-10 text-sm font-medium text-white/60 hover:text-rose-300 hover:bg-rose-500/15 rounded-xl transition-colors',
+              'flex items-center gap-3 w-full px-3 h-10 text-sm font-medium text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors',
               c && 'lg:hidden'
             )}
           >

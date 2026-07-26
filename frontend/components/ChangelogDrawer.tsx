@@ -223,13 +223,13 @@ export function ChangelogTrigger({ className = '' }: { className?: string }) {
       type="button"
       onClick={() => window.dispatchEvent(new Event('open-changelog'))}
       aria-label={unread ? "What's new — unread updates" : "What's new"}
-      className={`relative w-10 h-10 flex items-center justify-center rounded-full bg-white/[0.06] hover:bg-white/10 text-white/60 hover:text-white transition-colors ${className}`}
+      className={`relative w-10 h-10 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 transition-colors ${className}`}
     >
       <Megaphone size={16} />
       {unread && (
         <span
           aria-hidden
-          className="absolute top-2 right-2 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-[#0b1220]"
+          className="absolute top-2 right-2 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white"
         />
       )}
     </button>

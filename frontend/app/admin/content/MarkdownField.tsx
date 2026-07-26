@@ -87,17 +87,17 @@ export function MarkdownField({
   return (
     <div className="w-full">
       {label && (
-        <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+        <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
           {label}
         </label>
       )}
-      <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden focus-within:ring-4 focus-within:ring-emerald-500/10 focus-within:border-emerald-400 dark:focus-within:border-emerald-500 transition-all">
-        <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+      <div className="rounded-xl border border-slate-200 bg-white overflow-hidden focus-within:ring-4 focus-within:ring-emerald-500/10 focus-within:border-emerald-400 transition-all">
+        <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-slate-100 bg-slate-50">
           <ToolBtn title="Heading" onClick={() => prefixLines('## ')}><Heading size={14} /></ToolBtn>
           <ToolBtn title="Bold (**text**)" onClick={() => wrap('**', '**', 'bold text')}><Bold size={14} /></ToolBtn>
           <ToolBtn title="Italic (*text*)" onClick={() => wrap('*', '*', 'italic text')}><Italic size={14} /></ToolBtn>
           <ToolBtn title="Link" onClick={insertLink}><Link2 size={14} /></ToolBtn>
-          <span className="mx-1 h-5 w-px bg-slate-200 dark:bg-slate-700" />
+          <span className="mx-1 h-5 w-px bg-slate-200" />
           <ToolBtn title="Bulleted list" onClick={() => prefixLines('- ')}><List size={14} /></ToolBtn>
           <ToolBtn title="Numbered list" onClick={() => prefixLines('1. ')}><ListOrdered size={14} /></ToolBtn>
           <ToolBtn title="Quote" onClick={() => prefixLines('> ')}><Quote size={14} /></ToolBtn>
@@ -108,10 +108,10 @@ export function MarkdownField({
           onChange={(e) => onChange(e.target.value)}
           rows={rows}
           placeholder={placeholder}
-          className="w-full px-4 py-2.5 text-sm bg-transparent text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none resize-y font-mono"
+          className="w-full px-4 py-2.5 text-sm bg-transparent text-slate-900 placeholder:text-slate-400 focus:outline-none resize-y font-mono"
         />
       </div>
-      {hint && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{hint}</p>}
+      {hint && <p className="text-xs text-slate-500 mt-1">{hint}</p>}
     </div>
   );
 }
@@ -122,7 +122,7 @@ function ToolBtn({ title, onClick, children }: { title: string; onClick: () => v
       type="button"
       title={title}
       onClick={onClick}
-      className="w-7 h-7 flex items-center justify-center rounded-md text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
+      className="w-7 h-7 flex items-center justify-center rounded-md text-slate-600 hover:bg-white hover:text-slate-900 transition-colors"
     >
       {children}
     </button>

@@ -173,10 +173,11 @@ export default function LoginPage() {
           {!mfaToken && (
           <form onSubmit={handleLogin} className="mt-8 space-y-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">Email</label>
+              <label htmlFor="email" className="block text-xs font-bold text-slate-700 mb-1.5">Email</label>
               <div className="relative">
                 <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
+                  id="email"
                   type="email"
                   name="email"
                   autoComplete="email"
@@ -247,7 +248,7 @@ export default function LoginPage() {
       </div>
 
       {/* Right: marketing panel */}
-      <div className="hidden lg:flex flex-1 relative overflow-hidden bg-gradient-to-br from-[#0B1220] via-[#0B1220] to-emerald-600">
+      <div className="hidden lg:flex flex-1 relative overflow-hidden bg-gradient-to-br from-emerald-500 via-emerald-600 to-emerald-700">
         <div className="absolute top-0 right-0 w-96 h-96 rounded-full bg-white/10 blur-3xl -translate-y-1/3 translate-x-1/4" />
         <div className="absolute bottom-0 left-1/4 w-96 h-96 rounded-full bg-emerald-300/20 blur-3xl translate-y-1/2" />
 

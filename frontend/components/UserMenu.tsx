@@ -113,14 +113,14 @@ export function UserMenu() {
           aria-haspopup="menu"
           aria-expanded={open}
           className={`ml-2 flex items-center gap-2 pl-1 pr-3 py-1 rounded-full transition-colors ${
-            open ? 'bg-white/10' : 'hover:bg-white/10'
+            open ? 'bg-slate-100' : 'hover:bg-slate-100'
           }`}
         >
           <Avatar name={displayUser.name} size="sm" shape="circle" />
           <ChevronDown
             size={14}
             aria-hidden="true"
-            className={`text-white/50 hidden sm:block transition-transform ${open ? 'rotate-180' : ''}`}
+            className={`text-slate-400 hidden sm:block transition-transform ${open ? 'rotate-180' : ''}`}
           />
         </button>
       </Tooltip>

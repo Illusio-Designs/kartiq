@@ -80,9 +80,9 @@ export function EmptyState({
             {icon}
           </div>
         )}
-        <h3 className={cn('text-slate-900 dark:text-slate-100', s.title)}>{title}</h3>
+        <h3 className={cn('text-slate-900', s.title)}>{title}</h3>
         {description && (
-          <p className={cn('text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto leading-relaxed', s.desc)}>
+          <p className={cn('text-slate-500 mt-1 max-w-md mx-auto leading-relaxed', s.desc)}>
             {description}
           </p>
         )}
@@ -90,13 +90,13 @@ export function EmptyState({
           <div className="mt-5 inline-flex items-center gap-3 flex-wrap justify-center">
             {action}
             {secondaryAction && (
-              <span className="text-xs text-slate-500 dark:text-slate-400">{secondaryAction}</span>
+              <span className="text-xs text-slate-500">{secondaryAction}</span>
             )}
           </div>
         )}
         {tip && (
-          <div className="mt-4 text-[11px] text-slate-400 dark:text-slate-500">
-            <span className="font-bold text-slate-500 dark:text-slate-400">Tip:</span> {tip}
+          <div className="mt-4 text-[11px] text-slate-400">
+            <span className="font-bold text-slate-500">Tip:</span> {tip}
           </div>
         )}
       </div>

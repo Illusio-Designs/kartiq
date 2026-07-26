@@ -255,7 +255,7 @@ function EntryFormModal({
           maxLength={190}
         />
         <div>
-          <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">Tag</label>
+          <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Tag</label>
           <div className="flex flex-wrap gap-2">
             {TAGS.map((t) => (
               <button

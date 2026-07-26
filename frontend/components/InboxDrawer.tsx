@@ -421,13 +421,13 @@ export function InboxTrigger({ className = '' }: { className?: string }) {
       type="button"
       onClick={() => window.dispatchEvent(new Event('open-inbox'))}
       aria-label={count > 0 ? `Inbox — ${count} unread` : 'Inbox'}
-      className={`relative w-10 h-10 flex items-center justify-center rounded-full bg-white/[0.06] hover:bg-white/10 text-white/60 hover:text-white transition-colors ${className}`}
+      className={`relative w-10 h-10 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 transition-colors ${className}`}
     >
       <Mail size={17} aria-hidden="true" />
       {count > 0 && (
         <span
           aria-hidden
-          className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-[#0b1220]"
+          className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white"
         >
           {count > 99 ? '99+' : count}
         </span>

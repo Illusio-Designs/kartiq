@@ -188,7 +188,11 @@ const BILLING_PATHS = ['/api/v1/billing', '/api/v1/plans', '/api/v1/auth'];
 const isBillingPath = (req) => BILLING_PATHS.some((p) => req.originalUrl.startsWith(p));
 
 const requireTenant = (req, res, next) => {
-  if (req.user?.isPlatformAdmin) return next();
+  // Platform admins bypass the tenant status/trial gates ONLY while impersonating
+  // a tenant (x-tenant-id populates req.tenant). Without a selected tenant they
+  // have no tenant context, so fall through to the 403 below instead of letting
+  // tenant-scoped controllers dereference a null req.tenant (previously a 500).
+  if (req.user?.isPlatformAdmin && req.tenant?.id) return next();
   if (!req.tenant?.id) return res.status(403).json({ error: 'No tenant context' });
   if (req.tenant.status === 'SUSPENDED' || req.tenant.status === 'CANCELLED' || req.tenant.status === 'DELETED') {
     return res.status(402).json({ error: `Tenant ${req.tenant.status.toLowerCase()}` });

@@ -213,7 +213,7 @@ export default function PricingPage() {
               key={plan.name}
               className={`relative rounded-3xl p-8 ${
                 plan.highlight
-                  ? 'bg-gradient-to-br from-[#0B1220] via-[#0B1220] to-emerald-600 text-white shadow-2xl shadow-emerald-500/30 scale-[1.02] border border-white/10'
+                  ? 'bg-gradient-to-br from-emerald-500 via-emerald-600 to-emerald-700 text-white shadow-2xl shadow-emerald-500/30 scale-[1.02] border border-white/10'
                   : 'bg-white border border-slate-200 shadow-[0_2px_20px_rgba(15,15,30,0.04)]'
               }`}
             >
@@ -262,7 +262,7 @@ export default function PricingPage() {
                   className={`mt-6 flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl font-bold text-sm transition-all ${
                     plan.highlight
                       ? 'bg-white text-emerald-700 hover:bg-emerald-50 shadow-lg'
-                      : 'bg-[#0B1220] text-white hover:bg-[#0B1220]/90'
+                      : 'bg-emerald-600 text-white hover:bg-emerald-700'
                   }`}
                 >
                   {plan.cta} <ArrowRight size={14} />
@@ -273,7 +273,7 @@ export default function PricingPage() {
                   className={`mt-6 flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl font-bold text-sm transition-all ${
                     plan.highlight
                       ? 'bg-white text-emerald-700 hover:bg-emerald-50 shadow-lg'
-                      : 'bg-[#0B1220] text-white hover:bg-[#0B1220]/90'
+                      : 'bg-emerald-600 text-white hover:bg-emerald-700'
                   }`}
                 >
                   {plan.cta} <ArrowRight size={14} />

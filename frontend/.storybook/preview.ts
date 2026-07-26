@@ -11,7 +11,6 @@ const preview: Preview = {
       values: [
         { name: 'app', value: '#f8fafc' },
         { name: 'white', value: '#ffffff' },
-        { name: 'dark', value: '#0f172a' },
       ],
     },
     a11y: {

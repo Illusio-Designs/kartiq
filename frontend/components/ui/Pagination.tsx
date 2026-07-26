@@ -38,10 +38,10 @@ export function Pagination({
 
   return (
     <div className={cn('flex flex-col sm:flex-row items-center justify-between gap-4 px-4 py-3', className)}>
-      <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 order-2 sm:order-1">
+      <div className="flex items-center gap-3 text-xs text-slate-500 order-2 sm:order-1">
         <span>
-          Showing <span className="font-bold text-slate-900 dark:text-slate-100">{from}–{to}</span> of{' '}
-          <span className="font-bold text-slate-900 dark:text-slate-100">{total}</span>
+          Showing <span className="font-bold text-slate-900">{from}–{to}</span> of{' '}
+          <span className="font-bold text-slate-900">{total}</span>
         </span>
         {onPageSizeChange && (
           <div className="flex items-center gap-1.5">
@@ -60,14 +60,14 @@ export function Pagination({
         <button
           onClick={() => onPageChange(page - 1)}
           disabled={page <= 1}
-          className="w-9 h-9 flex items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:border-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="w-9 h-9 flex items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           <ChevronLeft size={15} />
         </button>
 
         {pages.map((p, i) =>
           p === '…' ? (
-            <span key={`ellipsis-${i}`} className="w-9 h-9 flex items-center justify-center text-slate-400 dark:text-slate-500">
+            <span key={`ellipsis-${i}`} className="w-9 h-9 flex items-center justify-center text-slate-400">
               <MoreHorizontal size={14} />
             </span>
           ) : (
@@ -78,7 +78,7 @@ export function Pagination({
                 'w-9 h-9 flex items-center justify-center rounded-lg text-xs font-bold transition-all',
                 p === page
                   ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/30'
-                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700/50'
+                  : 'text-slate-600 hover:bg-slate-100'
               )}
             >
               {p}
@@ -89,7 +89,7 @@ export function Pagination({
         <button
           onClick={() => onPageChange(page + 1)}
           disabled={page >= totalPages}
-          className="w-9 h-9 flex items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:border-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="w-9 h-9 flex items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           <ChevronRight size={15} />
         </button>

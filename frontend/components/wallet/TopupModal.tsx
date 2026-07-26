@@ -139,7 +139,7 @@ export function TopupModal({ open, onClose, currentBalance }: TopupModalProps) {
           />
         </div>
 
-        <label className="flex items-start gap-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-emerald-300 dark:hover:border-emerald-500/40 transition-colors">
+        <label className="flex items-start gap-3 p-3 rounded-2xl border border-slate-200 cursor-pointer hover:border-emerald-300 transition-colors">
           <input
             type="checkbox"
             checked={saveCard}
@@ -147,10 +147,10 @@ export function TopupModal({ open, onClose, currentBalance }: TopupModalProps) {
             className="mt-0.5 w-4 h-4 rounded text-emerald-600"
           />
           <div className="flex-1">
-            <div className="flex items-center gap-1.5 text-sm font-bold text-slate-900 dark:text-slate-100">
-              <Sparkles size={14} className="text-emerald-600 dark:text-emerald-400" /> Save card for subscription auto-renewal
+            <div className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
+              <Sparkles size={14} className="text-emerald-600" /> Save card for subscription auto-renewal
             </div>
-            <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <div className="text-xs text-slate-500 mt-0.5">
               We&apos;ll save this card so your plan renews automatically when your billing period ends.
               Wallet top-ups are always one-shot — this card never gets charged for the wallet.
               Manage or remove it any time from Wallet Settings.
