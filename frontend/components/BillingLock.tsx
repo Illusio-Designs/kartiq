@@ -149,25 +149,25 @@ export function BillingLock({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex-1 px-6 py-12 flex items-start sm:items-center justify-center">
-      <div className="max-w-lg w-full text-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-3xl p-8 sm:p-10 shadow-xl shadow-slate-900/5 dark:shadow-black/20">
-        <div className="w-16 h-16 mx-auto rounded-2xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center mb-5">
+      <div className="max-w-lg w-full text-center bg-white border border-slate-200 rounded-3xl p-8 sm:p-10 shadow-xl shadow-slate-900/5">
+        <div className="w-16 h-16 mx-auto rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mb-5">
           <Lock size={26} />
         </div>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{title}</h2>
-        <p className="text-sm text-slate-600 dark:text-slate-400 mt-3 leading-relaxed">{body}</p>
+        <h2 className="text-2xl font-bold text-slate-900">{title}</h2>
+        <p className="text-sm text-slate-600 mt-3 leading-relaxed">{body}</p>
 
         {/* Why the autopay failed — only shown for past-due / expired states */}
         {(pastDue || expired) && failureReason && (
-          <div className="mt-5 text-left p-4 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30">
+          <div className="mt-5 text-left p-4 rounded-xl bg-rose-50 border border-rose-200">
             <div className="flex items-start gap-2.5">
-              <CreditCard size={16} className="text-rose-600 dark:text-rose-400 mt-0.5 flex-shrink-0" />
+              <CreditCard size={16} className="text-rose-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0 text-sm">
-                <p className="font-bold text-rose-900 dark:text-rose-200">
+                <p className="font-bold text-rose-900">
                   Last attempt on your {cardLabel}
                 </p>
-                <p className="text-rose-800 dark:text-rose-300 mt-0.5 break-words">{failureReason}</p>
+                <p className="text-rose-800 mt-0.5 break-words">{failureReason}</p>
                 {cardDeactivated && (
-                  <p className="text-xs text-rose-700 dark:text-rose-300 mt-2 font-medium">
+                  <p className="text-xs text-rose-700 mt-2 font-medium">
                     We&apos;ve stopped retrying this card. Add a fresh one to resume.
                   </p>
                 )}
@@ -180,8 +180,8 @@ export function BillingLock({ children }: { children: ReactNode }) {
         {graceCountdown && (
           <div className={`mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold ${
             graceCountdown.days <= 2
-              ? 'bg-rose-100 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300'
-              : 'bg-amber-100 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300'
+              ? 'bg-rose-100 text-rose-700'
+              : 'bg-amber-100 text-amber-800'
           }`}>
             <AlertTriangle size={12} />
             {graceCountdown.days === 0
@@ -197,9 +197,9 @@ export function BillingLock({ children }: { children: ReactNode }) {
           {cta} <ArrowRight size={14} />
         </Link>
 
-        <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-700/60 text-xs text-slate-500 dark:text-slate-400 space-y-1">
-          <p>Need help? <a href="mailto:support@kartriq.com" className="font-semibold text-emerald-700 dark:text-emerald-300 hover:underline">support@kartriq.com</a></p>
-          <p className="text-slate-400 dark:text-slate-500">Your data isn&apos;t deleted — paying re-opens the workspace exactly as you left it.</p>
+        <div className="mt-6 pt-6 border-t border-slate-100 text-xs text-slate-500 space-y-1">
+          <p>Need help? <a href="mailto:support@kartriq.com" className="font-semibold text-emerald-700 hover:underline">support@kartriq.com</a></p>
+          <p className="text-slate-400">Your data isn&apos;t deleted — paying re-opens the workspace exactly as you left it.</p>
         </div>
       </div>
     </div>

@@ -353,8 +353,8 @@ export default function BillingPage() {
             </>
           }
         >
-          <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-3 text-xs text-slate-600 dark:text-slate-300 mb-4">
-            <strong className="font-bold text-slate-900 dark:text-slate-100">How the wallet works:</strong>{' '}
+          <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600 mb-4">
+            <strong className="font-bold text-slate-900">How the wallet works:</strong>{' '}
             it&apos;s a prepaid balance for usage above your plan ceiling (extra orders, extra SKUs, etc.).
             Top up manually whenever it gets low — there&apos;s no auto-charge.
             Your subscription renewal is handled separately via your saved card under Subscription settings.
@@ -371,31 +371,31 @@ export default function BillingPage() {
 
           {/* Saved cards live here for visibility + management. They are
               used by SUBSCRIPTION renewal — never the wallet. */}
-          <div className="mt-5 pt-5 border-t border-slate-100 dark:border-slate-700">
-            <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Saved cards</div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+          <div className="mt-5 pt-5 border-t border-slate-100">
+            <div className="text-sm font-bold text-slate-900">Saved cards</div>
+            <p className="text-[11px] text-slate-500 mt-0.5">
               Used to auto-renew your subscription. Wallet top-ups are always one-shot manual charges and never use these.
             </p>
             {paymentMethods.length === 0 ? (
-              <div className="mt-3 text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-3 border border-slate-200 dark:border-slate-700">
+              <div className="mt-3 text-xs text-slate-500 bg-slate-50 rounded-2xl p-3 border border-slate-200">
                 No saved cards yet. Tick <b>Save card for subscription auto-renewal</b> the next time you top up your wallet to add one.
               </div>
             ) : (
               <div className="mt-3 space-y-2">
                 {paymentMethods.map((m: any) => (
-                  <div key={m.id} className="flex items-center gap-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-700">
-                    <div className="w-9 h-9 rounded-xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-700 dark:text-slate-200">
+                  <div key={m.id} className="flex items-center gap-3 p-3 rounded-2xl border border-slate-200">
+                    <div className="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-xs font-bold text-slate-700">
                       {(m.brand || m.method || 'CARD').slice(0, 4).toUpperCase()}
                     </div>
                     <div className="flex-1">
-                      <div className="text-sm font-bold text-slate-900 dark:text-slate-100">{m.label || `${m.brand || 'Card'} •••• ${m.last4 || ''}`}</div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                      <div className="text-sm font-bold text-slate-900">{m.label || `${m.brand || 'Card'} •••• ${m.last4 || ''}`}</div>
+                      <div className="text-[11px] text-slate-500">
                         {m.expiryMonth ? `Expires ${String(m.expiryMonth).padStart(2,'0')}/${m.expiryYear}` : (m.upiVpa || 'Saved at checkout')}
                         {m.failureCount ? ` · last failed (${m.failureCount}x)` : ''}
                       </div>
                     </div>
                     {m.isDefault ? (
-                      <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/15 px-2 py-1 rounded-lg">DEFAULT</span>
+                      <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg">DEFAULT</span>
                     ) : (
                       <Button variant="ghost" size="sm" onClick={() => setDefaultMethod(m.id)}>Set default</Button>
                     )}

@@ -52,7 +52,7 @@ export function Tabs<K extends string = string>({
       )}
     >
       <div className={cn(
-        'inline-flex bg-slate-100 dark:bg-slate-800 rounded-xl',
+        'inline-flex bg-slate-100 rounded-xl',
         s.wrap,
         fullWidth && 'w-full',
         className
@@ -69,8 +69,8 @@ export function Tabs<K extends string = string>({
                 'flex items-center gap-2 rounded-lg font-bold transition-colors whitespace-nowrap shrink-0 disabled:opacity-50 disabled:cursor-not-allowed',
                 s.btn,
                 active
-                  ? 'bg-white text-slate-900 shadow dark:bg-slate-700 dark:text-slate-100'
-                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200',
+                  ? 'bg-white text-slate-900 shadow'
+                  : 'text-slate-500 hover:text-slate-700',
                 fullWidth && 'flex-1 justify-center'
               )}
             >
@@ -80,8 +80,8 @@ export function Tabs<K extends string = string>({
                 <span className={cn(
                   'inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-bold',
                   active
-                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'
-                    : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-slate-200 text-slate-600'
                 )}>
                   {it.badge}
                 </span>

@@ -191,20 +191,20 @@ function Dropdown({
 
       {active && (
         <div className="absolute top-full left-0 pt-3 w-[420px]">
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl shadow-slate-900/10 p-3 animate-fade-in dark:bg-slate-800 dark:border-slate-700">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl shadow-slate-900/10 p-3 animate-fade-in">
             {items.map((item) => {
               const Icon = getIcon(item.icon);
               return (
                 <Link
                   key={item.id}
                   href={item.href || '#'}
-                  className="flex items-start gap-3 p-3 rounded-xl hover:bg-emerald-50 dark:hover:bg-slate-700/50 transition-colors group"
+                  className="flex items-start gap-3 p-3 rounded-xl hover:bg-emerald-50 transition-colors group"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-emerald-50 group-hover:bg-white flex items-center justify-center flex-shrink-0 transition-colors dark:bg-emerald-500/15 dark:group-hover:bg-emerald-500/25">
-                    <Icon size={16} className="text-emerald-600 dark:text-emerald-300" />
+                  <div className="w-10 h-10 rounded-lg bg-emerald-50 group-hover:bg-white flex items-center justify-center flex-shrink-0 transition-colors">
+                    <Icon size={16} className="text-emerald-600" />
                   </div>
                   <div className="min-w-0">
-                    <div className="text-sm font-bold text-slate-900 group-hover:text-emerald-700 transition-colors dark:text-slate-100 dark:group-hover:text-emerald-300">
+                    <div className="text-sm font-bold text-slate-900 group-hover:text-emerald-700 transition-colors">
                       {item.title}
                     </div>
                     {item.subtitle && (
@@ -285,31 +285,31 @@ export function PublicFooter() {
   ];
 
   return (
-    <footer className="bg-slate-50 text-slate-900 overflow-hidden dark:bg-slate-950 dark:text-slate-100">
+    <footer className="bg-slate-50 text-slate-900 overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-10 pb-0">
-        <div className="bg-white rounded-3xl border border-slate-200/70 shadow-sm px-6 sm:px-12 py-12 dark:bg-slate-900 dark:border-slate-800">
+        <div className="bg-white rounded-3xl border border-slate-200/70 shadow-sm px-6 sm:px-12 py-12">
           <div className="grid grid-cols-2 md:grid-cols-12 gap-10">
             <div className="col-span-2 md:col-span-5">
               <Link href="/" className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-[#0B1220] flex items-center justify-center shadow-md">
                   <Sparkles size={18} className="text-white" />
                 </div>
-                <span className="font-bold text-xl tracking-tight text-slate-900 dark:text-slate-100">Kartriq</span>
+                <span className="font-bold text-xl tracking-tight text-slate-900">Kartriq</span>
               </Link>
-              <p className="text-sm text-slate-500 mt-5 max-w-md leading-relaxed dark:text-slate-400">
+              <p className="text-sm text-slate-500 mt-5 max-w-md leading-relaxed">
                 One platform for all your channels — curated catalogs, automated payouts, and built-in workflows for omnichannel commerce.
               </p>
               <div className="mt-5 space-y-2 text-sm">
                 <a
                   href="mailto:info@kartriq.com"
-                  className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors dark:text-slate-400 dark:hover:text-slate-100"
+                  className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors"
                 >
                   <Mail size={14} className="text-slate-400" />
                   <span>info@kartriq.com</span>
                 </a>
                 <a
                   href="tel:+918490009684"
-                  className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors dark:text-slate-400 dark:hover:text-slate-100"
+                  className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors"
                 >
                   <Phone size={14} className="text-slate-400" />
                   <span>+91 84900 09684</span>
@@ -328,8 +328,8 @@ export function PublicFooter() {
             <FooterCol title="Company"      items={company}     className="md:col-span-3" />
           </div>
 
-          <div className="mt-12 pt-6 border-t border-slate-200/80 grid grid-cols-1 md:grid-cols-3 gap-4 items-center dark:border-slate-800">
-            <div className="text-sm text-slate-500 leading-relaxed dark:text-slate-400">
+          <div className="mt-12 pt-6 border-t border-slate-200/80 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+            <div className="text-sm text-slate-500 leading-relaxed">
               <div>© {new Date().getFullYear()} Kartriq. All rights reserved.</div>
               <div className="mt-1">
                 Managed by{' '}
@@ -337,28 +337,28 @@ export function PublicFooter() {
                   href="https://finvera.solutions"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="font-semibold text-slate-700 hover:text-slate-900 transition-colors dark:text-slate-200 dark:hover:text-white"
+                  className="font-semibold text-slate-700 hover:text-slate-900 transition-colors"
                 >
                   Finvera Solutions LLP
                 </a>
               </div>
             </div>
 
-            <div className="flex items-center justify-center text-sm text-slate-500 gap-1.5 dark:text-slate-400">
+            <div className="flex items-center justify-center text-sm text-slate-500 gap-1.5">
               <span>Crafted with</span>
               <Heart size={14} className="text-blue-600 fill-blue-600" />
               <span>in Rajkot, India</span>
             </div>
 
-            <div className="flex items-center justify-start md:justify-end gap-6 text-sm text-slate-500 dark:text-slate-400">
-              <Link href="/privacy" className="hover:text-slate-900 transition-colors dark:hover:text-slate-100">Privacy Policy</Link>
-              <Link href="/terms"   className="hover:text-slate-900 transition-colors dark:hover:text-slate-100">Terms of Service</Link>
+            <div className="flex items-center justify-start md:justify-end gap-6 text-sm text-slate-500">
+              <Link href="/privacy" className="hover:text-slate-900 transition-colors">Privacy Policy</Link>
+              <Link href="/terms"   className="hover:text-slate-900 transition-colors">Terms of Service</Link>
               <button
                 type="button"
                 onClick={() => {
                   import('@/components/CookieConsent').then((m) => m.resetConsent());
                 }}
-                className="hover:text-slate-900 transition-colors dark:hover:text-slate-100"
+                className="hover:text-slate-900 transition-colors"
               >
                 Cookies
               </button>
@@ -369,7 +369,7 @@ export function PublicFooter() {
 
       <div className="relative select-none pointer-events-none mt-6 -mb-6 sm:-mb-10">
         <div
-          className="text-center font-extrabold tracking-tight leading-none bg-gradient-to-b from-slate-200 to-transparent bg-clip-text text-transparent dark:from-slate-800"
+          className="text-center font-extrabold tracking-tight leading-none bg-gradient-to-b from-slate-200 to-transparent bg-clip-text text-transparent"
           style={{ fontSize: 'clamp(4rem, 22vw, 18rem)' }}
         >
           Kartriq
@@ -384,7 +384,7 @@ function SocialLink({ href, label, children }: { href: string; label: string; ch
     <a
       href={href}
       aria-label={label}
-      className="text-slate-400 hover:text-slate-900 transition-colors dark:hover:text-slate-100"
+      className="text-slate-400 hover:text-slate-900 transition-colors"
     >
       {children}
     </a>
@@ -395,11 +395,11 @@ function FooterCol({ title, items, className }: { title: string; items: NavLink[
   if (!items.length) return null;
   return (
     <div className={className}>
-      <h4 className="text-sm font-bold text-slate-900 mb-5 dark:text-slate-100">{title}</h4>
+      <h4 className="text-sm font-bold text-slate-900 mb-5">{title}</h4>
       <ul className="space-y-3">
         {items.map((l) => (
           <li key={l.id}>
-            <Link href={l.href || '#'} className="text-sm text-slate-500 hover:text-slate-900 transition-colors dark:text-slate-400 dark:hover:text-slate-100">
+            <Link href={l.href || '#'} className="text-sm text-slate-500 hover:text-slate-900 transition-colors">
               {l.title}
             </Link>
           </li>
@@ -454,7 +454,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <PublicLoadingContext.Provider value={ctxValue}>
-      <div className="min-h-screen flex flex-col bg-white dark:bg-slate-950">
+      <div className="min-h-screen flex flex-col bg-white">
         <PublicNav />
         <main className="flex-1">{children}</main>
         <PublicFooter />

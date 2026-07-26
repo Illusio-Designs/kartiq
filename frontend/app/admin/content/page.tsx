@@ -92,7 +92,7 @@ function HubView({ onPick }: { onPick: (id: string) => void }) {
         <h1 className="text-3xl font-bold bg-gradient-to-r from-[#06D4B8] to-[#06B6D4] bg-clip-text text-transparent">
           Content Manager
         </h1>
-        <p className="text-slate-500 dark:text-slate-400 mt-1 max-w-2xl">
+        <p className="text-slate-500 mt-1 max-w-2xl">
           Pick a content type to manage. Each card describes what it is and where it appears
           on the public site. New entries go live immediately after saving.
         </p>
@@ -105,7 +105,7 @@ function HubView({ onPick }: { onPick: (id: string) => void }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search content types…"
-            className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-100 dark:focus:ring-emerald-500/20"
+            className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-slate-200 bg-white text-slate-900 focus:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-100"
           />
         </div>
       </div>
@@ -120,7 +120,7 @@ function HubView({ onPick }: { onPick: (id: string) => void }) {
         <div className="space-y-8">
           {grouped.map((g) => (
             <section key={g.category}>
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
                 {g.category}
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -132,24 +132,24 @@ function HubView({ onPick }: { onPick: (id: string) => void }) {
                       key={t.id}
                       type="button"
                       onClick={() => onPick(t.id)}
-                      className="group text-left p-5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl hover:border-emerald-300 dark:hover:border-emerald-500/40 hover:shadow-lg hover:-translate-y-0.5 transition-all"
+                      className="group text-left p-5 bg-white border border-slate-200 rounded-2xl hover:border-emerald-300 hover:shadow-lg hover:-translate-y-0.5 transition-all"
                     >
                       <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 flex items-center justify-center flex-shrink-0 group-hover:bg-emerald-100 dark:group-hover:bg-emerald-500/20 transition-colors">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0 group-hover:bg-emerald-100 transition-colors">
                           <Icon size={18} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
-                            <h3 className="font-bold text-slate-900 dark:text-slate-100 truncate">{t.name}</h3>
-                            <ChevronRight size={14} className="text-slate-300 dark:text-slate-600 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+                            <h3 className="font-bold text-slate-900 truncate">{t.name}</h3>
+                            <ChevronRight size={14} className="text-slate-300 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
                           </div>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">{t.description}</p>
+                          <p className="text-xs text-slate-500 mt-1 line-clamp-2">{t.description}</p>
                           <div className="flex items-center gap-1.5 mt-3 flex-wrap">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
                               {loading ? '…' : `${count} item${count === 1 ? '' : 's'}`}
                             </span>
                             {t.whereUsed.map((w) => (
-                              <span key={w} className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400">
+                              <span key={w} className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border border-slate-200 text-slate-600">
                                 {w}
                               </span>
                             ))}
@@ -232,7 +232,7 @@ function ManageView({ typeId, onBack }: { typeId: string; onBack: () => void }) 
   return (
     <div className="p-8">
       {confirmUi}
-      <button onClick={onBack} className="inline-flex items-center gap-1 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 mb-4">
+      <button onClick={onBack} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 mb-4">
         <ArrowLeft size={14} /> Back to all types
       </button>
 
@@ -242,11 +242,11 @@ function ManageView({ typeId, onBack }: { typeId: string; onBack: () => void }) 
             <Icon size={20} />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{config.name}</h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xl">{config.description}</p>
+            <h1 className="text-2xl font-bold text-slate-900">{config.name}</h1>
+            <p className="text-sm text-slate-500 max-w-xl">{config.description}</p>
             <div className="flex items-center gap-1.5 mt-2 flex-wrap">
               {config.whereUsed.map((w) => (
-                <span key={w} className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400">
+                <span key={w} className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border border-slate-200 text-slate-600">
                   Used on: {w}
                 </span>
               ))}
@@ -257,12 +257,12 @@ function ManageView({ typeId, onBack }: { typeId: string; onBack: () => void }) 
       </div>
 
       {config.tip && (
-        <div className="mb-4 px-4 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-xs text-amber-800 dark:text-amber-300">
+        <div className="mb-4 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
           <strong>Tip:</strong> {config.tip}
         </div>
       )}
 
-      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl divide-y divide-slate-100 dark:divide-slate-700/60">
+      <div className="bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100">
         {loading ? (
           <div className="p-12 text-center text-sm text-slate-400">Loading…</div>
         ) : items.length === 0 ? (
@@ -277,17 +277,17 @@ function ManageView({ typeId, onBack }: { typeId: string; onBack: () => void }) 
             <div key={item.id} className="p-5 flex items-start gap-3">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="font-bold text-slate-900 dark:text-slate-100 truncate">{item.title || <span className="text-slate-400 italic">Untitled</span>}</h3>
+                  <h3 className="font-bold text-slate-900 truncate">{item.title || <span className="text-slate-400 italic">Untitled</span>}</h3>
                   {item.category && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 uppercase">{item.category}</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 uppercase">{item.category}</span>
                   )}
                   {!item.isActive && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 uppercase">Hidden</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-500 uppercase">Hidden</span>
                   )}
-                  <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500">#{item.sortOrder ?? 0}</span>
+                  <span className="text-[10px] font-mono text-slate-400">#{item.sortOrder ?? 0}</span>
                 </div>
-                {item.subtitle && <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">{item.subtitle}</p>}
-                {item.body && <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 line-clamp-2">{item.body}</p>}
+                {item.subtitle && <p className="text-sm text-slate-500 mt-1 line-clamp-2">{item.subtitle}</p>}
+                {item.body && <p className="text-xs text-slate-400 mt-1 line-clamp-2">{item.body}</p>}
               </div>
               <div className="flex items-center gap-1 flex-shrink-0">
                 <Tooltip content={item.isActive ? 'Hide on public site' : 'Show on public site'}>
@@ -301,7 +301,7 @@ function ManageView({ typeId, onBack }: { typeId: string; onBack: () => void }) 
                   </Button>
                 </Tooltip>
                 <Tooltip content="Delete">
-                  <Button variant="ghost" size="icon" onClick={() => del(item.id)} className="!text-rose-600 hover:!bg-rose-50 dark:hover:!bg-rose-500/10">
+                  <Button variant="ghost" size="icon" onClick={() => del(item.id)} className="!text-rose-600 hover:!bg-rose-50">
                     <Trash2 size={14} />
                   </Button>
                 </Tooltip>
@@ -485,8 +485,8 @@ function ContentForm({
 
       {/* Per-type structured data fields — render labelled inputs instead of raw JSON */}
       {!advanced && config.dataFields && config.dataFields.length > 0 && (
-        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/40 p-4 space-y-3">
-          <div className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+        <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3">
+          <div className="text-xs font-bold text-slate-600 uppercase tracking-wider">
             Type-specific fields
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -529,13 +529,13 @@ function ContentForm({
         <button
           type="button"
           onClick={() => setAdvanced((v) => !v)}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700"
         >
           <Code size={12} />
           {advanced ? 'Hide' : 'Show'} advanced (raw JSON data)
         </button>
         {advanced && (
-          <div className="mt-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-900 dark:bg-slate-950 p-3">
+          <div className="mt-2 rounded-xl border border-slate-200 bg-slate-900 p-3">
             <textarea
               value={dataJson}
               onChange={(e) => setDataJson(e.target.value)}
@@ -560,7 +560,7 @@ function ContentForm({
       )}
 
       {/* Footer */}
-      <div className="flex gap-2 justify-end pt-3 border-t border-slate-100 dark:border-slate-700/60">
+      <div className="flex gap-2 justify-end pt-3 border-t border-slate-100">
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         <Button onClick={submit} leftIcon={<Save size={14} />}>Save</Button>
       </div>

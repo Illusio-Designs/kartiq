@@ -105,17 +105,17 @@ export function PhoneField({
   return (
     <div className={cn('w-full', className)} ref={wrapperRef}>
       {label && (
-        <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+        <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
           {label}
           {required && <span className="text-rose-500 ml-0.5">*</span>}
         </label>
       )}
       <div
         className={cn(
-          'relative flex w-full items-stretch rounded-xl border bg-white dark:bg-slate-800 transition-all duration-200',
-          'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600',
-          'focus-within:ring-4 focus-within:ring-emerald-500/10 focus-within:border-emerald-400 dark:focus-within:border-emerald-500',
-          error && 'border-rose-300 dark:border-rose-800 focus-within:ring-rose-500/10 focus-within:border-rose-400',
+          'relative flex w-full items-stretch rounded-xl border bg-white transition-all duration-200',
+          'border-slate-200 hover:border-slate-300',
+          'focus-within:ring-4 focus-within:ring-emerald-500/10 focus-within:border-emerald-400',
+          error && 'border-rose-300 focus-within:ring-rose-500/10 focus-within:border-rose-400',
           disabled && 'opacity-60 cursor-not-allowed'
         )}
       >
@@ -127,16 +127,16 @@ export function PhoneField({
           aria-label={`Select country (current: ${country.name})`}
           aria-expanded={open}
           className={cn(
-            'flex items-center gap-1.5 pl-3 pr-2 border-r border-slate-100 dark:border-slate-700/60',
-            'hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors',
-            'focus:outline-none focus-visible:bg-slate-50 dark:focus-visible:bg-slate-700/40 rounded-l-xl'
+            'flex items-center gap-1.5 pl-3 pr-2 border-r border-slate-100',
+            'hover:bg-slate-50 transition-colors',
+            'focus:outline-none focus-visible:bg-slate-50 rounded-l-xl'
           )}
         >
           <FlagImage iso2={country.iso2} size={20} />
           <ChevronDown
             size={14}
             className={cn(
-              'text-slate-400 dark:text-slate-500 transition-transform',
+              'text-slate-400 transition-transform',
               open && 'rotate-180'
             )}
           />
@@ -150,22 +150,22 @@ export function PhoneField({
           onChange={handlePhoneValueChange}
           placeholder={placeholder}
           disabled={disabled}
-          className="flex-1 min-w-0 bg-transparent border-0 px-3 py-2.5 text-sm text-slate-900 dark:text-slate-100 tracking-wide placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-0"
+          className="flex-1 min-w-0 bg-transparent border-0 px-3 py-2.5 text-sm text-slate-900 tracking-wide placeholder:text-slate-400 focus:outline-none focus:ring-0"
         />
 
         {/* Dropdown */}
         {open && (
-          <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+          <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden">
             {/* Search */}
-            <div className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 dark:border-slate-700/60">
-              <Search size={14} className="text-slate-400 dark:text-slate-500 flex-shrink-0" />
+            <div className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-100">
+              <Search size={14} className="text-slate-400 flex-shrink-0" />
               <input
                 ref={searchRef}
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search for countries"
-                className="flex-1 bg-transparent border-0 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-0"
+                className="flex-1 bg-transparent border-0 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-0"
               />
             </div>
             {/* List */}
@@ -185,10 +185,10 @@ export function PhoneField({
                       }}
                       className={cn(
                         'w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left transition-colors',
-                        'hover:bg-slate-50 dark:hover:bg-slate-700/40',
+                        'hover:bg-slate-50',
                         isSelected
-                          ? 'bg-emerald-50/70 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-semibold'
-                          : 'text-slate-700 dark:text-slate-200'
+                          ? 'bg-emerald-50/70 text-emerald-700 font-semibold'
+                          : 'text-slate-700'
                       )}
                     >
                       <FlagImage iso2={c.iso2} size={20} />
@@ -197,13 +197,13 @@ export function PhoneField({
                         className={cn(
                           'text-xs font-medium',
                           isSelected
-                            ? 'text-emerald-600/80 dark:text-emerald-300/80'
-                            : 'text-slate-500 dark:text-slate-400'
+                            ? 'text-emerald-600/80'
+                            : 'text-slate-500'
                         )}
                       >
                         (+{c.dialCode})
                       </span>
-                      {isSelected && <Check size={14} className="text-emerald-600 dark:text-emerald-400 ml-1" />}
+                      {isSelected && <Check size={14} className="text-emerald-600 ml-1" />}
                     </button>
                   </li>
                 );

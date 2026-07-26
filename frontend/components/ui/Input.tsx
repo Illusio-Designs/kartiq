@@ -31,11 +31,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             ref={ref}
             id={autoId}
             className={cn(
-              'w-full px-4 py-2.5 text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border rounded-xl transition-all duration-200',
-              'placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-4',
+              'w-full px-4 py-2.5 text-sm bg-white text-slate-900 border rounded-xl transition-all duration-200',
+              'placeholder:text-slate-400 focus:outline-none focus:ring-4',
               error
-                ? 'border-rose-300 dark:border-rose-800 focus:ring-rose-500/10 focus:border-rose-400'
-                : 'border-slate-200 dark:border-slate-700 focus:ring-emerald-500/10 focus:border-emerald-400',
+                ? 'border-rose-300 focus:ring-rose-500/10 focus:border-rose-400'
+                : 'border-slate-200 focus:ring-emerald-500/10 focus:border-emerald-400',
               leftIcon && 'pl-10',
               rightIcon && 'pr-10',
               className
@@ -68,7 +68,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
     return (
       <div className="w-full">
         {label && (
-          <label htmlFor={autoId} className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+          <label htmlFor={autoId} className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
             {label}
           </label>
         )}
@@ -76,17 +76,17 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           ref={ref}
           id={autoId}
           className={cn(
-            'w-full px-4 py-2.5 text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border rounded-xl transition-all duration-200',
-            'placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-4',
+            'w-full px-4 py-2.5 text-sm bg-white text-slate-900 border rounded-xl transition-all duration-200',
+            'placeholder:text-slate-400 focus:outline-none focus:ring-4',
             error
-              ? 'border-rose-300 dark:border-rose-800 focus:ring-rose-500/10 focus:border-rose-400'
-              : 'border-slate-200 dark:border-slate-700 focus:ring-emerald-500/10 focus:border-emerald-400',
+              ? 'border-rose-300 focus:ring-rose-500/10 focus:border-rose-400'
+              : 'border-slate-200 focus:ring-emerald-500/10 focus:border-emerald-400',
             className
           )}
           {...props}
         />
-        {hint && !error && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{hint}</p>}
-        {error && <p className="text-xs text-rose-600 dark:text-rose-400 mt-1 font-medium">{error}</p>}
+        {hint && !error && <p className="text-xs text-slate-500 mt-1">{hint}</p>}
+        {error && <p className="text-xs text-rose-600 mt-1 font-medium">{error}</p>}
       </div>
     );
   }

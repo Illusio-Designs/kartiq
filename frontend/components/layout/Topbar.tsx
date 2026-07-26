@@ -10,7 +10,6 @@ import { ChangelogTrigger } from '@/components/ChangelogDrawer';
 import { HelpTrigger } from '@/components/HelpDrawer';
 import { InboxTrigger } from '@/components/InboxDrawer';
 import { UserMenu } from '@/components/UserMenu';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { WalletPill } from '@/components/wallet/WalletPill';
 
 export function Topbar() {
@@ -106,14 +105,11 @@ export function Topbar() {
           </Tooltip>
         )}
 
-        {/* Tablet+ utilities — Theme / What's new / Help. All three are
-            also reachable from the user-menu Quick Links, so hiding them
-            on phones (< sm) is safe and stops the topbar from squashing
-            the search input on 375px screens. */}
+        {/* Tablet+ utilities — What's new / Help. Both are also reachable
+            from the user-menu Quick Links, so hiding them on phones (< sm)
+            is safe and stops the topbar from squashing the search input on
+            375px screens. */}
         <div className="hidden sm:flex items-center gap-1">
-          <Tooltip content="Toggle theme (light · dark · system)" side="bottom">
-            <ThemeToggle />
-          </Tooltip>
           <Tooltip content="What's new" side="bottom">
             <ChangelogTrigger />
           </Tooltip>

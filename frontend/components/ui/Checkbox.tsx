@@ -25,7 +25,7 @@ export function Checkbox({
         'w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0 transition-all',
         checked
           ? 'bg-emerald-500 border-emerald-500 shadow-sm shadow-emerald-500/30'
-          : 'bg-white border-slate-300 hover:border-emerald-400 dark:bg-slate-800 dark:border-slate-600 dark:hover:border-emerald-400',
+          : 'bg-white border-slate-300 hover:border-emerald-400',
         disabled && 'opacity-50 cursor-not-allowed',
         !disabled && 'cursor-pointer'
       )}
@@ -40,8 +40,8 @@ export function Checkbox({
     <label className={cn('flex items-start gap-3 cursor-pointer', disabled && 'opacity-60 cursor-not-allowed')}>
       {control}
       <div className="min-w-0 -mt-0.5">
-        <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{label}</div>
-        {description && <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{description}</div>}
+        <div className="text-sm font-semibold text-slate-900">{label}</div>
+        {description && <div className="text-xs text-slate-500 mt-0.5">{description}</div>}
       </div>
     </label>
   );

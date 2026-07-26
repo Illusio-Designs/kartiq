@@ -29,7 +29,7 @@ export function Switch({
       className={cn(
         'relative inline-flex items-center rounded-full transition-colors flex-shrink-0',
         sizes.track,
-        checked ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700',
+        checked ? 'bg-emerald-500' : 'bg-slate-200',
         disabled && 'opacity-50 cursor-not-allowed',
         !disabled && 'cursor-pointer'
       )}
@@ -49,8 +49,8 @@ export function Switch({
   return (
     <label className={cn('flex items-center justify-between gap-3', disabled && 'opacity-60')}>
       <div className="min-w-0">
-        <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{label}</div>
-        {description && <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{description}</div>}
+        <div className="text-sm font-semibold text-slate-900">{label}</div>
+        {description && <div className="text-xs text-slate-500 mt-0.5">{description}</div>}
       </div>
       {button}
     </label>

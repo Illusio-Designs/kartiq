@@ -5,7 +5,6 @@ import { Providers } from '@/components/layout/Providers';
 import { PageLoader } from '@/components/PageLoader';
 import { Analytics } from '@/components/Analytics';
 import { CookieConsent } from '@/components/CookieConsent';
-import { ThemeProvider } from '@/components/ThemeProvider';
 import { WebVitalsReporter } from '@/components/WebVitalsReporter';
 import { loadSeo } from '@/lib/seo';
 
@@ -137,25 +136,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             }),
           }}
         />
-        {/* Pre-hydration theme apply — avoids the light→dark flash on
-            page load when the user has chosen Dark or has system dark on. */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var k='kartriq.theme';var p=localStorage.getItem(k);if(p!=='light'&&p!=='dark'&&p!=='system')p='system';var dark=p==='dark'||(p==='system'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);var r=document.documentElement;if(dark)r.classList.add('dark');r.style.colorScheme=dark?'dark':'light';}catch(e){}})();`,
-          }}
-        />
       </head>
       <body className="font-sans">
         <a href="#main-content" className="skip-link">Skip to content</a>
         <Analytics />
         <WebVitalsReporter />
-        <ThemeProvider>
-          <Providers>
-            <PageLoader />
-            <div id="main-content">{children}</div>
-          </Providers>
-          <CookieConsent />
-        </ThemeProvider>
+        <Providers>
+          <PageLoader />
+          <div id="main-content">{children}</div>
+        </Providers>
+        <CookieConsent />
       </body>
     </html>
   );
