@@ -207,7 +207,7 @@ export default function BillingPage() {
         </div>
 
         {/* Current plan */}
-        <div className="bg-gradient-to-br from-[#0B1220] to-emerald-600 text-white p-6 rounded-3xl shadow-xl">
+        <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white p-6 rounded-3xl shadow-xl">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
               <div className="text-xs uppercase tracking-wider text-emerald-300 font-bold">Current plan</div>

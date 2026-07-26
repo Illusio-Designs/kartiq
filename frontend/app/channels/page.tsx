@@ -219,7 +219,7 @@ export default function ChannelsPage() {
     <DashboardLayout>
       <div className="space-y-6 animate-slide-up">
         {/* Hero */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0B1220] via-[#0B1220] to-emerald-600 p-8 md:p-10 text-white shadow-2xl shadow-emerald-500/25">
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-500 via-emerald-600 to-emerald-700 p-8 md:p-10 text-white shadow-2xl shadow-emerald-500/25">
           <div className="absolute top-0 right-0 w-96 h-96 rounded-full bg-emerald-400/20 blur-3xl -translate-y-1/2 translate-x-1/2" />
           <div className="absolute bottom-0 left-1/3 w-72 h-72 rounded-full bg-cyan-400/15 blur-3xl translate-y-1/2" />
 

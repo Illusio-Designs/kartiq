@@ -77,13 +77,13 @@ export function PublicNav() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-40 backdrop-blur-xl bg-[#0B1220]/85 border-b border-white/10">
+    <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/85 border-b border-slate-200">
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2 group">
           <div className="relative w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 via-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30 group-hover:shadow-emerald-500/50 transition-shadow">
             <Sparkles size={16} className="text-white" />
           </div>
-          <span className="font-bold text-lg tracking-tight text-white">Kartriq</span>
+          <span className="font-bold text-lg tracking-tight text-slate-900">Kartriq</span>
         </Link>
 
         <nav className="hidden md:flex items-center gap-1">
@@ -123,29 +123,29 @@ export function PublicNav() {
         </nav>
 
         <div className="hidden md:flex items-center gap-2 shrink-0">
-          <Link href="/login" className="px-3 py-2 text-sm font-semibold text-white/70 hover:text-white rounded-lg hover:bg-white/10 whitespace-nowrap transition-colors">Log in</Link>
+          <Link href="/login" className="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900 rounded-lg hover:bg-slate-100 whitespace-nowrap transition-colors">Log in</Link>
           <Link href="/onboarding" className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-full shadow-md shadow-emerald-500/20 whitespace-nowrap transition-colors">
             Get Started <ArrowRight size={13} />
           </Link>
         </div>
 
-        <button className="md:hidden p-2 text-white/70 hover:text-white" onClick={() => setOpen(!open)}>
+        <button className="md:hidden p-2 text-slate-600 hover:text-slate-900" onClick={() => setOpen(!open)}>
           {open ? <X size={20} /> : <Menu size={20} />}
         </button>
       </div>
 
       {open && (
-        <div className="md:hidden border-t border-white/10 bg-[#0B1220] px-6 py-4 space-y-1 max-h-[80vh] overflow-y-auto">
+        <div className="md:hidden border-t border-slate-200 bg-white px-6 py-4 space-y-1 max-h-[80vh] overflow-y-auto">
           {groups.main.map((m) => (
-            <Link key={m.id} href={m.href || '#'} onClick={() => setOpen(false)} className="block px-3 py-2 text-sm font-semibold text-white/80 rounded-lg hover:bg-white/10">
+            <Link key={m.id} href={m.href || '#'} onClick={() => setOpen(false)} className="block px-3 py-2 text-sm font-semibold text-slate-700 rounded-lg hover:bg-slate-100">
               {m.title}
             </Link>
           ))}
           {groups.solutions.length > 0 && <MobileGroup label="Solutions" items={groups.solutions} onClick={() => setOpen(false)} />}
           {groups.resources.length > 0 && <MobileGroup label="Resources" items={groups.resources} onClick={() => setOpen(false)} />}
           {groups.company.length > 0 && <MobileGroup label="Company" items={groups.company} onClick={() => setOpen(false)} />}
-          <div className="flex gap-2 pt-3 border-t border-white/10">
-            <Link href="/login" className="flex-1 justify-center inline-flex items-center px-4 py-2.5 text-sm font-semibold text-white/80 rounded-xl bg-white/10 hover:bg-white/15 transition-colors">Log in</Link>
+          <div className="flex gap-2 pt-3 border-t border-slate-200">
+            <Link href="/login" className="flex-1 justify-center inline-flex items-center px-4 py-2.5 text-sm font-semibold text-slate-700 rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors">Log in</Link>
             <Link href="/onboarding" className="btn-primary flex-1 justify-center">Get Started</Link>
           </div>
         </div>
@@ -161,7 +161,7 @@ function NavLinkRow({ href, current, children }: { href: string; current: string
       href={href}
       className={cn(
         'px-4 py-2 text-sm font-semibold rounded-lg whitespace-nowrap transition-colors',
-        active ? 'text-white bg-white/10' : 'text-white/70 hover:text-white hover:bg-white/10'
+        active ? "text-emerald-700 bg-emerald-50" : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
       )}
     >
       {children}
@@ -183,7 +183,7 @@ function Dropdown({
       <button
         className={cn(
           'flex items-center gap-1 px-4 py-2 text-sm font-semibold rounded-lg whitespace-nowrap transition-colors',
-          active ? 'text-white bg-white/10' : 'text-white/70 hover:text-white hover:bg-white/10'
+          active ? "text-emerald-700 bg-emerald-50" : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
         )}
       >
         {label} <ChevronDown size={13} className={cn('transition-transform', active && 'rotate-180')} />
@@ -230,7 +230,7 @@ function MobileGroup({
 }) {
   return (
     <details className="group">
-      <summary className="flex items-center justify-between px-3 py-2 text-sm font-semibold text-white/80 rounded-lg hover:bg-white/10 cursor-pointer list-none">
+      <summary className="flex items-center justify-between px-3 py-2 text-sm font-semibold text-slate-700 rounded-lg hover:bg-slate-100 cursor-pointer list-none">
         {label}
         <ChevronDown size={14} className="group-open:rotate-180 transition-transform" />
       </summary>
@@ -240,7 +240,7 @@ function MobileGroup({
             key={i.id}
             href={i.href || '#'}
             onClick={onClick}
-            className="block px-3 py-2 text-xs text-white/70 rounded-lg hover:bg-white/10"
+            className="block px-3 py-2 text-xs text-slate-600 rounded-lg hover:bg-slate-100"
           >
             {i.title}
           </Link>
@@ -291,7 +291,7 @@ export function PublicFooter() {
           <div className="grid grid-cols-2 md:grid-cols-12 gap-10">
             <div className="col-span-2 md:col-span-5">
               <Link href="/" className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[#0B1220] flex items-center justify-center shadow-md">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 via-emerald-500 to-emerald-600 flex items-center justify-center shadow-md">
                   <Sparkles size={18} className="text-white" />
                 </div>
                 <span className="font-bold text-xl tracking-tight text-slate-900">Kartriq</span>

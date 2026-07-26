@@ -99,9 +99,9 @@ export default function LandingPage() {
             <button
               type="button"
               onClick={() => openDemo({ source: 'demo', title: ctaSecondary.label || 'Schedule a Demo' })}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-[#0B1220] hover:bg-[#0B1220]/90 text-white text-sm font-semibold rounded-full transition-all group"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-semibold rounded-full transition-all group"
             >
-              <Play size={12} fill="white" className="group-hover:scale-125 transition-transform" /> {ctaSecondary.label}
+              <Play size={12} fill="currentColor" className="group-hover:scale-125 transition-transform" /> {ctaSecondary.label}
             </button>
           </div>
         </div>
@@ -368,7 +368,7 @@ export default function LandingPage() {
                     className={`mt-5 inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold transition-all hover:-translate-y-0.5 ${
                       highlight
                         ? 'bg-white text-emerald-700 hover:bg-emerald-50'
-                        : 'bg-[#0B1220] text-white hover:bg-[#0B1220]/90'
+                        : 'bg-emerald-600 text-white hover:bg-emerald-700'
                     }`}
                   >
                     Get Started <ArrowRight size={12} />
