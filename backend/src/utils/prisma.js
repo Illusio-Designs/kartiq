@@ -405,7 +405,7 @@ const JSON_FIELDS = {
 const NO_UPDATED_AT = new Set([
   'permissions', 'role_permissions', 'user_roles', 'audit_logs',
   'stock_movements', 'order_items', 'purchase_order_items', 'ticket_messages', 'payments',
-  'wallet_transactions',
+  'wallet_transactions', 'notifications',
 ]);
 const NO_CREATED_AT = new Set([
   'role_permissions', 'user_roles', 'order_items', 'purchase_order_items', 'payments', 'usage_meters',

@@ -182,7 +182,11 @@ function startWorker({ pollMs = 5_000, idleMs = 5_000, reapEveryMs = 60_000 } = 
           await new Promise((res) => setTimeout(res, pollMs > 0 ? 50 : 0));
         }
       } catch (err) {
-        console.error('[jobs] worker loop error:', err.message);
+        // Log the full error, not just err.message — DB connection failures
+        // (e.g. cPanel MySQL connection-limit / stale-connection drops) often
+        // carry the useful detail on err.code / err.stack, and a bare empty
+        // message here is undiagnosable.
+        console.error('[jobs] worker loop error:', err?.code || '', err?.stack || err?.message || err);
         await new Promise((res) => setTimeout(res, idleMs));
       }
     }
