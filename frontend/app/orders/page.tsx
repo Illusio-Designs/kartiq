@@ -1,15 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { orderApi, customerApi, channelApi } from '@/lib/api';
-import { formatCurrency, formatDateTime, ORDER_STATUS_COLORS } from '@/lib/utils';
+import { formatCurrency, formatDateTime } from '@/lib/utils';
 import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import {
-  Button, Badge, Card, Modal, Input, Textarea, Select, Pagination, Tooltip, Loader, Tabs, EmptyState, DatePicker,
+  Button, Badge, Card, Modal, Input, Textarea, Select, Pagination, Tooltip, Loader, Tabs, EmptyState, DatePicker, Checkbox,
 } from '@/components/ui';
-import { AlertTriangle, CheckCircle2, Package, Plus, Star, Trash2, XCircle, Zap, Hand, Layers, ShoppingBag, Plug, RefreshCw } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Package, Plus, Star, Trash2, XCircle, Zap, Hand, Layers, ShoppingBag, Plug, RefreshCw, Download, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
 import { toast } from '@/store/toast.store';
 import Link from 'next/link';
 
@@ -22,6 +22,40 @@ function toYMD(d: Date): string {
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
+
+// Configurable order-table columns. The leading row number and trailing
+// actions column are fixed; everything here can be sorted, hidden, and
+// exported. `sort` supplies a comparable value; `csv` the export cell text.
+const ORDER_COLUMNS: { key: string; label: string; sortable?: boolean }[] = [
+  { key: 'order',       label: 'Order #',     sortable: true },
+  { key: 'customer',    label: 'Customer',    sortable: true },
+  { key: 'channel',     label: 'Channel',     sortable: true },
+  { key: 'fulfillment', label: 'Fulfillment' },
+  { key: 'total',       label: 'Total',       sortable: true },
+  { key: 'rto',         label: 'RTO',         sortable: true },
+  { key: 'status',      label: 'Status',      sortable: true },
+  { key: 'date',        label: 'Date',        sortable: true },
+];
+const ORDER_SORT: Record<string, (o: any) => string | number> = {
+  order:    (o) => (o.channelOrderId || o.orderNumber || '').toLowerCase(),
+  customer: (o) => (o.customer?.name || '').toLowerCase(),
+  channel:  (o) => (o.channel?.name || '').toLowerCase(),
+  total:    (o) => Number(o.total || 0),
+  rto:      (o) => Number(o.rtoScore || 0),
+  status:   (o) => (o.status || '').toLowerCase(),
+  date:     (o) => Date.parse(o.createdAt || '') || 0,
+};
+const ORDER_CSV: Record<string, (o: any) => string> = {
+  order:       (o) => o.channelOrderId || o.orderNumber || '',
+  customer:    (o) => o.customer?.name || '',
+  channel:     (o) => o.channel?.name || '',
+  fulfillment: (o) => o.fulfillmentType || '',
+  total:       (o) => String(o.total ?? ''),
+  rto:         (o) => (o.rtoRiskLevel ? `${o.rtoScore ?? 0} ${o.rtoRiskLevel}` : ''),
+  status:      (o) => o.status || '',
+  date:        (o) => (o.createdAt ? new Date(o.createdAt).toISOString() : ''),
+};
+const ORDER_COLS_LS_KEY = 'kartriq-orders-hidden-cols';
 
 const STATUSES = [
   { value: '',           label: 'All Statuses' },
@@ -66,6 +100,43 @@ export default function OrdersPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  // Sorting (client-side, over the loaded page) + column visibility.
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
+  const [colsOpen, setColsOpen] = useState(false);
+  const colsRef = useRef<HTMLDivElement>(null);
+
+  // Restore hidden columns from localStorage on mount.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(ORDER_COLS_LS_KEY);
+      if (raw) setHiddenCols(new Set(JSON.parse(raw)));
+    } catch { /* ignore */ }
+  }, []);
+  const persistHidden = (next: Set<string>) => {
+    setHiddenCols(next);
+    try { localStorage.setItem(ORDER_COLS_LS_KEY, JSON.stringify([...next])); } catch { /* ignore */ }
+  };
+  const toggleCol = (key: string) => {
+    const next = new Set(hiddenCols);
+    next.has(key) ? next.delete(key) : next.add(key);
+    persistHidden(next);
+  };
+  const toggleSort = (key: string) => {
+    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+  // Close the columns popover on outside click.
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (colsRef.current && !colsRef.current.contains(e.target as Node)) setColsOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, []);
+
+  const visibleColumns = ORDER_COLUMNS.filter((c) => !hiddenCols.has(c.key));
 
   const { data, isLoading } = useQuery({
     queryKey: ['orders', page, pageSize, status, risk, fulfillmentTab, dateFrom, dateTo],
@@ -86,6 +157,37 @@ export default function OrdersPage() {
   const filteredOrders = useFilteredBySearch(data?.orders, (o: any) =>
     `${o.orderNumber || ''} ${o.channelOrderId || ''} ${o.customer?.name || ''} ${o.customer?.email || ''} ${o.customer?.phone || ''} ${o.status || ''}`
   );
+
+  // Client-side sort of the loaded page (server already paginates/filters).
+  const sortedOrders = useMemo(() => {
+    if (!sortKey || !ORDER_SORT[sortKey]) return filteredOrders;
+    const accessor = ORDER_SORT[sortKey];
+    const arr = [...filteredOrders];
+    arr.sort((a, b) => {
+      const x = accessor(a); const y = accessor(b);
+      if (x < y) return sortDir === 'asc' ? -1 : 1;
+      if (x > y) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return arr;
+  }, [filteredOrders, sortKey, sortDir]);
+
+  // Export the currently visible rows/columns to CSV.
+  const exportCsv = () => {
+    const cols = ORDER_COLUMNS.filter((c) => !hiddenCols.has(c.key));
+    const escape = (v: string) => `"${String(v).replaceAll('"', '""')}"`;
+    const header = cols.map((c) => escape(c.label)).join(',');
+    const lines = sortedOrders.map((o: any) => cols.map((c) => escape(ORDER_CSV[c.key]?.(o) ?? '')).join(','));
+    const csv = [header, ...lines].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `orders-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${sortedOrders.length} order${sortedOrders.length !== 1 ? 's' : ''}`);
+  };
 
   const approveMutation = useMutation({
     mutationFn: (id: string) => orderApi.approve(id),
@@ -127,6 +229,74 @@ export default function OrdersPage() {
       setTimeout(() => setReviewResult(null), 4000);
     },
   });
+
+  // Render a single configurable column's cell for an order row.
+  const renderCell = (o: any, key: string) => {
+    switch (key) {
+      case 'order':
+        return (
+          <td key={key} className="px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Link href={`/orders/${o.id}`} className="font-bold text-emerald-600 hover:underline">{o.channelOrderId || o.orderNumber}</Link>
+              <Badge variant={o.channelOrderId ? 'blue' : 'slate'}>{o.channelOrderId ? 'Auto-synced' : 'Manual'}</Badge>
+            </div>
+            {o.channelOrderId && <div className="text-[11px] text-slate-400 font-mono">{o.orderNumber}</div>}
+          </td>
+        );
+      case 'customer':
+        return <td key={key} className="px-4 py-3 text-slate-700">{o.customer?.name}</td>;
+      case 'channel':
+        return <td key={key} className="px-4 py-3 text-slate-500">{o.channel?.name}</td>;
+      case 'fulfillment':
+        return (
+          <td key={key} className="px-4 py-3">
+            <div className="flex items-center gap-1.5">
+              <Badge variant={o.fulfillmentType === 'CHANNEL' ? 'violet' : o.fulfillmentType === 'DROPSHIP' ? 'amber' : 'blue'} dot>
+                {(() => {
+                  const isAmazon = String(o.channel?.type || '').toUpperCase().includes('AMAZON');
+                  if (o.fulfillmentType === 'CHANNEL') return isAmazon ? 'FBA' : 'Channel';
+                  if (o.fulfillmentType === 'DROPSHIP') return 'Dropship';
+                  return isAmazon ? 'MFN' : 'Self';
+                })()}
+              </Badge>
+              {o.dataCompleteness && o.dataCompleteness !== 'COMPLETE' ? (
+                <Tooltip content={`Missing: ${(o.missingFields || []).join(', ') || 'data'}`}>
+                  <span>
+                    <Badge variant={o.dataCompleteness === 'MINIMAL' ? 'rose' : 'amber'}>{o.dataCompleteness}</Badge>
+                  </span>
+                </Tooltip>
+              ) : null}
+            </div>
+          </td>
+        );
+      case 'total':
+        return <td key={key} className="px-4 py-3 font-bold text-slate-900">{formatCurrency(o.total)}</td>;
+      case 'rto':
+        return (
+          <td key={key} className="px-4 py-3">
+            {o.rtoRiskLevel ? (
+              <Tooltip content={`RTO Score: ${o.rtoScore}/100 · ${o.rtoRiskLevel}`}>
+                <span><Badge variant={riskVariant(o.rtoRiskLevel)} dot>{o.rtoScore ?? 0} {o.rtoRiskLevel}</Badge></span>
+              </Tooltip>
+            ) : <span className="text-slate-400 text-xs">—</span>}
+          </td>
+        );
+      case 'status':
+        return (
+          <td key={key} className="px-4 py-3">
+            {o.needsApproval ? (
+              <Badge variant="rose" dot>NEEDS REVIEW</Badge>
+            ) : (
+              <Badge variant={o.status === 'DELIVERED' ? 'emerald' : o.status === 'CANCELLED' ? 'rose' : 'slate'}>{o.status}</Badge>
+            )}
+          </td>
+        );
+      case 'date':
+        return <td key={key} className="px-4 py-3 text-slate-400 text-xs whitespace-nowrap">{formatDateTime(o.createdAt)}</td>;
+      default:
+        return <td key={key} className="px-4 py-3 text-slate-400">—</td>;
+    }
+  };
 
   return (
     <DashboardLayout>
@@ -189,6 +359,33 @@ export default function OrdersPage() {
               Clear dates
             </Button>
           )}
+
+          {/* Table tools — column manager + CSV export */}
+          <div className="ml-auto flex items-end gap-2">
+            <div className="relative" ref={colsRef}>
+              <Button variant="outline" size="sm" leftIcon={<SlidersHorizontal size={14} />} onClick={() => setColsOpen((v) => !v)}>
+                Columns
+              </Button>
+              {colsOpen && (
+                <div className="absolute right-0 top-full mt-1.5 w-56 bg-white border border-slate-200 rounded-xl shadow-xl shadow-slate-900/10 p-2 z-50 animate-slide-up">
+                  <div className="px-1.5 pb-1.5 mb-1 border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Show columns</div>
+                  <div className="space-y-1 px-1.5 py-1">
+                    {ORDER_COLUMNS.map((c) => (
+                      <Checkbox
+                        key={c.key}
+                        checked={!hiddenCols.has(c.key)}
+                        onCheckedChange={() => toggleCol(c.key)}
+                        label={c.label}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <Button variant="outline" size="sm" leftIcon={<Download size={14} />} onClick={exportCsv}>
+              Export CSV
+            </Button>
+          </div>
         </div>
 
         {/* Needs-approval banner */}
@@ -226,72 +423,33 @@ export default function OrdersPage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50/50 border-b border-slate-100">
                 <tr className="text-left text-[10px] uppercase tracking-widest text-slate-400">
-                  {['#', 'Order #', 'Customer', 'Channel', 'Fulfillment', 'Total', 'RTO', 'Status', 'Date', ''].map(h => (
-                    <th key={h} className="px-4 py-3 font-bold">{h}</th>
+                  <th className="px-4 py-3 font-bold">#</th>
+                  {visibleColumns.map((c) => (
+                    <th key={c.key} className="px-4 py-3 font-bold">
+                      {c.sortable ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleSort(c.key)}
+                          className="inline-flex items-center gap-1 hover:text-slate-600 uppercase tracking-widest"
+                        >
+                          {c.label}
+                          {sortKey === c.key
+                            ? (sortDir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />)
+                            : <ChevronsUpDown size={11} className="text-slate-300" />}
+                        </button>
+                      ) : c.label}
+                    </th>
                   ))}
+                  <th className="px-4 py-3 font-bold" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
-                  <tr><td colSpan={10}><Loader size="sm" /></td></tr>
-                ) : filteredOrders.length ? filteredOrders.map((o: any, idx: number) => (
+                  <tr><td colSpan={visibleColumns.length + 2}><Loader size="sm" /></td></tr>
+                ) : sortedOrders.length ? sortedOrders.map((o: any, idx: number) => (
                   <tr key={o.id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="px-4 py-3 text-slate-500 font-semibold">{(page - 1) * pageSize + idx + 1}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Link href={`/orders/${o.id}`} className="font-bold text-emerald-600 hover:underline">{o.channelOrderId || o.orderNumber}</Link>
-                        <Badge variant={o.channelOrderId ? 'blue' : 'slate'}>{o.channelOrderId ? 'Auto-synced' : 'Manual'}</Badge>
-                      </div>
-                      {o.channelOrderId && <div className="text-[11px] text-slate-400 font-mono">{o.orderNumber}</div>}
-                    </td>
-                    <td className="px-4 py-3 text-slate-700">{o.customer?.name}</td>
-                    <td className="px-4 py-3 text-slate-500">{o.channel?.name}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <Badge variant={
-                          o.fulfillmentType === 'CHANNEL' ? 'violet' :
-                          o.fulfillmentType === 'DROPSHIP' ? 'amber' : 'blue'
-                        } dot>
-                          {(() => {
-                            const isAmazon = String(o.channel?.type || '').toUpperCase().includes('AMAZON');
-                            if (o.fulfillmentType === 'CHANNEL') return isAmazon ? 'FBA' : 'Channel';
-                            if (o.fulfillmentType === 'DROPSHIP') return 'Dropship';
-                            return isAmazon ? 'MFN' : 'Self';
-                          })()}
-                        </Badge>
-                        {o.dataCompleteness && o.dataCompleteness !== 'COMPLETE' ? (
-                          <Tooltip content={`Missing: ${(o.missingFields || []).join(', ') || 'data'}`}>
-                            <span>
-                              <Badge variant={o.dataCompleteness === 'MINIMAL' ? 'rose' : 'amber'}>
-                                {o.dataCompleteness}
-                              </Badge>
-                            </span>
-                          </Tooltip>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 font-bold text-slate-900">{formatCurrency(o.total)}</td>
-                    <td className="px-4 py-3">
-                      {o.rtoRiskLevel ? (
-                        <Tooltip content={`RTO Score: ${o.rtoScore}/100 \u00B7 ${o.rtoRiskLevel}`}>
-                          <span>
-                            <Badge variant={riskVariant(o.rtoRiskLevel)} dot>
-                              {o.rtoScore ?? 0} {o.rtoRiskLevel}
-                            </Badge>
-                          </span>
-                        </Tooltip>
-                      ) : <span className="text-slate-400 text-xs">—</span>}
-                    </td>
-                    <td className="px-4 py-3">
-                      {o.needsApproval ? (
-                        <Badge variant="rose" dot>NEEDS REVIEW</Badge>
-                      ) : (
-                        <Badge variant={o.status === 'DELIVERED' ? 'emerald' : o.status === 'CANCELLED' ? 'rose' : 'slate'}>
-                          {o.status}
-                        </Badge>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-slate-400 text-xs whitespace-nowrap">{formatDateTime(o.createdAt)}</td>
+                    {visibleColumns.map((c) => renderCell(o, c.key))}
                     <td className="px-4 py-3">
                       {o.needsApproval ? (
                         <div className="flex items-center gap-1">
@@ -322,7 +480,7 @@ export default function OrdersPage() {
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={10} className="p-0">
+                    <td colSpan={visibleColumns.length + 2} className="p-0">
                       <EmptyState
                         icon={<ShoppingBag size={28} />}
                         iconBg="bg-emerald-50 text-emerald-600"
