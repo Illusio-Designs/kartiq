@@ -1,14 +1,26 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Package } from 'lucide-react';
+import { ArrowLeft, Package, Truck } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { orderApi } from '@/lib/api';
 import { formatCurrency, formatDateTime, ORDER_STATUS_COLORS } from '@/lib/utils';
 import { DetailPageSkeleton } from '@/components/Shimmer';
-import { Badge } from '@/components/ui';
+import { Badge, Button, Input, Select } from '@/components/ui';
+import { toast } from '@/store/toast.store';
+
+// Statuses a seller can set manually on a self-fulfilled (MFN) / manual order.
+const EDITABLE_STATUSES = [
+  { value: 'PENDING',    label: 'Pending' },
+  { value: 'CONFIRMED',  label: 'Confirmed' },
+  { value: 'PROCESSING', label: 'Processing' },
+  { value: 'SHIPPED',    label: 'Shipped' },
+  { value: 'DELIVERED',  label: 'Delivered' },
+  { value: 'CANCELLED',  label: 'Cancelled' },
+];
 
 // Map an order's fulfilment model to a human label + badge style. For Amazon
 // (and any marketplace) CHANNEL = the marketplace ships it from their own
@@ -25,11 +37,35 @@ function fulfillmentInfo(order: any): { label: string; variant: 'violet' | 'blue
 
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const qc = useQueryClient();
 
   const { data: order, isLoading, isError } = useQuery({
     queryKey: ['order', id],
     queryFn: () => orderApi.get(id).then((r) => r.data),
     enabled: !!id,
+  });
+
+  // Editable fulfillment state (self-fulfilled / manual orders only).
+  const [statusDraft, setStatusDraft] = useState('');
+  const [trackingDraft, setTrackingDraft] = useState('');
+  const [courierDraft, setCourierDraft] = useState('');
+  useEffect(() => {
+    if (order) {
+      setStatusDraft(order.status || 'PENDING');
+      setTrackingDraft(order.trackingNumber || order.awb || '');
+      setCourierDraft(order.courierName || '');
+    }
+  }, [order?.id, order?.status]);
+
+  const statusMutation = useMutation({
+    mutationFn: (body: { status: string; trackingNumber?: string; courierName?: string }) =>
+      orderApi.updateStatus(id, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['order', id] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      toast.success('Order updated');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Failed to update order'),
   });
 
   if (isLoading) {
@@ -50,6 +86,11 @@ export default function OrderDetailPage() {
   const items: any[] = order.items || [];
   const statusClass = (ORDER_STATUS_COLORS as any)?.[order.status] || 'bg-slate-100 text-slate-700';
   const fulfillment = fulfillmentInfo(order);
+  // Channel-fulfilled (FBA) orders are managed by the marketplace and stay
+  // read-only. Self-fulfilled (MFN), dropship, and manual orders are editable
+  // by the seller — they ship them and record status/tracking here.
+  const editable = order.fulfillmentType !== 'CHANNEL';
+  const isClosed = order.status === 'DELIVERED' || order.status === 'CANCELLED';
 
   return (
     <DashboardLayout>
@@ -93,6 +134,54 @@ export default function OrderDetailPage() {
             )}
           </div>
         )}
+
+        {/* Editable fulfillment — self-fulfilled / manual orders only. FBA
+            orders are managed by Amazon, so no manual controls are shown. */}
+        {editable ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <Truck size={15} className="text-emerald-600" />
+              <span className="text-sm font-bold text-slate-800">Update fulfillment</span>
+              <span className="text-xs text-slate-400">you ship this order</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Status</label>
+                <Select value={statusDraft} onChange={setStatusDraft} options={EDITABLE_STATUSES} fullWidth />
+              </div>
+              <Input
+                label="Tracking number"
+                value={trackingDraft}
+                onChange={(e) => setTrackingDraft(e.target.value)}
+                placeholder="e.g. 1Z999AA10123456784"
+              />
+              <Input
+                label="Courier"
+                value={courierDraft}
+                onChange={(e) => setCourierDraft(e.target.value)}
+                placeholder="e.g. Delhivery"
+              />
+              <Button
+                loading={statusMutation.isPending}
+                onClick={() => statusMutation.mutate({
+                  status: statusDraft,
+                  trackingNumber: trackingDraft || undefined,
+                  courierName: courierDraft || undefined,
+                })}
+              >
+                Save
+              </Button>
+            </div>
+            {order.channelOrderId && order.fulfillmentType === 'SELF' && (
+              <p className="text-xs text-slate-500">
+                Marking this order shipped with a tracking number also confirms the shipment back to {order.channel?.name || 'the channel'} so the buyer sees tracking.
+              </p>
+            )}
+            {isClosed && (
+              <p className="text-xs text-slate-400">This order is {order.status.toLowerCase()}. You can still correct its status if needed.</p>
+            )}
+          </div>
+        ) : null}
 
         {/* Summary cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

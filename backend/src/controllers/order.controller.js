@@ -313,6 +313,13 @@ const createOrder = async (req, res) => {
   }
 };
 
+const ORDER_STATUS_VALUES = ['PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED'];
+const statusUpdateSchema = z.object({
+  status: z.enum(ORDER_STATUS_VALUES),
+  trackingNumber: z.string().optional(),
+  courierName: z.string().optional(),
+});
+
 const updateOrderStatus = async (req, res) => {
   try {
     const existing = await prisma.order.findFirst({
@@ -320,7 +327,14 @@ const updateOrderStatus = async (req, res) => {
     });
     if (!existing) return res.status(404).json({ error: 'Order not found' });
 
-    const { status, trackingNumber, courierName } = req.body;
+    // FBA / channel-fulfilled orders are managed by the marketplace — block
+    // manual status edits so Kartriq and Amazon don't disagree.
+    if (existing.fulfillmentType === 'CHANNEL') {
+      return res.status(400).json({ error: 'This order is fulfilled by the channel and cannot be updated manually.' });
+    }
+
+    // Validate the status against the enum instead of writing req.body.status raw.
+    const { status, trackingNumber, courierName } = statusUpdateSchema.parse(req.body);
     const update = { status };
     if (status === 'SHIPPED') { update.shippedAt = new Date(); update.trackingNumber = trackingNumber; update.courierName = courierName; }
     if (status === 'DELIVERED') update.deliveredAt = new Date();
@@ -336,7 +350,8 @@ const updateOrderStatus = async (req, res) => {
     }
 
     res.json(order);
-  } catch {
+  } catch (err) {
+    if (err instanceof z.ZodError) return res.status(400).json({ error: 'Invalid status value' });
     res.status(500).json({ error: 'Failed to update order status' });
   }
 };
