@@ -782,4 +782,58 @@ async function pushProductToChannels(productId, { channelIds = null, tenantId = 
   return results;
 }
 
-module.exports = { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, pushProductToChannels };
+// ── One-time catalog import: pull a channel's products + stock into Kartriq ──
+// Reuses ensureListingForItem so products/variants/listings are created without
+// manual setup, then seeds inventory into a warehouse (auto-created if the
+// tenant has none). Requires the adapter to expose fetchInventorySummaries().
+async function upsertInventory({ tenantId, warehouseId, productId, variantId, qty }) {
+  const q = Math.max(0, Number(qty) || 0);
+  const existing = await prisma.inventoryItem.findFirst({ where: { tenantId, warehouseId, variantId } });
+  if (existing) {
+    await prisma.inventoryItem.update({ where: { id: existing.id }, data: { quantityOnHand: q, quantityAvailable: q } });
+  } else {
+    await prisma.inventoryItem.create({
+      data: { tenantId, warehouseId, productId, variantId, quantityOnHand: q, quantityReserved: 0, quantityAvailable: q },
+    });
+  }
+}
+
+async function importCatalogFromChannel(channel, { tenantId } = {}) {
+  if (!tenantId) {
+    const ch = await prisma.channel.findUnique({ where: { id: channel.id }, select: { tenantId: true } });
+    tenantId = ch?.tenantId;
+  }
+  const adapter = getAdapter(channel);
+  if (typeof adapter.fetchInventorySummaries !== 'function') {
+    throw new Error(`${channel.type} does not support catalog import yet`);
+  }
+  const items = await adapter.fetchInventorySummaries();
+  const results = { total: items.length, products: 0, failed: 0 };
+
+  // A warehouse to hold the pulled stock — reuse the tenant's first active one,
+  // else create a default so first-time users get inventory without setup.
+  let warehouse = await prisma.warehouse.findFirst({ where: { tenantId, isActive: true } });
+  if (!warehouse) {
+    warehouse = await prisma.warehouse.create({
+      data: { tenantId, name: 'Amazon FBA', code: 'FBA', address: {}, isActive: true },
+    });
+  }
+
+  for (const item of items) {
+    try {
+      if (!item.channelSku) continue;
+      const listing = await ensureListingForItem({ tenantId, channelId: channel.id, item: { ...item, unitPrice: 0 } });
+      if (listing?.variantId) {
+        await upsertInventory({ tenantId, warehouseId: warehouse.id, productId: listing.productId, variantId: listing.variantId, qty: item.quantity });
+      }
+      results.products++;
+    } catch (e) {
+      results.failed++;
+      console.warn(`[catalog] failed for SKU ${item.channelSku}: ${e.message}`);
+    }
+  }
+  await prisma.channel.update({ where: { id: channel.id }, data: { lastSyncAt: new Date(), syncError: null } }).catch(() => {});
+  return results;
+}
+
+module.exports = { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, pushProductToChannels, importCatalogFromChannel };

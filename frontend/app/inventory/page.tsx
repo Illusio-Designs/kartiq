@@ -117,6 +117,23 @@ export default function InventoryPage() {
     onError: (e: any) => toast.error(e?.response?.data?.error || e.message),
   });
 
+  // First-time: pull the Amazon catalog (products + on-hand stock) into Kartriq.
+  const amazonChannels = channels.filter((c: any) => String(c.type || '').startsWith('AMAZON'));
+  const pullCatalogMutation = useMutation({
+    mutationFn: async () => {
+      if (!amazonChannels.length) throw new Error('Connect an Amazon channel first');
+      const results = await Promise.allSettled(amazonChannels.map((c) => channelApi.pullCatalog(c.id)));
+      const ok = results.filter((r) => r.status === 'fulfilled').length;
+      return { ok, failed: results.length - ok };
+    },
+    onSuccess: ({ ok, failed }) => {
+      qc.invalidateQueries({ queryKey: ['inventory'] });
+      qc.invalidateQueries({ queryKey: ['low-stock'] });
+      toast.success(`Pulled catalog from ${ok} channel${ok !== 1 ? 's' : ''}${failed ? `, ${failed} failed` : ''}`);
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.details || e?.response?.data?.error || e.message),
+  });
+
   return (
     <DashboardLayout>
       <div className="space-y-5 animate-slide-up">
@@ -125,7 +142,17 @@ export default function InventoryPage() {
             <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-[#06D4B8] to-[#06B6D4] bg-clip-text text-transparent tracking-tight">Inventory</h1>
             <p className="text-sm text-slate-500 mt-1">{data?.total || 0} SKUs tracked</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {amazonChannels.length > 0 && (
+              <Button
+                variant="secondary"
+                leftIcon={<Boxes size={15} />}
+                loading={pullCatalogMutation.isPending}
+                onClick={() => pullCatalogMutation.mutate()}
+              >
+                Pull Amazon catalog
+              </Button>
+            )}
             <Button
               variant="secondary"
               leftIcon={<RefreshCw size={15} />}

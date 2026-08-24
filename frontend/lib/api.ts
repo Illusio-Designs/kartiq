@@ -535,6 +535,7 @@ export const channelApi = {
   syncOrders: (id: string, body?: { since?: string }) =>
     api.post(`/channels/${id}/sync/orders`, body || {}),
   syncInventory: (id: string) => api.post(`/channels/${id}/sync/inventory`, {}),
+  pullCatalog: (id: string) => api.post(`/channels/${id}/pull-catalog`, {}),
 
   // SKU mappings (ChannelListing)
   listListings: (id: string) => api.get(`/channels/${id}/listings`),
