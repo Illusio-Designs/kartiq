@@ -32,9 +32,16 @@ router.get('/sales', requirePermission('reports.read'), async (req, res) => {
 router.get('/inventory-valuation', requirePermission('reports.read'), async (req, res) => {
   const items = await prisma.inventoryItem.findMany({
     where: { tenantId: req.tenant.id },
-    include: { variant: true, warehouse: true },
+    // Include the product so the report can show its name; without this the
+    // frontend's `item.variant.product.name` was always blank.
+    include: { variant: { include: { product: true } }, warehouse: true },
   });
-  const valuation = items.map((i) => ({ ...i, value: Number(i.variant.costPrice) * i.quantityOnHand }));
+  // Guard against an inventory row whose variant is missing (orphaned/deleted)
+  // — reading `i.variant.costPrice` on null previously 500'd the whole report.
+  const valuation = items.map((i) => ({
+    ...i,
+    value: Number(i.variant?.costPrice || 0) * (i.quantityOnHand || 0),
+  }));
   const total = valuation.reduce((s, i) => s + i.value, 0);
   res.json({ items: valuation, totalValue: total });
 });

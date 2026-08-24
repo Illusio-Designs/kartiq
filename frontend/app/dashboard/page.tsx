@@ -15,6 +15,12 @@ import {
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 
+// Order status → badge colour (was hard-coded to "Success" for every row).
+const STATUS_BADGE: Record<string, 'emerald' | 'blue' | 'amber' | 'rose' | 'slate'> = {
+  DELIVERED: 'emerald', SHIPPED: 'blue', PROCESSING: 'amber', CONFIRMED: 'blue',
+  PENDING: 'slate', CANCELLED: 'rose', RETURNED: 'rose',
+};
+
 // Recharts is ~90KB gzipped — load it only when the chart hits the viewport.
 const EarningsAreaChart = dynamic(() => import('@/components/charts/EarningsAreaChart'), {
   ssr: false,
@@ -125,12 +131,16 @@ export default function DashboardPage() {
               )}
             </div>
             <div className="flex items-center gap-2 mt-5">
-              <Button variant="primary" size="sm" leftIcon={<Send size={12} />} className="flex-1">
-                Sync Now
-              </Button>
-              <Button variant="secondary" size="sm" className="flex-1">
-                Reports
-              </Button>
+              <Link href="/orders" className="flex-1">
+                <Button variant="primary" size="sm" leftIcon={<Send size={12} />} fullWidth>
+                  Sync Now
+                </Button>
+              </Link>
+              <Link href="/reports" className="flex-1">
+                <Button variant="secondary" size="sm" fullWidth>
+                  Reports
+                </Button>
+              </Link>
             </div>
           </Card>
 
@@ -209,9 +219,7 @@ export default function DashboardPage() {
                     <Avatar name={c.name || c.type} size="md" />
                     <div className="min-w-0">
                       <div className="text-sm font-bold text-slate-900 truncate">{c.name}</div>
-                      <div className="text-xs text-slate-500 font-semibold">
-                        {c.connectedChannels?.length || 0} active
-                      </div>
+                      <div className="text-xs text-slate-500 font-semibold">{c.category || 'Connected'}</div>
                     </div>
                   </div>
                   <Badge variant="emerald" dot>Active</Badge>
@@ -333,7 +341,7 @@ export default function DashboardPage() {
                             <Package size={13} className="text-emerald-600" />
                           </div>
                           <div className="min-w-0">
-                            <div className="font-bold text-slate-900 text-xs truncate">{o.orderNumber}</div>
+                            <div className="font-bold text-slate-900 text-xs truncate">{o.channelOrderId || o.orderNumber}</div>
                             <div className="text-[10px] text-slate-500 truncate">{o.customer?.name}</div>
                           </div>
                         </div>
@@ -343,7 +351,7 @@ export default function DashboardPage() {
                       </td>
                       <td className="px-2 py-3.5 text-sm font-bold text-slate-900">{formatCurrency(o.total)}</td>
                       <td className="px-2 py-3.5 text-right pr-5">
-                        <Badge variant="emerald" dot>Success</Badge>
+                        <Badge variant={STATUS_BADGE[o.status] || 'slate'} dot>{o.status || '—'}</Badge>
                       </td>
                     </tr>
                   ))}
@@ -366,7 +374,7 @@ export default function DashboardPage() {
                     <Package size={15} className="text-emerald-600" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="font-bold text-slate-900 text-sm truncate">{o.orderNumber}</div>
+                    <div className="font-bold text-slate-900 text-sm truncate">{o.channelOrderId || o.orderNumber}</div>
                     <div className="text-xs text-slate-500 truncate">{o.customer?.name}</div>
                     <div className="text-[10px] text-slate-400 mt-0.5">
                       {new Date(o.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
@@ -374,7 +382,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="text-right">
                     <div className="text-sm font-bold text-slate-900">{formatCurrency(o.total)}</div>
-                    <Badge variant="emerald" dot className="mt-1">Success</Badge>
+                    <Badge variant={STATUS_BADGE[o.status] || 'slate'} dot className="mt-1">{o.status || '—'}</Badge>
                   </div>
                 </div>
               ))}
