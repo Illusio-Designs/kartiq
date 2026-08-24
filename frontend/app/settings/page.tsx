@@ -8,8 +8,9 @@ import {
 } from '@/components/ui';
 import {
   User, Building2, Bell, Shield, CreditCard, Mail, Save, Check,
-  Download, Trash2, Smartphone, AlertTriangle,
+  Download, Trash2, Smartphone, AlertTriangle, Palette,
 } from 'lucide-react';
+import { ThemeSegmented } from '@/components/theme/ThemeToggle';
 import { useAuthStore } from '@/store/auth.store';
 import { authApi, billingApi } from '@/lib/api';
 import { Modal } from '@/components/ui/Modal';
@@ -20,6 +21,7 @@ const TABS = [
   { key: 'company',  label: 'Company',       icon: Building2 },
   { key: 'security', label: 'Security',      icon: Shield },
   { key: 'notifications', label: 'Notifications', icon: Bell },
+  { key: 'appearance', label: 'Appearance',   icon: Palette },
   { key: 'billing',  label: 'Billing',       icon: CreditCard },
 ];
 
@@ -292,6 +294,23 @@ export default function SettingsPage() {
                   <Button leftIcon={saved ? <Check size={14} /> : <Save size={14} />} onClick={saveNotifications}>
                     {saved ? 'Saved' : 'Save Preferences'}
                   </Button>
+                </div>
+              </Card>
+            )}
+
+            {tab === 'appearance' && (
+              <Card className="p-6">
+                <h2 className="font-bold text-lg text-slate-900 mb-1">Appearance</h2>
+                <p className="text-xs text-slate-500 mb-5">Choose how Kartriq looks to you</p>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-slate-700">Theme</label>
+                  <ThemeSegmented />
+                  <p className="text-xs text-slate-500 mt-2">
+                    <span className="font-semibold">System</span> follows your device setting and
+                    switches automatically between light and dark. Your choice is saved on this
+                    browser. You can also switch any time from the moon/sun button in the top bar.
+                  </p>
                 </div>
               </Card>
             )}
