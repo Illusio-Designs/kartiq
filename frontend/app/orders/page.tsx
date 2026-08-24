@@ -9,7 +9,8 @@ import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import {
   Button, Badge, Card, Modal, Input, Textarea, Select, Pagination, Tooltip, Loader, Tabs, EmptyState,
 } from '@/components/ui';
-import { AlertTriangle, CheckCircle2, Package, Plus, Star, Trash2, XCircle, Zap, Hand, Layers, ShoppingBag, Plug } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Package, Plus, Star, Trash2, XCircle, Zap, Hand, Layers, ShoppingBag, Plug, RefreshCw } from 'lucide-react';
+import { toast } from '@/store/toast.store';
 import Link from 'next/link';
 
 const STATUSES = [
@@ -81,6 +82,26 @@ export default function OrdersPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['orders'] }),
   });
 
+  // Pull the latest orders from every connected channel.
+  const { data: channelsData } = useQuery({
+    queryKey: ['channels'],
+    queryFn: () => channelApi.list().then((r) => r.data),
+  });
+  const channels: any[] = Array.isArray(channelsData) ? channelsData : (channelsData?.channels || []);
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      if (!channels.length) throw new Error('No channels connected yet');
+      const results = await Promise.allSettled(channels.map((c) => channelApi.syncOrders(c.id)));
+      const ok = results.filter((r) => r.status === 'fulfilled').length;
+      return { ok, failed: results.length - ok };
+    },
+    onSuccess: ({ ok, failed }) => {
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      toast.success(`Synced ${ok} channel${ok !== 1 ? 's' : ''}${failed ? `, ${failed} failed` : ''}`);
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || e.message),
+  });
+
   const reviewMutation = useMutation({
     mutationFn: (id: string) => orderApi.requestReview(id),
     onSuccess: (res, id) => {
@@ -101,9 +122,19 @@ export default function OrdersPage() {
             <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-[#06D4B8] to-[#06B6D4] bg-clip-text text-transparent tracking-tight">Orders</h1>
             <p className="text-sm text-slate-500 mt-1">{data?.total || 0} total orders</p>
           </div>
-          <Button leftIcon={<Plus size={15} />} onClick={() => setModalOpen(true)}>
-            New Order
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              leftIcon={<RefreshCw size={15} />}
+              loading={syncMutation.isPending}
+              onClick={() => syncMutation.mutate()}
+            >
+              Sync
+            </Button>
+            <Button leftIcon={<Plus size={15} />} onClick={() => setModalOpen(true)}>
+              New Order
+            </Button>
+          </div>
         </div>
 
         {/* Fulfillment tabs */}

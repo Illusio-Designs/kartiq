@@ -3,12 +3,13 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { inventoryApi, warehouseApi, productApi } from '@/lib/api';
+import { inventoryApi, warehouseApi, productApi, channelApi } from '@/lib/api';
+import { toast } from '@/store/toast.store';
 import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import {
   Button, Badge, Card, Modal, Input, Textarea, Select, Pagination, Tabs, EmptyState,
 } from '@/components/ui';
-import { AlertTriangle, Plus, ArrowUpDown, Boxes, History, Package } from 'lucide-react';
+import { AlertTriangle, Plus, ArrowUpDown, Boxes, History, Package, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 
 const TYPE_OPTIONS = [
@@ -96,6 +97,26 @@ export default function InventoryPage() {
     onError: (err: any) => setError(err.response?.data?.error || err.message),
   });
 
+  // Push current stock levels out to every connected channel.
+  const { data: channelsData } = useQuery({
+    queryKey: ['channels'],
+    queryFn: () => channelApi.list().then((r) => r.data),
+  });
+  const channels: any[] = Array.isArray(channelsData) ? channelsData : (channelsData?.channels || []);
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      if (!channels.length) throw new Error('No channels connected yet');
+      const results = await Promise.allSettled(channels.map((c) => channelApi.syncInventory(c.id)));
+      const ok = results.filter((r) => r.status === 'fulfilled').length;
+      return { ok, failed: results.length - ok };
+    },
+    onSuccess: ({ ok, failed }) => {
+      qc.invalidateQueries({ queryKey: ['inventory'] });
+      toast.success(`Pushed inventory to ${ok} channel${ok !== 1 ? 's' : ''}${failed ? `, ${failed} failed` : ''}`);
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || e.message),
+  });
+
   return (
     <DashboardLayout>
       <div className="space-y-5 animate-slide-up">
@@ -104,9 +125,19 @@ export default function InventoryPage() {
             <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-[#06D4B8] to-[#06B6D4] bg-clip-text text-transparent tracking-tight">Inventory</h1>
             <p className="text-sm text-slate-500 mt-1">{data?.total || 0} SKUs tracked</p>
           </div>
-          <Button leftIcon={<Plus size={15} />} onClick={() => setShowAdjust(true)}>
-            Adjust Stock
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              leftIcon={<RefreshCw size={15} />}
+              loading={syncMutation.isPending}
+              onClick={() => syncMutation.mutate()}
+            >
+              Sync
+            </Button>
+            <Button leftIcon={<Plus size={15} />} onClick={() => setShowAdjust(true)}>
+              Adjust Stock
+            </Button>
+          </div>
         </div>
 
         {lowStock && lowStock.length > 0 && (
