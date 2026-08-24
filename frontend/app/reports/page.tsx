@@ -73,13 +73,13 @@ export default function ReportsPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50">
                 <tr className="text-left text-gray-500">
-                  <th className="px-3 py-2 font-medium">#</th>
-                  <th className="px-3 py-2 font-medium">Product</th>
-                  <th className="px-3 py-2 font-medium">SKU</th>
-                  <th className="px-3 py-2 font-medium">Warehouse</th>
-                  <th className="px-3 py-2 font-medium">Qty</th>
-                  <th className="px-3 py-2 font-medium">Cost Price</th>
-                  <th className="px-3 py-2 font-medium">Total Value</th>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap">#</th>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap w-full">Product</th>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap">SKU</th>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap">Warehouse</th>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap">Qty</th>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap">Cost Price</th>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap">Total Value</th>
                 </tr>
               </thead>
               <tbody className="divide-y">

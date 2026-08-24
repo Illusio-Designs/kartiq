@@ -117,8 +117,8 @@ export default function InvoicesPage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50/50 border-b border-slate-100">
                 <tr className="text-left text-[10px] uppercase tracking-widest text-slate-400">
-                  {['#', 'Invoice #', 'Type', 'Reference', 'Amount', 'Status', 'Due Date', 'Actions'].map(h => (
-                    <th key={h} className="px-4 py-3 font-bold">{h}</th>
+                  {['#', 'Invoice #', 'Type', 'Reference', 'Amount', 'Status', 'Due Date', 'Actions'].map((h, i) => (
+                    <th key={h} className={`px-4 py-3 font-bold whitespace-nowrap ${i === 3 ? 'w-full' : ''}`}>{h}</th>
                   ))}
                 </tr>
               </thead>

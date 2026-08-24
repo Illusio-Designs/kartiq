@@ -54,8 +54,8 @@ export default function PurchasesPage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50/50 border-b border-slate-100">
                 <tr className="text-left text-[10px] uppercase tracking-widest text-slate-400">
-                  {['#', 'PO Number', 'Vendor', 'Status', 'Expected', 'Items', 'Total', 'Created'].map(h => (
-                    <th key={h} className="px-4 py-3 font-bold">{h}</th>
+                  {['#', 'PO Number', 'Vendor', 'Status', 'Expected', 'Items', 'Total', 'Created'].map((h, i) => (
+                    <th key={h} className={`px-4 py-3 font-bold whitespace-nowrap ${i === 2 ? 'w-full' : ''}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
