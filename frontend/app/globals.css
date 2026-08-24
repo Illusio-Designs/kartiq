@@ -335,3 +335,15 @@
   .animate-orbit      { animation: orbit 2s linear infinite; }
   .animate-loading-bar { animation: loading-bar 1s ease-in-out infinite; }
 }
+
+/* iOS Safari zooms the page in when a focused form control has a font-size
+   below 16px. This rule (deliberately unlayered so it wins over Tailwind's
+   .text-sm without !important) keeps inputs at 16px on phones to stop the
+   zoom-on-focus, while desktop keeps its denser sizing. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
