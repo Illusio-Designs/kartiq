@@ -160,7 +160,9 @@ async function runAllJobs() {
     await safe('pushInventoryToAll', pushInventoryToAll),
     await safe('pollShipmentStatus', pollShipmentStatus),
     await safe('processReviewQueue', () => processReviewQueue({})),
-    await safe('runAutopayJob', runAutopayJob),
+    // Wallet auto-topup is intentionally disabled (see the commented import
+    // above) — no runAutopayJob call here. Referencing the undefined symbol
+    // threw a ReferenceError that aborted the entire cron run.
   );
 
   console.log('[cron] done in', Date.now() - t0, 'ms', out);

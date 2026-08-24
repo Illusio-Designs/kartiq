@@ -45,6 +45,10 @@ class AmazonSmartBizAdapter {
     // Smart Biz is India-only. Mode (sandbox vs production) comes from
     // process.env.CHANNEL_MODE — see backend/src/config/channel-endpoints.js.
     this.spApi = getEndpoint('AMAZON_SMARTBIZ', 'IN');
+    // Smart Biz stock lives in Amazon's MCF warehouse — Kartriq can't set it.
+    // This flag tells the inventory-push job to skip the channel entirely
+    // instead of calling updateInventoryLevel (which throws) every cycle.
+    this.inventoryManagedByChannel = true;
   }
 
   // Smart Biz uses the same SP-API Listings endpoint as Amazon proper
@@ -351,6 +355,16 @@ class AmazonSmartBizAdapter {
   // ── Private helpers ───────────────────────────────────────────────────────────
 
   _transformFulfillmentOrder(o) {
+    // Map Amazon's MCF fulfillmentOrderStatus onto Kartriq's order status.
+    // Statuses: New | Received | Planning | Processing | Cancelled | Complete |
+    // CompletePartialled | Unfulfillable | Invalid.
+    const s = o.fulfillmentOrderStatus;
+    const mcfStatus = (s === 'COMPLETE' || s === 'CompletePartialled') ? 'DELIVERED'
+      : s === 'Cancelled' ? 'CANCELLED'
+      : (s === 'Processing' || s === 'Planning' || s === 'Received') ? 'PROCESSING'
+      : 'PENDING';
+    // Best-known fulfillment timestamp from the MCF order.
+    const shipDate = new Date(o.statusUpdatedDate || o.receivedDate || Date.now());
     return {
       channelOrderId: o.sellerFulfillmentOrderId,
       channelOrderNumber: o.displayableOrderId,
@@ -378,9 +392,16 @@ class AmazonSmartBizAdapter {
       subtotal: 0, shippingCharge: 0, tax: 0, total: 0, discount: 0,
       paymentMethod: 'Smart Biz',
       paymentStatus: 'PAID',
-      status: o.fulfillmentOrderStatus === 'COMPLETE' ? 'DELIVERED'
-            : o.fulfillmentOrderStatus === 'PROCESSING' ? 'PROCESSING'
-            : 'PENDING',
+      // MCF (fulfillment-by-Amazon) — mark the listing as CHANNEL-managed so
+      // Kartriq never tries to push stock back for these SKUs.
+      fulfillment_channel: 'AFN',
+      status: mcfStatus,
+      // The MCF fulfillmentOrders list carries no pricing, so a poll-only order
+      // has ₹0 totals; the real money arrives via the Smart Biz webhook
+      // (parseWebhook). What the poll DOES know is fulfillment progress, so we
+      // surface shipped/delivered timestamps to advance an existing order.
+      shippedAt: (mcfStatus === 'SHIPPED' || mcfStatus === 'DELIVERED') ? shipDate : null,
+      deliveredAt: mcfStatus === 'DELIVERED' ? (o.fulfillmentOrderStatus === 'COMPLETE' ? shipDate : new Date()) : null,
       orderedAt: new Date(o.receivedDate || Date.now()),
     };
   }

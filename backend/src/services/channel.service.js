@@ -450,6 +450,10 @@ function getAdapter(channel) {
 async function ensureListingForItem({ tenantId, channelId, item }) {
   const sku = String(item.channelSku);
   const price = Number(item.unitPrice || 0) || 0;
+  // SELF (merchant/MFN) vs CHANNEL (FBA/AFN) — only trust an explicit value.
+  const listingFulfillment = item.fulfillmentType === 'CHANNEL' || item.fulfillmentType === 'SELF'
+    ? item.fulfillmentType
+    : null;
 
   // Reuse an existing variant with the same SKU if the tenant already has one
   // (e.g. created for another channel); otherwise create the product + variant.
@@ -494,14 +498,51 @@ async function ensureListingForItem({ tenantId, channelId, item }) {
   if (!listing) {
     try {
       listing = await prisma.channelListing.create({
-        data: { tenantId, channelId, productId, variantId, channelSku: sku, channelPrice: price, isActive: true },
+        data: { tenantId, channelId, productId, variantId, channelSku: sku, channelPrice: price, isActive: true, fulfillmentType: listingFulfillment },
       });
     } catch (e) {
       listing = await prisma.channelListing.findFirst({ where: { channelId, channelSku: sku } });
       if (!listing) throw e;
     }
+  } else if (listingFulfillment && listing.fulfillmentType !== listingFulfillment) {
+    // Backfill/refresh the fulfillment model once we learn it (e.g. an order
+    // reveals a listing first seen via catalog import is actually FBA).
+    await prisma.channelListing.update({ where: { id: listing.id }, data: { fulfillmentType: listingFulfillment } }).catch(() => {});
+    listing.fulfillmentType = listingFulfillment;
   }
   return listing;
+}
+
+// Forward-only fulfillment states. A re-poll may only move an order along this
+// path (never backwards); terminal CANCELLED/RETURNED are handled separately.
+const ORDER_FLOW = ['PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED'];
+
+// Advance an already-imported order from a fresh channel poll: bump its status
+// forward, apply a cancellation/return, and stamp shipped/delivered times.
+// Returns true if anything changed. Never regresses a status or overwrites an
+// existing timestamp.
+async function applyOrderProgress(existing, raw) {
+  const upd = {};
+  const cur = existing.status;
+  const next = raw.status;
+  if (next && next !== cur) {
+    const ci = ORDER_FLOW.indexOf(cur);
+    const ni = ORDER_FLOW.indexOf(next);
+    const forward = ni !== -1 && ci !== -1 && ni > ci;
+    const cancel = next === 'CANCELLED' && cur !== 'DELIVERED' && cur !== 'RETURNED';
+    const ret = next === 'RETURNED' && cur === 'DELIVERED';
+    if (forward || cancel || ret) upd.status = next;
+  }
+  const effective = upd.status || cur;
+  if (!existing.shippedAt && (raw.shippedAt || effective === 'SHIPPED' || effective === 'DELIVERED')) {
+    upd.shippedAt = raw.shippedAt || new Date();
+  }
+  if (!existing.deliveredAt && (raw.deliveredAt || effective === 'DELIVERED')) {
+    upd.deliveredAt = raw.deliveredAt || new Date();
+  }
+  if (!Object.keys(upd).length) return false;
+  await prisma.order.update({ where: { id: existing.id }, data: upd }).catch(() => {});
+  return true;
 }
 
 async function importOrders(channelId, rawOrders, { tenantId } = {}) {
@@ -512,7 +553,7 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
     tenantId = ch.tenantId;
   }
 
-  const results = { imported: 0, skipped: 0, failed: 0, errors: [] };
+  const results = { imported: 0, updated: 0, skipped: 0, failed: 0, errors: [] };
 
   for (const raw of rawOrders) {
     try {
@@ -525,7 +566,12 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
         // it fully below; otherwise it's a genuine duplicate.
         const existingItems = await prisma.orderItem.findMany({ where: { orderId: existing.id }, take: 1 });
         if (existingItems.length > 0 || !(raw.items && raw.items.length)) {
-          results.skipped++;
+          // Not a re-import, but a re-poll can still carry fresh fulfillment
+          // progress (Pending → Shipped → Delivered, or a cancellation). Advance
+          // the existing order's status/timestamps rather than treating every
+          // re-poll as an inert duplicate.
+          if (await applyOrderProgress(existing, raw)) results.updated++;
+          else results.skipped++;
           continue;
         }
         await prisma.order.delete({ where: { id: existing.id } }).catch(() => {});
@@ -546,6 +592,12 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
         });
       }
 
+      // Classify the listing's stock model from the order's fulfillment channel:
+      // AFN = Amazon FBA (CHANNEL, Amazon-managed stock), MFN = merchant-fulfilled
+      // (SELF, our stock). Unknown channels leave it null.
+      const fc = String(raw.fulfillment_channel || '').toUpperCase();
+      const listingFulfillment = fc === 'AFN' ? 'CHANNEL' : fc === 'MFN' ? 'SELF' : null;
+
       const resolvedItems = [];
       for (const item of raw.items) {
         if (!item.channelSku) continue;
@@ -557,10 +609,13 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
         // and the catalog fills itself from the channel.
         if (!listing) {
           try {
-            listing = await ensureListingForItem({ tenantId, channelId, item });
+            listing = await ensureListingForItem({ tenantId, channelId, item: { ...item, fulfillmentType: listingFulfillment } });
           } catch (e) {
             console.warn(`[import] auto-create product failed for SKU ${item.channelSku}: ${e.message}`);
           }
+        } else if (listingFulfillment && listing.fulfillmentType !== listingFulfillment) {
+          // Learned the fulfillment model from this order — backfill it.
+          await prisma.channelListing.update({ where: { id: listing.id }, data: { fulfillmentType: listingFulfillment } }).catch(() => {});
         }
         if (listing) resolvedItems.push({ ...item, variantId: listing.variantId });
       }
@@ -644,6 +699,8 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
             paymentStatus: raw.paymentStatus || 'PENDING',
             status: initialStatus,
             orderedAt: raw.orderedAt || new Date(),
+            ...(raw.shippedAt && { shippedAt: raw.shippedAt }),
+            ...(raw.deliveredAt && { deliveredAt: raw.deliveredAt }),
             rtoScore: rto?.score ?? null,
             rtoRiskLevel: rto?.level ?? null,
             rtoFactors: rto?.factors ?? null,
@@ -694,13 +751,26 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
 async function pushInventoryToChannel(channel, { tenantId } = {}) {
   const adapter = getAdapter(channel);
   const scopedTenantId = tenantId || channel.tenantId;
+
+  // Whole-channel opt-out: some channels (Amazon Smart Biz / MCF) keep stock in
+  // the channel's own warehouse, so there is nothing for Kartriq to push. Skip
+  // the channel rather than calling updateInventoryLevel, which throws.
+  if (adapter.inventoryManagedByChannel) {
+    return { updated: 0, skipped: 0, failed: 0, errors: [], note: 'inventory managed by channel — nothing to push' };
+  }
+
   const listings = await prisma.channelListing.findMany({
     where: { tenantId: scopedTenantId, channelId: channel.id, isActive: true },
     include: { variant: { include: { inventoryItems: true } } },
   });
 
-  const results = { updated: 0, failed: 0, errors: [] };
+  const results = { updated: 0, skipped: 0, failed: 0, errors: [] };
   for (const listing of listings) {
+    // FBA/AFN stock is managed by Amazon — pushing a local quantity to it is
+    // rejected by the Listings API and would surface as a spurious sync error
+    // every cycle. Skip CHANNEL-fulfilled listings; only merchant-fulfilled
+    // (SELF, or not-yet-classified) stock is ours to push.
+    if (listing.fulfillmentType === 'CHANNEL') { results.skipped++; continue; }
     try {
       const totalQty = listing.variant.inventoryItems.reduce((s, inv) => s + inv.quantityAvailable, 0);
       await adapter.updateInventoryLevel(listing.channelSku, totalQty);
@@ -751,8 +821,11 @@ async function pushProductToChannels(productId, { channelIds = null, tenantId = 
       images: images.length ? images : undefined,
       price: listing.channelPrice ? parseFloat(listing.channelPrice) : parseFloat(variant.sellingPrice),
       mrp: parseFloat(variant.mrp),
-      qty: totalQty,
     };
+    // Only push quantity for merchant-fulfilled (SELF/unknown) listings. FBA/AFN
+    // stock is Amazon-managed and rejects a quantity patch — push the listing
+    // content (title/price/images) but leave its quantity to Amazon.
+    if (listing.fulfillmentType !== 'CHANNEL') fields.qty = totalQty;
 
     let adapter;
     try {
@@ -823,7 +896,10 @@ async function importCatalogFromChannel(channel, { tenantId } = {}) {
     if (!item.channelSku) continue;
     let listing;
     try {
-      listing = await ensureListingForItem({ tenantId, channelId: channel.id, item: { ...item, unitPrice: 0 } });
+      // fetchInventorySummaries pulls the FBA (Amazon-managed) catalog, so
+      // these listings are CHANNEL-fulfilled — mark them so we never push
+      // local quantities back to Amazon for them.
+      listing = await ensureListingForItem({ tenantId, channelId: channel.id, item: { ...item, unitPrice: 0, fulfillmentType: 'CHANNEL' } });
       results.products++;
     } catch (e) {
       results.failed++;
@@ -845,4 +921,36 @@ async function importCatalogFromChannel(channel, { tenantId } = {}) {
   return results;
 }
 
-module.exports = { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, pushProductToChannels, importCatalogFromChannel };
+// Confirm a merchant-fulfilled shipment back to the origin channel (e.g. Amazon
+// MFN) once Kartriq marks the order shipped. Best-effort: only runs for a
+// channel order whose adapter supports confirmShipment, and only for
+// SELF-fulfilled orders (FBA/CHANNEL orders ship themselves). Returns a result
+// object; never throws — callers treat channel confirmation as non-blocking.
+async function confirmChannelShipment(order, { trackingNumber, courierName, shipDate } = {}) {
+  try {
+    if (!order?.channelId || !order?.channelOrderId) return { skipped: 'not a channel order' };
+    // Don't confirm FBA/channel-fulfilled orders — Amazon owns their shipping.
+    if (order.fulfillmentType && order.fulfillmentType !== 'SELF') return { skipped: 'channel-fulfilled' };
+    const track = trackingNumber || order.trackingNumber || order.awb;
+    if (!track) return { skipped: 'no tracking number' };
+
+    const channel = await prisma.channel.findFirst({ where: { id: order.channelId } });
+    if (!channel) return { skipped: 'channel not found' };
+    let adapter;
+    try { adapter = getAdapter(channel); } catch { return { skipped: 'adapter unavailable' }; }
+    if (typeof adapter.confirmShipment !== 'function') return { skipped: 'channel does not support shipment confirmation' };
+
+    const res = await adapter.confirmShipment(order.channelOrderId, {
+      trackingNumber: track,
+      carrierName: courierName || order.courierName || undefined,
+      shipDate,
+    });
+    return { confirmed: true, res };
+  } catch (err) {
+    // Seller may not have the fulfillment role yet, or the order may be FBA —
+    // surface the reason without failing the local status update.
+    return { error: err.message };
+  }
+}
+
+module.exports = { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, pushProductToChannels, importCatalogFromChannel, confirmChannelShipment };

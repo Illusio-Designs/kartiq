@@ -41,6 +41,11 @@ async function initDb() {
     // Per-channel default fulfillment (SELF | CHANNEL | BOTH)
     { table: 'channels', column: 'defaultFulfillmentType', ddl: "VARCHAR(16) NOT NULL DEFAULT 'SELF'" },
 
+    // Per-listing fulfillment model — SELF (merchant/MFN stock we control) vs
+    // CHANNEL (FBA/AFN stock Amazon manages). NULL = not yet classified. Used
+    // to stop pushing local quantities to FBA listings, which Amazon rejects.
+    { table: 'channel_listings', column: 'fulfillmentType', ddl: 'VARCHAR(16) DEFAULT NULL' },
+
     // User profile extras
     { table: 'users', column: 'phone', ddl: 'VARCHAR(30) DEFAULT NULL' },
 
