@@ -182,10 +182,10 @@ export default function ReferralsPage() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                   <tr>
-                    <th className="text-left p-3">Business</th>
-                    <th className="text-left p-3">Signed up</th>
-                    <th className="text-left p-3">Status</th>
-                    <th className="text-right p-3">Reward</th>
+                    <th className="text-left p-3 whitespace-nowrap w-full">Business</th>
+                    <th className="text-left p-3 whitespace-nowrap">Signed up</th>
+                    <th className="text-left p-3 whitespace-nowrap">Status</th>
+                    <th className="text-right p-3 whitespace-nowrap">Reward</th>
                   </tr>
                 </thead>
                 <tbody>
