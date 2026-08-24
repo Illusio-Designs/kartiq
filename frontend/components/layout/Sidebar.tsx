@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import {
-  LayoutDashboard, Package, Warehouse, ShoppingCart, TrendingUp,
+  LayoutDashboard, Package, ShoppingCart, TrendingUp,
   Users, Store, Truck, FileText, BarChart2, Settings, LogOut,
   Building2, Plug, HelpCircle, Sparkles, PanelLeftClose, PanelLeftOpen, X,
   Wallet, UserCog, Palette, ChevronDown, Gauge, Activity, Gift,
@@ -33,8 +33,7 @@ const DEFAULT_NAV_GROUPS: SidebarNavGroup[] = [
     items: [
       { label: 'Dashboard',   href: '/dashboard',   icon: LayoutDashboard },
       { label: 'Orders',      href: '/orders',       icon: ShoppingCart },
-      { label: 'Products',    href: '/products',     icon: Package },
-      { label: 'Inventory',   href: '/inventory',    icon: Warehouse },
+      { label: 'Catalog',     href: '/products',     icon: Package },
       { label: 'Reports',     href: '/reports',      icon: BarChart2 },
     ],
   },
