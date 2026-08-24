@@ -91,6 +91,14 @@
 }
 
 @layer components {
+  /* Hide the scrollbar on horizontally-scrollable strips (breadcrumbs, chip
+     rows) while keeping them scrollable via touch/trackpad. */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+
   .glass {
     background: rgba(255, 255, 255, 0.8);
     backdrop-filter: blur(20px) saturate(180%);

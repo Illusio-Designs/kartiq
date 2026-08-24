@@ -6,6 +6,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { reportApi } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 import { DatePicker } from '@/components/ui/DatePicker';
+import { PageHeader } from '@/components/layout/PageHeader';
 
 // Local YYYY-MM-DD — using toISOString() would shift the day for +ve timezones
 // (e.g. IST), sending the wrong date to the report API.
@@ -32,10 +33,7 @@ export default function ReportsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-[#06D4B8] to-[#06B6D4] bg-clip-text text-transparent">Reports</h1>
-          <p className="text-sm text-gray-500 mt-1">Analytics and business insights</p>
-        </div>
+        <PageHeader title="Reports" subtitle="Analytics and business insights" />
 
         {/* Date Filter */}
         <div className="flex gap-3 items-end flex-wrap">

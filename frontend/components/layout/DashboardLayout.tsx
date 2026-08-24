@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { SearchRouteReset } from './SearchRouteReset';
+import { Breadcrumbs } from './Breadcrumbs';
 import { useAuthStore, isTokenExpired } from '@/store/auth.store';
 import { MaintenancePage } from '@/components/MaintenancePage';
 import { setPlanLimitHandler, authApi, publicApi } from '@/lib/api';
@@ -210,6 +211,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         )}
         <TrialBanner />
         <div className="flex-1 p-4 sm:p-5 lg:p-6 xl:p-8 animate-fade-in flex flex-col">
+          <Breadcrumbs />
           <BillingLock>{children}</BillingLock>
         </div>
         <CommandPalette />

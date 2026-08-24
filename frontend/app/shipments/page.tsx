@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { shipmentApi, orderApi, channelApi } from '@/lib/api';
 import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import { Button, Badge, Card, Pagination, Select, Tooltip, Input, Modal, Loader, EmptyState } from '@/components/ui';
@@ -83,18 +84,18 @@ export default function ShipmentsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-5 animate-slide-up">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-[#06D4B8] to-[#06B6D4] bg-clip-text text-transparent tracking-tight">Shipments</h1>
-            <p className="text-sm text-slate-500 mt-1">{total} shipments tracked</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" leftIcon={<Search size={14} />} onClick={() => { setTrackModalOpen(true); setTrackResult(null); setTrackError(''); setTrackingInput(''); }}>
-              Track AWB
-            </Button>
-            <Button leftIcon={<Plus size={15} />} onClick={() => setCreateModalOpen(true)}>Create Shipment</Button>
-          </div>
-        </div>
+        <PageHeader
+          title="Shipments"
+          subtitle={`${total} shipments tracked`}
+          actions={
+            <>
+              <Button variant="secondary" leftIcon={<Search size={14} />} onClick={() => { setTrackModalOpen(true); setTrackResult(null); setTrackError(''); setTrackingInput(''); }}>
+                Track AWB
+              </Button>
+              <Button leftIcon={<Plus size={15} />} onClick={() => setCreateModalOpen(true)}>Create Shipment</Button>
+            </>
+          }
+        />
 
         {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

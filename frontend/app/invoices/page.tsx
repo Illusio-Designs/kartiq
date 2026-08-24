@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { invoiceApi } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 import { useFilteredBySearch } from '@/lib/useGlobalSearch';
@@ -78,12 +79,7 @@ export default function InvoicesPage() {
   return (
     <DashboardLayout>
       <div className="space-y-5 animate-slide-up">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-[#06D4B8] to-[#06B6D4] bg-clip-text text-transparent tracking-tight">Invoices</h1>
-            <p className="text-sm text-slate-500 mt-1">{total} invoices generated</p>
-          </div>
-        </div>
+        <PageHeader title="Invoices" subtitle={`${total} invoices generated`} />
 
         {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
