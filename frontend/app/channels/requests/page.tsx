@@ -85,8 +85,8 @@ export default function ChannelRequestsPage() {
             />
           </div>
         ) : (
-          <div className="bg-white rounded-xl border overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="bg-white rounded-xl border overflow-x-auto">
+            <table className="w-full text-sm min-w-[640px]">
               <thead className="bg-gray-50 border-b text-left text-gray-500">
                 <tr>
                   <th className="px-5 py-3 font-medium">#</th>

@@ -106,7 +106,25 @@ export default function ShipmentsPage() {
         <Select value={status} onChange={setStatus} options={STATUS_FILTERS} />
 
         <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
+          {/* Mobile: card list */}
+          <div className="md:hidden divide-y divide-slate-100">
+            {isLoading ? <div className="p-4"><Loader size="sm" /></div> : shipments.length ? shipments.map((s: any) => (
+              <div key={s.id} className="flex items-start justify-between gap-3 p-4">
+                <div className="min-w-0">
+                  <div className="font-bold text-emerald-600 text-sm truncate">{s.orderNumber || s.order?.orderNumber || '—'}</div>
+                  <div className="text-xs text-slate-500 truncate">{s.courierName || '—'}{s.trackingNumber ? ` · ${s.trackingNumber}` : ''}</div>
+                  <div className="mt-1.5"><Badge variant={STATUS_VARIANT[s.status] || 'slate'} dot>{s.status}</Badge></div>
+                </div>
+                <div className="text-right flex-shrink-0 text-xs text-slate-500">
+                  {s.charges ? <div className="text-sm font-bold text-slate-900">₹{s.charges}</div> : null}
+                  {s.weight ? <div>{s.weight} kg</div> : null}
+                  <div className="text-slate-400">{s.shippedAt ? new Date(s.shippedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'}</div>
+                </div>
+              </div>
+            )) : <div className="p-8 text-center text-sm text-slate-400">No shipments.</div>}
+          </div>
+          {/* Desktop: table */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50/50 border-b border-slate-100">
                 <tr className="text-left text-[10px] uppercase tracking-widest text-slate-400">

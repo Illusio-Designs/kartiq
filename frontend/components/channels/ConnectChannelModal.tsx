@@ -76,7 +76,14 @@ export function ConnectChannelModal({
       const provider = schema.oauth;
       if (provider === 'amazon') {
         // For AMAZON_<REGION> variants the backend infers region from channel type;
-        // only the generic AMAZON / AMAZON_SMARTBIZ types need this passed.
+        // the generic AMAZON / AMAZON_SMARTBIZ types need a marketplace selected
+        // first — block OAuth with a clear message rather than starting it blank.
+        const regionField = schema.fields?.find((f: any) => f.key === 'region');
+        if (regionField?.required && !values.region) {
+          setStatus('error');
+          setMessage('Select your Amazon marketplace / region first.');
+          return;
+        }
         const res = await oauthApi.amazonStart(channelId, values.region);
         url = res.data.url;
       } else if (provider === 'shopify') {
