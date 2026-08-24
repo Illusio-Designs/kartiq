@@ -97,11 +97,20 @@ class AmazonAdapter {
   }
 
   async fetchOrders(sinceDate) {
+    // Amazon's Orders API REQUIRES CreatedAfter (or LastUpdatedAfter); calling
+    // it without one returns 400. On a first sync there is no lastSyncAt, so
+    // default to the last 30 days. Accept a Date, an ISO string, or the
+    // { since } wrapper the cron passes, and always send an ISO-8601 value.
+    let since = sinceDate;
+    if (since && typeof since === 'object' && !(since instanceof Date)) since = since.since;
+    if (!since) since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const createdAfter = since instanceof Date ? since.toISOString() : new Date(since).toISOString();
+
     const params = {
       MarketplaceIds: this.marketplaceId,
       OrderStatuses: 'Unshipped,PartiallyShipped,Shipped,Pending',
+      CreatedAfter: createdAfter,
     };
-    if (sinceDate) params.CreatedAfter = sinceDate;
     const data = await this._request('GET', '/orders/v0/orders', params);
     const orders = data.payload?.Orders || [];
     return orders.map(o => this._transformOrder(o));
