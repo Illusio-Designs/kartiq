@@ -208,6 +208,33 @@ class AmazonAdapter {
     return this.updateListing(sku, { qty: quantity });
   }
 
+  // Pull the seller's FBA catalog + on-hand stock (SKU, title, quantity) in one
+  // shot so a first-time tenant can seed products/inventory. FBA only — MFN
+  // stock lives in Kartriq. Paginated via nextToken.
+  async fetchInventorySummaries() {
+    const base = {
+      details: true,
+      granularityType: 'Marketplace',
+      granularityId: this.marketplaceId,
+      marketplaceIds: this.marketplaceId,
+    };
+    const out = [];
+    let nextToken = null;
+    let guard = 0;
+    do {
+      const params = nextToken ? { ...base, nextToken } : base;
+      const data = await this._request('GET', '/fba/inventory/v1/summaries', params);
+      const summaries = data.payload?.inventorySummaries || data.inventorySummaries || [];
+      for (const s of summaries) {
+        const sku = s.sellerSku || s.asin;
+        if (!sku) continue;
+        out.push({ channelSku: sku, name: s.productName || sku, quantity: Number(s.totalQuantity || 0) });
+      }
+      nextToken = data.pagination?.nextToken || null;
+    } while (nextToken && ++guard < 50 && out.length < 5000);
+    return out;
+  }
+
   _transformOrder(o) {
     return {
       channelOrderId: o.AmazonOrderId,

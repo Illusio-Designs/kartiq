@@ -4,7 +4,7 @@ const {
 } = require('../middleware/auth.middleware');
 const prisma = require('../utils/prisma');
 const { encryptCredentials, maskCredentials } = require('../utils/crypto');
-const { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel } = require('../services/channel.service');
+const { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, importCatalogFromChannel } = require('../services/channel.service');
 const { CATALOG, getCatalogEntry, getCatalogByCategory } = require('../data/channel-catalog');
 
 const router = Router();
@@ -463,6 +463,22 @@ router.post('/:id/sync/inventory', requirePermission('channels.sync'), async (re
       data: { syncError: err.message },
     }).catch(() => {});
     res.status(500).json({ error: 'Inventory sync failed', details: err.message });
+  }
+});
+
+// One-time: pull the channel's catalog (products + on-hand stock) into Kartriq.
+router.post('/:id/pull-catalog', requirePermission('channels.sync'), async (req, res) => {
+  try {
+    const channel = await loadTenantChannel(req);
+    if (!channel) return res.status(404).json({ error: 'Channel not found' });
+    const results = await importCatalogFromChannel(channel, { tenantId: req.tenant.id });
+    res.json({ message: 'Catalog import complete', ...results });
+  } catch (err) {
+    await prisma.channel.updateMany({
+      where: { id: req.params.id, tenantId: req.tenant.id },
+      data: { syncError: err.message },
+    }).catch(() => {});
+    res.status(500).json({ error: 'Catalog import failed', details: err.message });
   }
 });
 

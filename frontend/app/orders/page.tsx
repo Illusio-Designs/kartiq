@@ -201,7 +201,8 @@ export default function OrdersPage() {
                   <tr key={o.id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="px-4 py-3 text-slate-500 font-semibold">{(page - 1) * pageSize + idx + 1}</td>
                     <td className="px-4 py-3">
-                      <Link href={`/orders/${o.id}`} className="font-bold text-emerald-600 hover:underline">{o.orderNumber}</Link>
+                      <Link href={`/orders/${o.id}`} className="font-bold text-emerald-600 hover:underline">{o.channelOrderId || o.orderNumber}</Link>
+                      {o.channelOrderId && <div className="text-[11px] text-slate-400 font-mono">{o.orderNumber}</div>}
                     </td>
                     <td className="px-4 py-3 text-slate-700">{o.customer?.name}</td>
                     <td className="px-4 py-3 text-slate-500">{o.channel?.name}</td>
@@ -311,7 +312,7 @@ export default function OrdersPage() {
                   <Package size={15} className="text-emerald-600" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-bold text-slate-900 text-sm truncate">{o.orderNumber}</div>
+                  <div className="font-bold text-slate-900 text-sm truncate">{o.channelOrderId || o.orderNumber}</div>
                   <div className="text-xs text-slate-500 truncate">{o.customer?.name} · {o.channel?.name}</div>
                 </div>
                 <div className="text-right">
