@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const prisma = require('../utils/prisma');
+const db = require('../utils/db');
 
 const productSchema = z.object({
   name: z.string().min(1),
@@ -43,6 +44,37 @@ const getProducts = async (req, res) => {
       prisma.product.findMany({ where, skip, take: Number(limit), include: { category: true, brand: true, variants: true }, orderBy: { createdAt: 'desc' } }),
       prisma.product.count({ where }),
     ]);
+
+    // Merge live inventory + channel presence so the catalog list shows stock
+    // and where each product is listed without N extra requests. Scoped to the
+    // page's products for a cheap grouped query.
+    const tId = tenantId(req);
+    const ids = products.map((p) => p.id);
+    if (ids.length) {
+      const [stockRows, chanRows] = await Promise.all([
+        db('inventory_items')
+          .whereIn('productId', ids).andWhere('tenantId', tId)
+          .groupBy('productId')
+          .select('productId')
+          .sum({ available: 'quantityAvailable' })
+          .sum({ onHand: 'quantityOnHand' })
+          .catch(() => []),
+        db('channel_listings as cl')
+          .join('channels as c', 'c.id', 'cl.channelId')
+          .whereIn('cl.productId', ids).andWhere('cl.tenantId', tId).andWhere('cl.isActive', true)
+          .select('cl.productId as productId', 'c.type as type')
+          .catch(() => []),
+      ]);
+      const stockBy = {};
+      for (const r of stockRows) stockBy[r.productId] = { available: Number(r.available || 0), onHand: Number(r.onHand || 0) };
+      const chanBy = {};
+      for (const r of chanRows) { (chanBy[r.productId] = chanBy[r.productId] || new Set()).add(r.type); }
+      for (const p of products) {
+        p.stockAvailable = stockBy[p.id]?.available ?? 0;
+        p.stockOnHand = stockBy[p.id]?.onHand ?? 0;
+        p.channels = chanBy[p.id] ? [...chanBy[p.id]] : [];
+      }
+    }
     res.json({ products, total, page: Number(page), limit: Number(limit) });
   } catch (e) {
     console.error(e);
