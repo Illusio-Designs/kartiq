@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { productApi } from '@/lib/api';
+import { formatCurrency } from '@/lib/utils';
 import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import {
   Button, Card, Modal, Input, Textarea, Select, Pagination, FileUpload, Tooltip, EmptyState,
@@ -75,48 +76,72 @@ export default function ProductsPage() {
           </div>
         ) : data?.products?.length ? (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {filteredProducts.map((p: any) => (
-                <Card key={p.id} className="p-4 hover:shadow-lg transition-shadow flex flex-col">
-                  <Link href={`/products/${p.id}`} className="flex-1">
-                    <div className="w-full h-32 bg-slate-50 rounded-xl mb-3 flex items-center justify-center overflow-hidden">
-                      {p.images?.[0] ? (
-                        <Image
-                          src={p.images[0]}
-                          alt={p.name}
-                          width={400}
-                          height={256}
-                          className="w-full h-full object-cover"
-                          sizes="(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-                          unoptimized={p.images[0].startsWith('data:')}
-                        />
-                      ) : (
-                        <Package size={32} className="text-slate-300" />
-                      )}
-                    </div>
-                    <h3 className="font-bold text-slate-900 text-sm truncate">{p.name}</h3>
-                    <p className="text-xs text-slate-400 mt-0.5 font-mono">SKU: {p.sku}</p>
-                    <div className="flex items-center justify-between mt-2">
-                      <span className="text-xs text-slate-500">{p.variants?.length || 0} variant{p.variants?.length !== 1 ? 's' : ''}</span>
-                      <span className="text-xs font-semibold text-slate-700">{p.category?.name || '—'}</span>
-                    </div>
-                  </Link>
-                  <Tooltip content="Push this product to all connected channels">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      fullWidth
-                      loading={syncingId === p.id}
-                      leftIcon={<RefreshCw size={12} />}
-                      onClick={() => syncMutation.mutate(p.id)}
-                      className="mt-3"
-                    >
-                      {syncingId === p.id ? 'Syncing…' : 'Sync to Channels'}
-                    </Button>
-                  </Tooltip>
-                </Card>
-              ))}
-            </div>
+            <Card className="p-0 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                      <th className="px-4 py-3">Product</th>
+                      <th className="px-4 py-3">SKU</th>
+                      <th className="px-4 py-3">Category</th>
+                      <th className="px-4 py-3 text-center">Variants</th>
+                      <th className="px-4 py-3 text-right">Price</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredProducts.map((p: any) => {
+                      const thumb = p.images?.[0];
+                      const price = p.variants?.[0]?.sellingPrice;
+                      return (
+                        <tr key={p.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/70 transition-colors">
+                          <td className="px-4 py-3">
+                            <Link href={`/products/${p.id}`} className="flex items-center gap-3 group">
+                              <div className="w-10 h-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                {thumb ? (
+                                  <Image
+                                    src={thumb}
+                                    alt={p.name}
+                                    width={40}
+                                    height={40}
+                                    className="w-full h-full object-cover"
+                                    sizes="40px"
+                                    unoptimized={typeof thumb === 'string' && thumb.startsWith('data:')}
+                                  />
+                                ) : (
+                                  <Package size={16} className="text-slate-300" />
+                                )}
+                              </div>
+                              <span className="font-semibold text-slate-800 group-hover:text-emerald-600 truncate max-w-[280px]">{p.name}</span>
+                            </Link>
+                          </td>
+                          <td className="px-4 py-3 text-slate-500 font-mono text-xs">{p.sku}</td>
+                          <td className="px-4 py-3 text-slate-600">{p.category?.name || '—'}</td>
+                          <td className="px-4 py-3 text-center text-slate-600">{p.variants?.length || 0}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-slate-900">{price != null ? formatCurrency(Number(price)) : '—'}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-end gap-2">
+                              <Tooltip content="Push this product to all connected channels">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  loading={syncingId === p.id}
+                                  leftIcon={<RefreshCw size={12} />}
+                                  onClick={() => syncMutation.mutate(p.id)}
+                                >
+                                  {syncingId === p.id ? 'Syncing…' : 'Sync'}
+                                </Button>
+                              </Tooltip>
+                              <Link href={`/products/${p.id}`} className="text-xs font-bold text-emerald-600 hover:text-emerald-700">View</Link>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
 
             {(data?.total || 0) > pageSize && (
               <Card>

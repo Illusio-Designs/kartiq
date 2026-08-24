@@ -8,6 +8,20 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { orderApi } from '@/lib/api';
 import { formatCurrency, formatDateTime, ORDER_STATUS_COLORS } from '@/lib/utils';
 import { DetailPageSkeleton } from '@/components/Shimmer';
+import { Badge } from '@/components/ui';
+
+// Map an order's fulfilment model to a human label + badge style. For Amazon
+// (and any marketplace) CHANNEL = the marketplace ships it from their own
+// stock (Amazon → FBA / "Fulfilled by Amazon"); SELF = the seller ships it
+// themselves (Amazon → MFN / "Merchant fulfilled"); DROPSHIP = a supplier ships.
+function fulfillmentInfo(order: any): { label: string; variant: 'violet' | 'blue' | 'amber' | 'slate' } | null {
+  const t = order?.fulfillmentType;
+  const isAmazon = String(order?.channel?.type || '').toUpperCase().includes('AMAZON');
+  if (t === 'CHANNEL') return { label: isAmazon ? 'Fulfilled by Amazon (FBA)' : 'Fulfilled by channel', variant: 'violet' };
+  if (t === 'SELF') return { label: isAmazon ? 'Self-fulfilled (MFN)' : 'Self-fulfilled', variant: 'blue' };
+  if (t === 'DROPSHIP') return { label: 'Dropship', variant: 'amber' };
+  return null;
+}
 
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -35,6 +49,7 @@ export default function OrderDetailPage() {
 
   const items: any[] = order.items || [];
   const statusClass = (ORDER_STATUS_COLORS as any)?.[order.status] || 'bg-slate-100 text-slate-700';
+  const fulfillment = fulfillmentInfo(order);
 
   return (
     <DashboardLayout>
@@ -50,12 +65,34 @@ export default function OrderDetailPage() {
               {order.channelOrderId || order.orderNumber}
             </h1>
             <p className="text-sm text-slate-500 mt-1 font-mono">{order.orderNumber}</p>
-            <span className={`inline-block mt-2 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${order.channelOrderId ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
-              {order.channelOrderId ? `Auto-synced from ${order.channel?.name || 'channel'}` : 'Manually created'}
-            </span>
+            <div className="flex items-center gap-2 flex-wrap mt-2">
+              <Badge variant={order.channelOrderId ? 'blue' : 'slate'}>
+                {order.channelOrderId ? `Auto-synced from ${order.channel?.name || 'channel'}` : 'Manually created'}
+              </Badge>
+              {fulfillment && <Badge variant={fulfillment.variant} dot>{fulfillment.label}</Badge>}
+            </div>
           </div>
           <span className={`px-3 py-1 rounded-full text-xs font-bold ${statusClass}`}>{order.status}</span>
         </div>
+
+        {/* Fulfillment detail — makes FBA vs self-fulfilled unmistakable and
+            shows where the order ships from / its tracking. */}
+        {fulfillment && (
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 flex flex-wrap items-center gap-x-8 gap-y-2 text-sm">
+            <div>
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-2">Fulfillment</span>
+              <Badge variant={fulfillment.variant} dot>{fulfillment.label}</Badge>
+            </div>
+            {order.fulfillmentType === 'CHANNEL' ? (
+              <span className="text-slate-500">Stock &amp; shipping handled by {order.channel?.name || 'the channel'} — Kartriq does not deduct or push inventory for this order.</span>
+            ) : (
+              <>
+                <div><span className="text-slate-400">Ships from</span> <span className="font-semibold text-slate-700">{order.warehouse?.name || '—'}</span></div>
+                {order.awb && <div><span className="text-slate-400">Tracking</span> <span className="font-mono text-slate-700">{order.awb}</span></div>}
+              </>
+            )}
+          </div>
+        )}
 
         {/* Summary cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/store/auth.store';
 import { Sidebar, type SidebarNavGroup } from '@/components/layout/Sidebar';
 import { Topbar } from '@/components/layout/Topbar';
@@ -50,12 +50,23 @@ const ADMIN_NAV_GROUPS: SidebarNavGroup[] = [
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { user, isPlatformAdmin } = useAuthStore();
+  // Wait for zustand `persist` to restore the session before guarding — else a
+  // full refresh evaluates `user` as null (pre-hydration) and bounces the admin
+  // to /login every time.
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    const unsub = useAuthStore.persist.onFinishHydration(() => setHydrated(true));
+    if (useAuthStore.persist.hasHydrated()) setHydrated(true);
+    return unsub;
+  }, []);
 
   useEffect(() => {
-    if (!user) { router.push('/login'); return; }
-    if (!isPlatformAdmin()) { router.push('/dashboard'); }
-  }, [user, isPlatformAdmin, router]);
+    if (!hydrated) return;
+    if (!user) { router.replace('/login'); return; }
+    if (!isPlatformAdmin()) { router.replace('/dashboard'); }
+  }, [hydrated, user, isPlatformAdmin, router]);
 
+  if (!hydrated) return null;
   if (!user || !user.isPlatformAdmin) return null;
 
   return (

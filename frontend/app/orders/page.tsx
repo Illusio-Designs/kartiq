@@ -7,11 +7,21 @@ import { orderApi, customerApi, channelApi } from '@/lib/api';
 import { formatCurrency, formatDateTime, ORDER_STATUS_COLORS } from '@/lib/utils';
 import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import {
-  Button, Badge, Card, Modal, Input, Textarea, Select, Pagination, Tooltip, Loader, Tabs, EmptyState,
+  Button, Badge, Card, Modal, Input, Textarea, Select, Pagination, Tooltip, Loader, Tabs, EmptyState, DatePicker,
 } from '@/components/ui';
 import { AlertTriangle, CheckCircle2, Package, Plus, Star, Trash2, XCircle, Zap, Hand, Layers, ShoppingBag, Plug, RefreshCw } from 'lucide-react';
 import { toast } from '@/store/toast.store';
 import Link from 'next/link';
+
+// Local-date → YYYY-MM-DD (the shape the orders API expects). Uses local
+// getFullYear/Month/Date, not toISOString, so a date never shifts a day across
+// timezones.
+function toYMD(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 const STATUSES = [
   { value: '',           label: 'All Statuses' },
@@ -158,22 +168,20 @@ export default function OrdersPage() {
           <Select value={risk} onChange={setRisk} options={RISK_FILTERS} placeholder="All Risk" />
           <div>
             <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">From</label>
-            <input
-              type="date"
-              value={dateFrom}
-              max={dateTo || undefined}
-              onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
-              className="px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-400"
+            <DatePicker
+              value={dateFrom ? new Date(dateFrom) : null}
+              maxDate={dateTo ? new Date(dateTo) : undefined}
+              placeholder="Start date"
+              onChange={(d) => { setDateFrom(toYMD(d)); setPage(1); }}
             />
           </div>
           <div>
             <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">To</label>
-            <input
-              type="date"
-              value={dateTo}
-              min={dateFrom || undefined}
-              onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
-              className="px-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-400"
+            <DatePicker
+              value={dateTo ? new Date(dateTo) : null}
+              minDate={dateFrom ? new Date(dateFrom) : undefined}
+              placeholder="End date"
+              onChange={(d) => { setDateTo(toYMD(d)); setPage(1); }}
             />
           </div>
           {(dateFrom || dateTo) && (
@@ -241,11 +249,15 @@ export default function OrdersPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
                         <Badge variant={
-                          o.fulfillmentType === 'CHANNEL' ? 'blue' :
-                          o.fulfillmentType === 'DROPSHIP' ? 'violet' : 'slate'
+                          o.fulfillmentType === 'CHANNEL' ? 'violet' :
+                          o.fulfillmentType === 'DROPSHIP' ? 'amber' : 'blue'
                         } dot>
-                          {o.fulfillmentType === 'CHANNEL' ? 'Channel' :
-                           o.fulfillmentType === 'DROPSHIP' ? 'Dropship' : 'Self'}
+                          {(() => {
+                            const isAmazon = String(o.channel?.type || '').toUpperCase().includes('AMAZON');
+                            if (o.fulfillmentType === 'CHANNEL') return isAmazon ? 'FBA' : 'Channel';
+                            if (o.fulfillmentType === 'DROPSHIP') return 'Dropship';
+                            return isAmazon ? 'MFN' : 'Self';
+                          })()}
                         </Badge>
                         {o.dataCompleteness && o.dataCompleteness !== 'COMPLETE' ? (
                           <Tooltip content={`Missing: ${(o.missingFields || []).join(', ') || 'data'}`}>
