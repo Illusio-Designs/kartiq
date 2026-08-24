@@ -7,6 +7,14 @@ import { reportApi } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 import { DatePicker } from '@/components/ui/DatePicker';
 
+// Local YYYY-MM-DD — using toISOString() would shift the day for +ve timezones
+// (e.g. IST), sending the wrong date to the report API.
+function toYMD(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
 export default function ReportsPage() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -35,7 +43,7 @@ export default function ReportsPage() {
             <label className="block text-xs font-bold text-slate-600 uppercase mb-1.5">From</label>
             <DatePicker
               value={from ? new Date(from) : null}
-              onChange={(d) => setFrom(d.toISOString().slice(0, 10))}
+              onChange={(d) => setFrom(toYMD(d))}
               placeholder="From date"
             />
           </div>
@@ -43,7 +51,7 @@ export default function ReportsPage() {
             <label className="block text-xs font-bold text-slate-600 uppercase mb-1.5">To</label>
             <DatePicker
               value={to ? new Date(to) : null}
-              onChange={(d) => setTo(d.toISOString().slice(0, 10))}
+              onChange={(d) => setTo(toYMD(d))}
               placeholder="To date"
             />
           </div>
