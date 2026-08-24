@@ -364,7 +364,7 @@ function EditProductModal({ open, onClose, product }: { open: boolean; onClose: 
               {existingImages.map((src, i) => (
                 <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-slate-200 group">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={src} alt={`image ${i + 1}`} className="w-full h-full object-cover" />
+                  <img src={src} alt={`Product view ${i + 1}`} className="w-full h-full object-cover" />
                   <button
                     type="button"
                     onClick={() => setExistingImages(existingImages.filter((_, idx) => idx !== i))}
