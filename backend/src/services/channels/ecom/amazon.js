@@ -112,8 +112,35 @@ class AmazonAdapter {
       CreatedAfter: createdAfter,
     };
     const data = await this._request('GET', '/orders/v0/orders', params);
-    const orders = data.payload?.Orders || [];
-    return orders.map(o => this._transformOrder(o));
+    const rawOrders = data.payload?.Orders || [];
+    const mapped = rawOrders.map(o => this._transformOrder(o));
+    // getOrders returns order headers only — pull each order's line items so
+    // orders arrive with their real products/SKUs (and the catalog can fill
+    // itself). Best-effort per order: a failure (e.g. Amazon rate limit) leaves
+    // that order's items empty, and the next sync backfills them.
+    for (let i = 0; i < rawOrders.length; i++) {
+      try {
+        mapped[i].items = await this._getOrderItems(rawOrders[i].AmazonOrderId);
+      } catch (_) { /* keep items empty; retried on the next sync */ }
+    }
+    return mapped;
+  }
+
+  // Amazon SP-API Orders — line items for one order (a separate endpoint from
+  // getOrders). Shape matches what importOrders expects: qty + unitPrice.
+  async _getOrderItems(amazonOrderId) {
+    const data = await this._request('GET', `/orders/v0/orders/${encodeURIComponent(amazonOrderId)}/orderItems`);
+    const items = data.payload?.OrderItems || [];
+    return items.map((it) => {
+      const qty = Number(it.QuantityOrdered || 1) || 1;
+      const lineTotal = parseFloat(it.ItemPrice?.Amount || 0); // SP-API price is the line total
+      return {
+        channelSku: it.SellerSKU || it.ASIN || null,
+        name: it.Title || it.SellerSKU || 'Amazon item',
+        qty,
+        unitPrice: qty > 0 ? lineTotal / qty : lineTotal,
+      };
+    });
   }
 
   // Amazon SP-API Solicitations: request product review & seller feedback

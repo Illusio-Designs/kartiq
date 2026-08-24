@@ -444,6 +444,66 @@ function getAdapter(channel) {
 
 // ── Order import ─────────────────────────────────────────────────────────────
 
+// Find-or-create a product + variant + channel listing for a channel order
+// item whose SKU isn't mapped yet. Lets orders import without any manual SKU
+// setup and auto-populates the catalog straight from the channel.
+async function ensureListingForItem({ tenantId, channelId, item }) {
+  const sku = String(item.channelSku);
+  const price = Number(item.unitPrice || 0) || 0;
+
+  // Reuse an existing variant with the same SKU if the tenant already has one
+  // (e.g. created for another channel); otherwise create the product + variant.
+  let variant = await prisma.productVariant.findFirst({ where: { tenantId, sku } });
+  let productId;
+  let variantId;
+  if (variant) {
+    productId = variant.productId;
+    variantId = variant.id;
+  } else {
+    const product = await prisma.product.create({
+      data: {
+        tenantId,
+        name: item.name || sku,
+        sku,
+        description: 'Auto-imported from a channel order',
+        images: [],
+        tags: ['auto-imported'],
+        isActive: true,
+      },
+    });
+    const v = await prisma.productVariant.create({
+      data: {
+        tenantId,
+        productId: product.id,
+        sku,
+        name: item.name || sku,
+        attributes: {},
+        costPrice: price,
+        mrp: price,
+        sellingPrice: price,
+        isActive: true,
+      },
+    });
+    productId = product.id;
+    variantId = v.id;
+  }
+
+  // Map it to this channel (unique on channelId + channelSku). If a concurrent
+  // item in the same batch already created it, re-fetch instead of throwing.
+  let listing = await prisma.channelListing.findFirst({ where: { channelId, channelSku: sku } });
+  if (!listing) {
+    try {
+      listing = await prisma.channelListing.create({
+        data: { tenantId, channelId, productId, variantId, channelSku: sku, channelPrice: price, isActive: true },
+      });
+    } catch (e) {
+      listing = await prisma.channelListing.findFirst({ where: { channelId, channelSku: sku } });
+      if (!listing) throw e;
+    }
+  }
+  return listing;
+}
+
 async function importOrders(channelId, rawOrders, { tenantId } = {}) {
   // Fall back to looking up tenantId from the channel if not supplied
   if (!tenantId) {
@@ -459,7 +519,18 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
       const existing = await prisma.order.findFirst({
         where: { tenantId, channelId, channelOrderId: raw.channelOrderId },
       });
-      if (existing) { results.skipped++; continue; }
+      if (existing) {
+        // A previous header-only sync may have imported this order with no line
+        // items. If we now have items to add, drop the empty stub and re-import
+        // it fully below; otherwise it's a genuine duplicate.
+        const existingItems = await prisma.orderItem.findMany({ where: { orderId: existing.id }, take: 1 });
+        if (existingItems.length > 0 || !(raw.items && raw.items.length)) {
+          results.skipped++;
+          continue;
+        }
+        await prisma.order.delete({ where: { id: existing.id } }).catch(() => {});
+        // fall through to a full re-import with line items
+      }
 
       let customer = raw.customer.email
         ? await prisma.customer.findFirst({ where: { tenantId, email: raw.customer.email } })
@@ -478,15 +549,25 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
       const resolvedItems = [];
       for (const item of raw.items) {
         if (!item.channelSku) continue;
-        const listing = await prisma.channelListing.findFirst({
+        let listing = await prisma.channelListing.findFirst({
           where: { tenantId, channelId, channelSku: item.channelSku },
         });
+        // No mapping yet — auto-create a product + variant + channel listing
+        // from the order item, so orders import without any manual SKU setup
+        // and the catalog fills itself from the channel.
+        if (!listing) {
+          try {
+            listing = await ensureListingForItem({ tenantId, channelId, item });
+          } catch (e) {
+            console.warn(`[import] auto-create product failed for SKU ${item.channelSku}: ${e.message}`);
+          }
+        }
         if (listing) resolvedItems.push({ ...item, variantId: listing.variantId });
       }
 
       if (!resolvedItems.length && raw.items.length > 0) {
         results.failed++;
-        results.errors.push(`Order ${raw.channelOrderId}: no mapped SKUs — map them via POST /channels/:id/listings`);
+        results.errors.push(`Order ${raw.channelOrderId}: could not resolve any line items`);
         continue;
       }
 
