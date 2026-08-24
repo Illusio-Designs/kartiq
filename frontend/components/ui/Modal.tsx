@@ -14,13 +14,18 @@ interface ModalProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
+// Panel widths for the side drawer (was max-w for the old centred modal).
 const SIZES = {
-  sm: 'max-w-sm',
-  md: 'max-w-md',
-  lg: 'max-w-lg',
-  xl: 'max-w-2xl',
+  sm: 'sm:max-w-sm',
+  md: 'sm:max-w-md',
+  lg: 'sm:max-w-lg',
+  xl: 'sm:max-w-2xl',
 };
 
+// `Modal` renders as a right-anchored slide-over (aside) panel: a full-height
+// drawer that slides in from the right, with a pinned header/footer and a
+// scrollable body. Props are unchanged, so every existing <Modal> becomes a
+// side panel without touching its call sites.
 export function Modal({ open, onClose, title, description, children, footer, size = 'md' }: ModalProps) {
   useEffect(() => {
     if (!open) return;
@@ -37,18 +42,21 @@ export function Modal({ open, onClose, title, description, children, footer, siz
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0B1220]/60 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex justify-end bg-[#0B1220]/60 backdrop-blur-sm animate-fade-in"
       onClick={onClose}
     >
+      {/* Plain div (no ARIA role) so the stopPropagation onClick doesn't trip
+          jsx-a11y/no-noninteractive-element-interactions — matches the original
+          modal. The overlay handles click-to-close. */}
       <div
         className={cn(
-          'w-full bg-white text-slate-900 rounded-3xl shadow-2xl shadow-[#0B1220]/30 overflow-hidden animate-slide-up border border-transparent',
+          'w-full h-full bg-white text-slate-900 shadow-2xl shadow-[#0B1220]/30 flex flex-col animate-drawer-in border-l border-slate-200',
           SIZES[size]
         )}
         onClick={(e) => e.stopPropagation()}
       >
         {title && (
-          <div className="flex items-start justify-between p-6 border-b border-slate-100">
+          <div className="flex items-start justify-between p-6 border-b border-slate-100 flex-shrink-0">
             <div>
               <h2 className="text-lg font-bold text-slate-900">{title}</h2>
               {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
@@ -62,9 +70,9 @@ export function Modal({ open, onClose, title, description, children, footer, siz
             </button>
           </div>
         )}
-        <div className="p-6 max-h-[70vh] overflow-y-auto">{children}</div>
+        <div className="p-6 flex-1 overflow-y-auto">{children}</div>
         {footer && (
-          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50/50">
+          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex-shrink-0">
             {footer}
           </div>
         )}
