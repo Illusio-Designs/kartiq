@@ -19,16 +19,47 @@ import { InboxDrawer } from '@/components/InboxDrawer';
 import { Toaster } from '@/components/ui/Toaster';
 import { Eye, X, ArrowLeft, Zap } from 'lucide-react';
 
+// Each page renders its own <DashboardLayout>, so a client-side navigation
+// remounts it. Without this module-level flag, `authChecked` would reset to
+// false on every navigation and flash the full-screen Loader — the whole
+// chrome (sidebar/topbar) would blink out and back on each page jump. Once the
+// session has been validated once this session, later mounts render the layout
+// immediately and re-validate /auth/me quietly in the background.
+let _authValidatedOnce = false;
+// Same idea for hydration: a plain module boolean (false during SSR and on the
+// very first client render, so there's no hydration mismatch) that flips true
+// once persist has hydrated. Later navigations then start with hydrated=true.
+let _hydratedOnce = false;
+
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const { token, impersonatingTenant, stopImpersonation, isPlatformAdmin, setContext, logout } = useAuthStore();
+  const { impersonatingTenant, stopImpersonation, isPlatformAdmin, setContext, logout } = useAuthStore();
   const [maintenance, setMaintenance] = useState<{ enabled: boolean; message: string; eta: string } | null>(null);
-  const [authChecked, setAuthChecked] = useState(false);
+  const [authChecked, setAuthChecked] = useState(_authValidatedOnce);
   const [planLimit, setPlanLimit] = useState<any>(null);
+  // zustand `persist` restores the token from localStorage on the client AFTER
+  // the first render. Until that finishes, the store token is null — running
+  // the auth guard against it would bounce a logged-in user to /login on every
+  // refresh. Gate the guard on hydration completing. On later navigations
+  // hasHydrated() is already true, so this starts true and never gates.
+  const [hydrated, setHydrated] = useState(_hydratedOnce);
+  useEffect(() => {
+    const mark = () => { _hydratedOnce = true; setHydrated(true); };
+    const unsub = useAuthStore.persist.onFinishHydration(mark);
+    if (useAuthStore.persist.hasHydrated()) mark();
+    return unsub;
+  }, []);
 
   // ── Auth guard: redirect to /login when unauthenticated, expired, or token rejected
   useEffect(() => {
-    if (!token || isTokenExpired(token)) {
+    if (!hydrated) return; // wait until the persisted session is restored
+    // Read the live token (post-hydration), falling back to the standalone
+    // `token` key that setAuth also writes — so a race on either store never
+    // logs the user out spuriously.
+    const activeToken =
+      useAuthStore.getState().token ||
+      (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
+    if (!activeToken || isTokenExpired(activeToken)) {
       logout();
       router.replace('/login');
       return;
@@ -52,6 +83,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           router.replace('/admin');
           return;
         }
+        _authValidatedOnce = true;
         setAuthChecked(true);
       })
       .catch((err: any) => {
@@ -60,13 +92,15 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         // shared MySQL), keep the already-persisted session and let the user in
         // rather than bouncing them to /login on every refresh.
         if (err?.response?.status === 401) {
+          _authValidatedOnce = false;
           logout();
           router.replace('/login');
         } else {
+          _authValidatedOnce = true;
           setAuthChecked(true);
         }
       });
-  }, []);
+  }, [hydrated]);
 
   // ── Global 402 plan-limit handler
   // Two flavours of 402:
@@ -96,7 +130,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       .catch(() => {});
   }, []);
 
-  if (!token || !authChecked) {
+  if (!hydrated || !authChecked) {
     return <Loader fullScreen size="lg" />;
   }
 
