@@ -808,7 +808,7 @@ async function importCatalogFromChannel(channel, { tenantId } = {}) {
     throw new Error(`${channel.type} does not support catalog import yet`);
   }
   const items = await adapter.fetchInventorySummaries();
-  const results = { total: items.length, products: 0, failed: 0 };
+  const results = { total: items.length, products: 0, inventory: 0, failed: 0, error: null };
 
   // A warehouse to hold the pulled stock — reuse the tenant's first active one,
   // else create a default so first-time users get inventory without setup.
@@ -820,16 +820,25 @@ async function importCatalogFromChannel(channel, { tenantId } = {}) {
   }
 
   for (const item of items) {
+    if (!item.channelSku) continue;
+    let listing;
     try {
-      if (!item.channelSku) continue;
-      const listing = await ensureListingForItem({ tenantId, channelId: channel.id, item: { ...item, unitPrice: 0 } });
-      if (listing?.variantId) {
-        await upsertInventory({ tenantId, warehouseId: warehouse.id, productId: listing.productId, variantId: listing.variantId, qty: item.quantity });
-      }
+      listing = await ensureListingForItem({ tenantId, channelId: channel.id, item: { ...item, unitPrice: 0 } });
       results.products++;
     } catch (e) {
       results.failed++;
-      console.warn(`[catalog] failed for SKU ${item.channelSku}: ${e.message}`);
+      if (!results.error) results.error = e.message;
+      console.warn(`[catalog] product create failed for SKU ${item.channelSku}: ${e.message}`);
+      continue;
+    }
+    try {
+      if (listing?.variantId) {
+        await upsertInventory({ tenantId, warehouseId: warehouse.id, productId: listing.productId, variantId: listing.variantId, qty: item.quantity });
+        results.inventory++;
+      }
+    } catch (e) {
+      if (!results.error) results.error = e.message;
+      console.warn(`[catalog] inventory set failed for SKU ${item.channelSku}: ${e.message}`);
     }
   }
   await prisma.channel.update({ where: { id: channel.id }, data: { lastSyncAt: new Date(), syncError: null } }).catch(() => {});
