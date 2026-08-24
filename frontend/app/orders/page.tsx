@@ -288,10 +288,10 @@ export default function OrdersPage() {
         return (
           <td key={key} className="px-3 py-2.5">
             <div className="flex items-center gap-2">
-              <Link href={`/orders/${o.id}`} className="font-semibold text-emerald-600 hover:underline">{o.channelOrderId || o.orderNumber}</Link>
+              <Link href={`/orders/${o.id}`} className="font-semibold text-emerald-600 hover:underline whitespace-nowrap">{o.channelOrderId || o.orderNumber}</Link>
               <Badge variant={o.channelOrderId ? 'blue' : 'slate'}>{o.channelOrderId ? 'Auto' : 'Manual'}</Badge>
             </div>
-            {o.channelOrderId && <div className="text-[11px] text-slate-400 font-mono">{o.orderNumber}</div>}
+            {o.channelOrderId && <div className="text-[11px] text-slate-400 font-mono whitespace-nowrap">{o.orderNumber}</div>}
           </td>
         );
       case 'customer':
@@ -309,7 +309,7 @@ export default function OrdersPage() {
           </td>
         );
       case 'channel':
-        return <td key={key} className="px-3 py-2.5 text-slate-500">{o.channel?.name}</td>;
+        return <td key={key} className="px-3 py-2.5 text-slate-500 whitespace-nowrap">{o.channel?.name}</td>;
       case 'fulfillment':
         return (
           <td key={key} className="px-3 py-2.5">
