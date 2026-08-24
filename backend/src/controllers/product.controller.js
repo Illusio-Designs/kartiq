@@ -112,13 +112,37 @@ const createProduct = async (req, res) => {
 
 const updateProduct = async (req, res) => {
   try {
-    const data = productSchema.partial().parse(req.body);
+    const parsed = productSchema.partial().parse(req.body);
     // verify ownership
     const existing = await prisma.product.findFirst({ where: { id: req.params.id, tenantId: tenantId(req) } });
     if (!existing) return res.status(404).json({ error: 'Product not found' });
-    const product = await prisma.product.update({
+
+    // Pricing lives on the variant, NOT the product — pull it out so it never
+    // reaches product.update (which would try to write non-existent columns).
+    // When provided, apply it to the product's default (first) variant so the
+    // edit form can manage price alongside the product content.
+    const { costPrice, mrp, sellingPrice, ...productData } = parsed;
+
+    if (Object.keys(productData).length) {
+      await prisma.product.update({ where: { id: req.params.id }, data: productData });
+    }
+
+    if (costPrice !== undefined || mrp !== undefined || sellingPrice !== undefined) {
+      const variant = await prisma.productVariant.findFirst({
+        where: { productId: req.params.id, tenantId: tenantId(req) },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (variant) {
+        const priceData = {};
+        if (costPrice !== undefined) priceData.costPrice = costPrice;
+        if (mrp !== undefined) priceData.mrp = mrp;
+        if (sellingPrice !== undefined) priceData.sellingPrice = sellingPrice;
+        await prisma.productVariant.update({ where: { id: variant.id }, data: priceData });
+      }
+    }
+
+    const product = await prisma.product.findFirst({
       where: { id: req.params.id },
-      data,
       include: { category: true, brand: true, variants: true },
     });
     res.json(product);

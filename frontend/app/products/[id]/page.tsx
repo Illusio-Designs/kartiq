@@ -1,14 +1,15 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Package, Warehouse as WarehouseIcon, ImageOff } from 'lucide-react';
+import { ArrowLeft, Package, Warehouse as WarehouseIcon, ImageOff, Pencil, X } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { productApi } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { DetailPageSkeleton } from '@/components/Shimmer';
+import { Button, Modal, Input, Textarea, Select, FileUpload } from '@/components/ui';
 
 // Product images can be stored as plain URL/data-URI strings or as objects
 // ({ url } / { src } / { media_location }) depending on where they were
@@ -22,6 +23,7 @@ function imgSrc(x: any): string | null {
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [active, setActive] = useState(0);
+  const [editOpen, setEditOpen] = useState(false);
 
   const { data: product, isLoading, isError } = useQuery({
     queryKey: ['product', id],
@@ -60,9 +62,14 @@ export default function ProductDetailPage() {
   return (
     <DashboardLayout>
       <div className="space-y-5 animate-slide-up max-w-4xl">
-        <Link href="/products" className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-800">
-          <ArrowLeft size={15} /> Back to Products
-        </Link>
+        <div className="flex items-center justify-between">
+          <Link href="/products" className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-800">
+            <ArrowLeft size={15} /> Back to Products
+          </Link>
+          <Button variant="outline" size="sm" leftIcon={<Pencil size={13} />} onClick={() => setEditOpen(true)}>
+            Edit product
+          </Button>
+        </div>
 
         {/* Header: image + title */}
         <div className="flex items-start gap-5 flex-col sm:flex-row">
@@ -204,7 +211,187 @@ export default function ProductDetailPage() {
           )}
         </div>
       </div>
+
+      <EditProductModal open={editOpen} onClose={() => setEditOpen(false)} product={product} />
     </DashboardLayout>
+  );
+}
+
+// ── Edit product ──────────────────────────────────────────────────────────────
+function imgToString(x: any): string | null {
+  if (!x) return null;
+  if (typeof x === 'string') return x.trim() || null;
+  return x.url || x.src || x.media_location || x.href || null;
+}
+
+const fileToBase64 = (file: File): Promise<string> =>
+  new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.readAsDataURL(file);
+  });
+
+function EditProductModal({ open, onClose, product }: { open: boolean; onClose: () => void; product: any }) {
+  const qc = useQueryClient();
+  const firstVariant = product?.variants?.[0];
+
+  const [form, setForm] = useState({
+    name: '', sku: '', barcode: '', description: '', categoryId: '', brandId: '',
+    weight: '', tags: '', costPrice: '', mrp: '', sellingPrice: '',
+  });
+  const [existingImages, setExistingImages] = useState<string[]>([]);
+  const [newImages, setNewImages] = useState<File[]>([]);
+  const [error, setError] = useState('');
+
+  // (Re)hydrate the form whenever the modal opens or the product changes.
+  useEffect(() => {
+    if (!open || !product) return;
+    setForm({
+      name: product.name || '',
+      sku: product.sku || '',
+      barcode: product.barcode || '',
+      description: product.description || '',
+      categoryId: product.categoryId || product.category?.id || '',
+      brandId: product.brandId || product.brand?.id || '',
+      weight: product.weight != null ? String(product.weight) : '',
+      tags: Array.isArray(product.tags) ? product.tags.join(', ') : '',
+      costPrice: firstVariant?.costPrice != null ? String(firstVariant.costPrice) : '',
+      mrp: firstVariant?.mrp != null ? String(firstVariant.mrp) : '',
+      sellingPrice: firstVariant?.sellingPrice != null ? String(firstVariant.sellingPrice) : '',
+    });
+    setExistingImages((Array.isArray(product.images) ? product.images : []).map(imgToString).filter(Boolean) as string[]);
+    setNewImages([]);
+    setError('');
+  }, [open, product, firstVariant]);
+
+  const { data: categories } = useQuery({
+    queryKey: ['categories-list'],
+    queryFn: () => productApi.categories().then((r) => r.data),
+    enabled: open,
+  });
+  const { data: brands } = useQuery({
+    queryKey: ['brands-list'],
+    queryFn: () => productApi.brands().then((r) => r.data),
+    enabled: open,
+  });
+  const categoryOptions = (categories || []).map((c: any) => ({ value: c.id, label: c.name }));
+  const brandOptions = (brands || []).map((b: any) => ({ value: b.id, label: b.name }));
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const newBase64 = newImages.length ? await Promise.all(newImages.map(fileToBase64)) : [];
+      const images = [...existingImages, ...newBase64];
+      const tags = form.tags.split(',').map((t) => t.trim()).filter(Boolean);
+      return productApi.update(product.id, {
+        name: form.name,
+        sku: form.sku,
+        barcode: form.barcode || undefined,
+        description: form.description || undefined,
+        categoryId: form.categoryId || undefined,
+        brandId: form.brandId || undefined,
+        weight: form.weight ? Number(form.weight) : undefined,
+        tags,
+        images,
+        costPrice: form.costPrice ? Number(form.costPrice) : undefined,
+        mrp: form.mrp ? Number(form.mrp) : undefined,
+        sellingPrice: form.sellingPrice ? Number(form.sellingPrice) : undefined,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['product', product.id] });
+      qc.invalidateQueries({ queryKey: ['products'] });
+      onClose();
+    },
+    onError: (err: any) => {
+      const e = err.response?.data?.error;
+      setError(typeof e === 'string' ? e : (err.message || 'Failed to save'));
+    },
+  });
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Edit Product"
+      description="Update product content, images, and pricing"
+      size="xl"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => { setError(''); saveMutation.mutate(); }} loading={saveMutation.isPending} disabled={!form.name || !form.sku}>
+            Save changes
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Input label="Product Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <Input label="SKU" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Input label="Barcode" value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} placeholder="e.g. 8901234567890" />
+          <Input label="Weight (kg)" type="number" value={form.weight} onChange={(e) => setForm({ ...form, weight: e.target.value })} placeholder="0.5" />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Select label="Category" value={form.categoryId} onChange={(v) => setForm({ ...form, categoryId: v })} options={categoryOptions} placeholder="Select category…" fullWidth />
+          <Select label="Brand" value={form.brandId} onChange={(v) => setForm({ ...form, brandId: v })} options={brandOptions} placeholder="Select brand…" fullWidth />
+        </div>
+
+        <Textarea
+          label="Description"
+          value={form.description}
+          onChange={(e) => setForm({ ...form, description: e.target.value })}
+          placeholder="Describe your product — this is the content pushed to your channel listings…"
+          rows={5}
+        />
+
+        <Input label="Tags (comma separated)" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="cotton, summer, unisex" />
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <Input label="Cost Price" type="number" value={form.costPrice} onChange={(e) => setForm({ ...form, costPrice: e.target.value })} placeholder="0.00" />
+          <Input label="MRP" type="number" value={form.mrp} onChange={(e) => setForm({ ...form, mrp: e.target.value })} placeholder="0.00" />
+          <Input label="Selling Price" type="number" value={form.sellingPrice} onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })} placeholder="0.00" />
+        </div>
+
+        {/* Existing images — removable */}
+        {existingImages.length > 0 && (
+          <div>
+            <div className="text-xs font-bold text-slate-500 mb-1.5">Current images</div>
+            <div className="flex flex-wrap gap-2">
+              {existingImages.map((src, i) => (
+                <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-slate-200 group">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={src} alt={`image ${i + 1}`} className="w-full h-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => setExistingImages(existingImages.filter((_, idx) => idx !== i))}
+                    className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-rose-600 text-white flex items-center justify-center opacity-90 hover:opacity-100"
+                    aria-label="Remove image"
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <FileUpload
+          label="Add images"
+          accept="image/*"
+          multiple
+          maxSize={5 * 1024 * 1024}
+          value={newImages}
+          onChange={setNewImages}
+          hint="PNG, JPG, WebP — up to 5MB each"
+        />
+
+        {error && <p className="text-xs text-rose-600 font-medium">{typeof error === 'string' ? error : 'Failed to save'}</p>}
+      </div>
+    </Modal>
   );
 }
 
