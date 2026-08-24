@@ -286,33 +286,33 @@ export default function OrdersPage() {
     switch (key) {
       case 'order':
         return (
-          <td key={key} className="px-4 py-3">
+          <td key={key} className="px-3 py-2.5">
             <div className="flex items-center gap-2">
-              <Link href={`/orders/${o.id}`} className="font-bold text-emerald-600 hover:underline">{o.channelOrderId || o.orderNumber}</Link>
-              <Badge variant={o.channelOrderId ? 'blue' : 'slate'}>{o.channelOrderId ? 'Auto-synced' : 'Manual'}</Badge>
+              <Link href={`/orders/${o.id}`} className="font-semibold text-emerald-600 hover:underline">{o.channelOrderId || o.orderNumber}</Link>
+              <Badge variant={o.channelOrderId ? 'blue' : 'slate'}>{o.channelOrderId ? 'Auto' : 'Manual'}</Badge>
             </div>
             {o.channelOrderId && <div className="text-[11px] text-slate-400 font-mono">{o.orderNumber}</div>}
           </td>
         );
       case 'customer':
         return (
-          <td key={key} className="px-4 py-3">
-            <div className="flex items-center gap-2.5">
+          <td key={key} className="px-3 py-2.5">
+            <div className="flex items-center gap-2">
               <span
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-extrabold text-white flex-shrink-0"
+                className="w-6 h-6 rounded-md flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0"
                 style={{ background: avatarColor(o.customer?.name || '?') }}
               >
                 {initials(o.customer?.name || '?')}
               </span>
-              <span className="text-slate-700 font-medium truncate max-w-[180px]">{o.customer?.name || '—'}</span>
+              <span className="text-slate-700 truncate max-w-[170px]">{o.customer?.name || '—'}</span>
             </div>
           </td>
         );
       case 'channel':
-        return <td key={key} className="px-4 py-3 text-slate-500">{o.channel?.name}</td>;
+        return <td key={key} className="px-3 py-2.5 text-slate-500">{o.channel?.name}</td>;
       case 'fulfillment':
         return (
-          <td key={key} className="px-4 py-3">
+          <td key={key} className="px-3 py-2.5">
             <div className="flex items-center gap-1.5">
               <Badge variant={o.fulfillmentType === 'CHANNEL' ? 'violet' : o.fulfillmentType === 'DROPSHIP' ? 'amber' : 'blue'} dot>
                 {(() => {
@@ -322,7 +322,7 @@ export default function OrdersPage() {
                   return isAmazon ? 'MFN' : 'Self';
                 })()}
               </Badge>
-              {o.dataCompleteness && o.dataCompleteness !== 'COMPLETE' ? (
+              {o.dataCompleteness && o.dataCompleteness !== 'COMPLETE' && !isAwaitingTotal(o) ? (
                 <Tooltip content={`Missing: ${(o.missingFields || []).join(', ') || 'data'}`}>
                   <span>
                     <Badge variant={o.dataCompleteness === 'MINIMAL' ? 'rose' : 'amber'}>{o.dataCompleteness}</Badge>
@@ -334,7 +334,7 @@ export default function OrdersPage() {
         );
       case 'total':
         return (
-          <td key={key} className="px-4 py-3">
+          <td key={key} className="px-3 py-2.5">
             {isAwaitingTotal(o) ? (
               <div>
                 <span className="font-semibold text-slate-400">{formatCurrency(0)}</span>
@@ -349,7 +349,7 @@ export default function OrdersPage() {
         );
       case 'rto':
         return (
-          <td key={key} className="px-4 py-3">
+          <td key={key} className="px-3 py-2.5">
             {o.rtoRiskLevel ? (
               <Tooltip content={`RTO Score: ${o.rtoScore}/100 · ${o.rtoRiskLevel}`}>
                 <span><Badge variant={riskVariant(o.rtoRiskLevel)} dot>{o.rtoScore ?? 0} {o.rtoRiskLevel}</Badge></span>
@@ -359,7 +359,7 @@ export default function OrdersPage() {
         );
       case 'status':
         return (
-          <td key={key} className="px-4 py-3">
+          <td key={key} className="px-3 py-2.5">
             {o.needsApproval ? (
               <Badge variant="rose" dot>NEEDS REVIEW</Badge>
             ) : (
@@ -368,9 +368,9 @@ export default function OrdersPage() {
           </td>
         );
       case 'date':
-        return <td key={key} className="px-4 py-3 text-slate-400 text-xs whitespace-nowrap">{formatDateTime(o.createdAt)}</td>;
+        return <td key={key} className="px-3 py-2.5 text-slate-400 text-xs whitespace-nowrap">{formatDateTime(o.createdAt)}</td>;
       default:
-        return <td key={key} className="px-4 py-3 text-slate-400">—</td>;
+        return <td key={key} className="px-3 py-2.5 text-slate-400">—</td>;
     }
   };
 
@@ -517,9 +517,9 @@ export default function OrdersPage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50/50 border-b border-slate-100">
                 <tr className="text-left text-[10px] uppercase tracking-widest text-slate-400">
-                  <th className="px-4 py-3 font-bold">#</th>
+                  <th className="px-3 py-2.5 font-bold">#</th>
                   {visibleColumns.map((c) => (
-                    <th key={c.key} className="px-4 py-3 font-bold">
+                    <th key={c.key} className="px-3 py-2.5 font-bold">
                       {c.sortable ? (
                         <button
                           type="button"
@@ -534,7 +534,7 @@ export default function OrdersPage() {
                       ) : c.label}
                     </th>
                   ))}
-                  <th className="px-4 py-3 font-bold" />
+                  <th className="px-3 py-2.5 font-bold" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -542,9 +542,9 @@ export default function OrdersPage() {
                   <tr><td colSpan={visibleColumns.length + 2}><Loader size="sm" /></td></tr>
                 ) : sortedOrders.length ? sortedOrders.map((o: any, idx: number) => (
                   <tr key={o.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="px-4 py-3 text-slate-500 font-semibold">{(page - 1) * pageSize + idx + 1}</td>
+                    <td className="px-3 py-2.5 text-slate-500 font-semibold">{(page - 1) * pageSize + idx + 1}</td>
                     {visibleColumns.map((c) => renderCell(o, c.key))}
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end gap-1">
                         {o.needsApproval && (
                           <>
