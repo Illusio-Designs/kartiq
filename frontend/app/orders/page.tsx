@@ -29,6 +29,21 @@ function isAwaitingTotal(o: any): boolean {
   return (!o.total || Number(o.total) === 0) && (o.status === 'PENDING' || o.dataCompleteness === 'PARTIAL' || o.dataCompleteness === 'MINIMAL') && !!o.channelOrderId;
 }
 
+// Whether we can ask the channel to request a buyer review. Delivered orders
+// always qualify; Amazon has no "delivered" event, so an Amazon order shipped
+// at least this many days ago qualifies too (the Solicitations API enforces the
+// real 5–30 day window). Mirrors backend review.service.isReviewEligible.
+const AMZ_SHIPPED_REVIEW_DAYS = 7;
+function reviewEligible(o: any): boolean {
+  if (!o.channelOrderId || o.reviewRequestedAt) return false;
+  if (o.status === 'DELIVERED') return true;
+  if (o.status === 'SHIPPED' && String(o.channel?.type || '').toUpperCase().includes('AMAZON')) {
+    const shipped = o.shippedAt || o.orderedAt;
+    if (shipped && Date.now() - new Date(shipped).getTime() >= AMZ_SHIPPED_REVIEW_DAYS * 86400000) return true;
+  }
+  return false;
+}
+
 // Local-date → YYYY-MM-DD (the shape the orders API expects). Uses local
 // getFullYear/Month/Date, not toISOString, so a date never shifts a day across
 // timezones.
@@ -272,7 +287,8 @@ export default function OrdersPage() {
   const reviewMutation = useMutation({
     mutationFn: (id: string) => orderApi.requestReview(id),
     onSuccess: (res, id) => {
-      setReviewResult({ id, type: 'success', message: res.data.alreadyRequested ? 'Review already requested' : 'Review request sent to channel' });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      setReviewResult({ id, type: 'success', message: res.data.alreadyRequested ? 'Review already requested' : 'Review request sent to Amazon' });
       setTimeout(() => setReviewResult(null), 4000);
     },
     onError: (err: any, id) => {
@@ -560,13 +576,17 @@ export default function OrdersPage() {
                             </Tooltip>
                           </>
                         )}
-                        {o.status === 'DELIVERED' && (
-                          <Tooltip content={o.reviewRequestedAt ? `Requested on ${new Date(o.reviewRequestedAt).toLocaleDateString()}` : 'Request product review'}>
-                            <Button variant="secondary" size="icon" onClick={() => reviewMutation.mutate(o.id)} disabled={reviewMutation.isPending || !!o.reviewRequestedAt}>
+                        {o.reviewRequestedAt ? (
+                          <Tooltip content={`Review requested ${new Date(o.reviewRequestedAt).toLocaleDateString()}`}>
+                            <span><Button variant="ghost" size="icon" disabled><Star size={13} className="fill-amber-400 text-amber-400" /></Button></span>
+                          </Tooltip>
+                        ) : reviewEligible(o) ? (
+                          <Tooltip content="Ask Amazon to request a buyer review">
+                            <Button variant="secondary" size="icon" onClick={() => reviewMutation.mutate(o.id)} disabled={reviewMutation.isPending}>
                               <Star size={13} />
                             </Button>
                           </Tooltip>
-                        )}
+                        ) : null}
                         <Tooltip content="View order">
                           <Link href={`/orders/${o.id}`}>
                             <Button variant="outline" size="icon"><Eye size={13} /></Button>
