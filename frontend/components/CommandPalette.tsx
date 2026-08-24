@@ -20,7 +20,7 @@ import { useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Package, ShoppingBag, Users, Plug, Truck, FileText, Building2,
   Store, Wallet, Settings, BarChart3, Gauge, Plus, Search, ArrowRight, CornerDownLeft,
-  ShoppingCart, Tag, Briefcase, LifeBuoy, Activity, Cpu, FileEdit, Inbox, Megaphone,
+  ShoppingCart, Briefcase, LifeBuoy, Activity, Cpu, FileEdit, Inbox, Megaphone,
 } from 'lucide-react';
 import { productApi, orderApi, customerApi, leadsApi, adminApi } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
@@ -135,8 +135,7 @@ export function CommandPalette() {
       // Navigation
       { id: 'go-dashboard',  group: 'Pages', label: 'Dashboard',     icon: LayoutDashboard, run: go('/dashboard') },
       { id: 'go-orders',     group: 'Pages', label: 'Orders',        icon: ShoppingBag,     run: go('/orders') },
-      { id: 'go-products',   group: 'Pages', label: 'Products',      icon: Package,         run: go('/products') },
-      { id: 'go-inventory',  group: 'Pages', label: 'Inventory',     icon: Tag,             run: go('/inventory') },
+      { id: 'go-products',   group: 'Pages', label: 'Catalog',       icon: Package,         run: go('/products') },
       { id: 'go-purchases',  group: 'Pages', label: 'Purchases',     icon: ShoppingCart,    run: go('/purchases') },
       { id: 'go-customers',  group: 'Pages', label: 'Customers',     icon: Users,           run: go('/customers') },
       { id: 'go-vendors',    group: 'Pages', label: 'Vendors',       icon: Briefcase,       run: go('/vendors') },

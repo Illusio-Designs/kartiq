@@ -10,7 +10,7 @@ import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import {
   Button, Badge, Card, Modal, Input, Textarea, Select, Pagination, FileUpload, Tooltip, EmptyState, Tabs, Loader,
 } from '@/components/ui';
-import { Plus, Package, RefreshCw, CheckCircle2, XCircle, Boxes, Layers, AlertTriangle, Ban, Tag, Warehouse as WarehouseIcon } from 'lucide-react';
+import { Plus, Package, RefreshCw, CheckCircle2, XCircle, Boxes, Layers, AlertTriangle, Ban, Tag } from 'lucide-react';
 import { ProductCardSkeleton } from '@/components/Shimmer';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -91,12 +91,7 @@ export default function ProductsPage() {
             <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-[#06D4B8] to-[#06B6D4] bg-clip-text text-transparent tracking-tight">Catalog</h1>
             <p className="text-sm text-slate-500 mt-1">{data?.total || 0} products · stock &amp; listings in one place</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Link href="/inventory">
-              <Button variant="secondary" leftIcon={<WarehouseIcon size={15} />}>Movements</Button>
-            </Link>
-            <Button leftIcon={<Plus size={15} />} onClick={() => setModalOpen(true)}>Add Product</Button>
-          </div>
+          <Button leftIcon={<Plus size={15} />} onClick={() => setModalOpen(true)}>Add Product</Button>
         </div>
 
         {/* Catalog tabs */}
@@ -140,15 +135,14 @@ export default function ProductsPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                      <th className="px-3 py-2.5">Product</th>
-                      <th className="px-3 py-2.5">SKU</th>
-                      <th className="px-3 py-2.5">Category</th>
-                      <th className="px-3 py-2.5 text-center">Variants</th>
-                      <th className="px-3 py-2.5 text-right">Price</th>
-                      <th className="px-3 py-2.5 text-right">Available</th>
-                      <th className="px-3 py-2.5">Status</th>
-                      <th className="px-3 py-2.5">Channels</th>
-                      <th className="px-3 py-2.5 text-right">Actions</th>
+                      <th className="px-3 py-2.5 w-full">Product</th>
+                      <th className="px-3 py-2.5 whitespace-nowrap">Category</th>
+                      <th className="px-3 py-2.5 text-center whitespace-nowrap">Variants</th>
+                      <th className="px-3 py-2.5 text-right whitespace-nowrap">Price</th>
+                      <th className="px-3 py-2.5 text-right whitespace-nowrap">Available</th>
+                      <th className="px-3 py-2.5 whitespace-nowrap">Status</th>
+                      <th className="px-3 py-2.5 whitespace-nowrap">Channels</th>
+                      <th className="px-3 py-2.5 text-right whitespace-nowrap">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -175,11 +169,13 @@ export default function ProductsPage() {
                                   <Package size={14} className="text-slate-300" />
                                 )}
                               </div>
-                              <span className="font-semibold text-slate-800 group-hover:text-emerald-600 truncate max-w-[260px]">{p.name}</span>
+                              <span className="min-w-0">
+                                <span className="block font-semibold text-slate-800 group-hover:text-emerald-600 truncate max-w-[320px]">{p.name}</span>
+                                <span className="block text-[11px] text-slate-400 font-mono">{p.sku}</span>
+                              </span>
                             </Link>
                           </td>
-                          <td className="px-3 py-2.5 text-slate-500 font-mono text-xs">{p.sku}</td>
-                          <td className="px-3 py-2.5 text-slate-600">{p.category?.name || '—'}</td>
+                          <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{p.category?.name || '—'}</td>
                           <td className="px-3 py-2.5 text-center text-slate-600">{p.variants?.length || 0}</td>
                           <td className="px-3 py-2.5 text-right">
                             {Number(price) > 0 ? (
