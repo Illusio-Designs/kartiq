@@ -240,6 +240,23 @@ function escapeHtml(s) {
 function renderPage(title, body, { autoClose = false } = {}) {
   const safeTitle = escapeHtml(title);
   const safeBody  = escapeHtml(body);
+  // On success we return the seller to the app: try to close this tab (which
+  // returns focus to the Kartriq tab that started the flow); if the browser
+  // blocks close(), redirect this tab to the channels page so they never land
+  // on a dead tab. Error pages don't auto-close so the message stays readable.
+  const appBase = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
+  const backUrl = appBase ? `${appBase}/channels` : '';
+  const closeScript = autoClose
+    ? `<script>
+      (function(){
+        var back = ${JSON.stringify(backUrl)};
+        setTimeout(function(){
+          try { window.close(); } catch (e) {}
+          setTimeout(function(){ if (back && !window.closed) { window.location.replace(back); } }, 600);
+        }, 1200);
+      })();
+    </script>`
+    : '';
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>${safeTitle}</title>
 <style>
@@ -255,7 +272,7 @@ function renderPage(title, body, { autoClose = false } = {}) {
     <p>${safeBody}</p>
     <button onclick="window.close()">Close window</button>
   </div>
-  ${autoClose ? '<script>setTimeout(() => window.close(), 3000);</script>' : ''}
+  ${closeScript}
 </body></html>`;
 }
 

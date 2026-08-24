@@ -173,10 +173,12 @@ class AmazonAdapter {
   }
 
   async updateInventoryLevel(sku, quantity) {
-    // Amazon inventory updates go through Feeds API (FBA) or through
-    // Listings API for MFN sellers. This requires additional setup.
-    // See: https://developer-docs.amazon.com/sp-api/docs/feeds-api-v2021-06-30-reference
-    throw new Error('Amazon inventory sync requires Feeds API setup. Please update stock via Seller Central or use the Listings API.');
+    // Update seller-fulfilled (MFN) stock via the Listings Items API's
+    // fulfillment_availability attribute — the modern path, no Feeds API
+    // needed. Reuses updateListing's qty patch. (FBA stock is managed by
+    // Amazon and can't be set this way; that call is rejected by Amazon and
+    // surfaces as a sync error, which is more useful than a blanket throw.)
+    return this.updateListing(sku, { qty: quantity });
   }
 
   _transformOrder(o) {
