@@ -1,6 +1,7 @@
 const { z } = require('zod');
 const prisma = require('../utils/prisma');
 const { notifyTenant } = require('../services/notifications.service');
+const { confirmChannelShipment } = require('../services/channel.service');
 
 // Accept either full variant reference (variantId) or a lightweight one (sku / productName).
 // If sku is provided, we look up the variant server-side. If neither works, a placeholder
@@ -324,6 +325,16 @@ const updateOrderStatus = async (req, res) => {
     if (status === 'SHIPPED') { update.shippedAt = new Date(); update.trackingNumber = trackingNumber; update.courierName = courierName; }
     if (status === 'DELIVERED') update.deliveredAt = new Date();
     const order = await prisma.order.update({ where: { id: req.params.id }, data: update });
+
+    // When a merchant-fulfilled channel order is marked shipped, push the
+    // tracking back to the origin channel (e.g. Amazon MFN) so the buyer sees
+    // it and Amazon doesn't auto-cancel. Non-blocking: the local status update
+    // already succeeded regardless of the channel's response.
+    if (status === 'SHIPPED' && order.channelId && order.channelOrderId) {
+      confirmChannelShipment(order, { trackingNumber, courierName })
+        .catch(() => {});
+    }
+
     res.json(order);
   } catch {
     res.status(500).json({ error: 'Failed to update order status' });

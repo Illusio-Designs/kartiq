@@ -6,6 +6,39 @@ const {
   getEndpoint,
 } = require('../../../config/channel-endpoints');
 
+// Amazon OrderStatus → Kartriq order status. Amazon reports more states than a
+// naive Shipped/Pending split: Unshipped/PartiallyShipped are in-progress,
+// Canceled must not linger as PENDING, InvoiceUnconfirmed is effectively
+// pending. Anything unknown falls back to PENDING so a new Amazon status never
+// silently maps to SHIPPED.
+const AMAZON_ORDER_STATUS = {
+  Pending: 'PENDING',
+  PendingAvailability: 'PENDING',
+  InvoiceUnconfirmed: 'PENDING',
+  Unshipped: 'PROCESSING',
+  PartiallyShipped: 'PROCESSING',
+  Shipped: 'SHIPPED',
+  Canceled: 'CANCELLED',
+  Cancelled: 'CANCELLED',
+  Unfulfillable: 'CANCELLED',
+};
+
+// Region → Amazon storefront domain, for building a buyer-facing order URL that
+// points at the right marketplace instead of hardcoding amazon.in.
+const AMAZON_DOMAIN = {
+  IN: 'amazon.in', US: 'amazon.com', CA: 'amazon.ca', MX: 'amazon.com.mx',
+  BR: 'amazon.com.br', UK: 'amazon.co.uk', DE: 'amazon.de', FR: 'amazon.fr',
+  IT: 'amazon.it', ES: 'amazon.es', NL: 'amazon.nl', SE: 'amazon.se',
+  PL: 'amazon.pl', TR: 'amazon.com.tr', AE: 'amazon.ae', SA: 'amazon.sa',
+  EG: 'amazon.eg', ZA: 'amazon.co.za', JP: 'amazon.co.jp', AU: 'amazon.com.au',
+  SG: 'amazon.sg',
+};
+
+// When a legacy connection stored a zone code (EU/NA/FE) as its region instead
+// of a country code, pick the primary marketplace for that zone so we don't
+// fall back to India's marketplace for a US or Japan seller.
+const ZONE_DEFAULT_REGION = { EU: 'IN', NA: 'US', FE: 'JP' };
+
 // Per-channel credentials (stored encrypted per tenant):
 //   { sellerId, refreshToken, region: "IN" | "US" | "EU" }
 //
@@ -32,11 +65,23 @@ async function getAppCredentials(creds) {
 class AmazonAdapter {
   constructor(credentials) {
     this.creds = credentials || {};
-    this.region = this.creds.region || 'IN';
+    // Normalize the stored region. Historically some connections saved a zone
+    // code (EU/NA/FE) here rather than a country code; map those to that zone's
+    // primary marketplace so we don't misroute the marketplaceId to India.
+    let region = this.creds.region || 'IN';
+    if (!MARKETPLACE_IDS[region]) region = ZONE_DEFAULT_REGION[region] || 'IN';
+    this.region = region;
     this.endpoint = getEndpoint('AMAZON', this.region);
     this.marketplaceId = MARKETPLACE_IDS[this.region] || MARKETPLACE_IDS.IN;
     this._accessToken = null;
     this._tokenExpiry = null;
+  }
+
+  // Amazon's getOrderItems is rate-limited (~0.5 req/s with a small burst).
+  // A tiny delay between per-order item pulls keeps a multi-order sync under
+  // the throttle instead of tripping 429s partway through.
+  _sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   async _getAccessToken() {
@@ -65,8 +110,22 @@ class AmazonAdapter {
     return this._accessToken;
   }
 
-  async _request(method, path, params = {}) {
+  // A Restricted Data Token (RDT) unlocks buyer PII (name, email, shipping
+  // address) on the orders endpoints — but only if the seller has authorized
+  // the app for the PII role. Request one scoped to exactly the resources we
+  // need; callers fall back to the normal token when this throws (no role).
+  async _getRestrictedToken(restrictedResources) {
     const token = await this._getAccessToken();
+    const { data } = await axios.post(
+      `${this.endpoint}/tokens/2021-03-01/restrictedDataToken`,
+      { restrictedResources },
+      { headers: { 'x-amz-access-token': token, 'Content-Type': 'application/json' } }
+    );
+    return data.restrictedDataToken;
+  }
+
+  async _request(method, path, params = {}, tokenOverride = null) {
+    const token = tokenOverride || await this._getAccessToken();
     try {
       const { data } = await axios({
         method,
@@ -97,50 +156,96 @@ class AmazonAdapter {
   }
 
   async fetchOrders(sinceDate) {
-    // Amazon's Orders API REQUIRES CreatedAfter (or LastUpdatedAfter); calling
-    // it without one returns 400. On a first sync there is no lastSyncAt, so
-    // default to the last 30 days. Accept a Date, an ISO string, or the
-    // { since } wrapper the cron passes, and always send an ISO-8601 value.
+    // Amazon's Orders API REQUIRES CreatedAfter or LastUpdatedAfter (exactly
+    // one); calling it without either returns 400. On a first sync there is no
+    // lastSyncAt, so default to the last 30 days. Accept a Date, an ISO string,
+    // or the { since } wrapper the cron passes, and always send ISO-8601.
     let since = sinceDate;
     if (since && typeof since === 'object' && !(since instanceof Date)) since = since.since;
     if (!since) since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const createdAfter = since instanceof Date ? since.toISOString() : new Date(since).toISOString();
+    const sinceIso = since instanceof Date ? since.toISOString() : new Date(since).toISOString();
 
+    // Use LastUpdatedAfter (not CreatedAfter) so an incremental sync also
+    // re-fetches orders that were created earlier but have since changed —
+    // shipped, cancelled, delivered — letting importOrders advance their local
+    // status. CreatedAfter would only ever return brand-new orders and miss
+    // every subsequent state change. (LastUpdatedAfter can't be combined with a
+    // CreatedBefore/After window, which is why we send it alone.)
     const params = {
       MarketplaceIds: this.marketplaceId,
-      OrderStatuses: 'Unshipped,PartiallyShipped,Shipped,Pending',
-      CreatedAfter: createdAfter,
+      OrderStatuses: 'Unshipped,PartiallyShipped,Shipped,Pending,Canceled',
+      LastUpdatedAfter: sinceIso,
     };
-    const data = await this._request('GET', '/orders/v0/orders', params);
+    // Try to include buyer PII + shipping address via a Restricted Data Token.
+    // If the seller hasn't granted the PII role, the RDT request throws and we
+    // silently fall back to the plain token (orders arrive without buyer name/
+    // email/address, same as before — no hard failure).
+    let ordersToken = null;
+    try {
+      ordersToken = await this._getRestrictedToken([
+        { method: 'GET', path: '/orders/v0/orders', dataElements: ['buyerInfo', 'shippingAddress'] },
+      ]);
+    } catch (_) { /* no PII role — proceed without buyer data */ }
+    const data = await this._request('GET', '/orders/v0/orders', params, ordersToken);
     const rawOrders = data.payload?.Orders || [];
     const mapped = rawOrders.map(o => this._transformOrder(o));
     // getOrders returns order headers only — pull each order's line items so
     // orders arrive with their real products/SKUs (and the catalog can fill
-    // itself). Best-effort per order: a failure (e.g. Amazon rate limit) leaves
-    // that order's items empty, and the next sync backfills them.
+    // itself). The item pull also carries the money breakdown (item price, tax,
+    // shipping, discount) that the header alone doesn't split out, so we use it
+    // to replace the transformed order's subtotal/tax/shipping/discount.
+    // Best-effort per order: a failure (e.g. Amazon rate limit) leaves that
+    // order's items empty, and the next sync backfills them.
     for (let i = 0; i < rawOrders.length; i++) {
+      if (i > 0) await this._sleep(600); // stay under the getOrderItems throttle
       try {
-        mapped[i].items = await this._getOrderItems(rawOrders[i].AmazonOrderId);
+        const { items, totals } = await this._getOrderItems(rawOrders[i].AmazonOrderId);
+        mapped[i].items = items;
+        // Only override the header total split when the item pull actually
+        // returned money; an empty result keeps the header fallback.
+        if (items.length) {
+          mapped[i].subtotal = totals.subtotal;
+          mapped[i].tax = totals.tax;
+          mapped[i].shippingCharge = totals.shipping;
+          mapped[i].discount = totals.discount;
+        }
       } catch (_) { /* keep items empty; retried on the next sync */ }
     }
     return mapped;
   }
 
   // Amazon SP-API Orders — line items for one order (a separate endpoint from
-  // getOrders). Shape matches what importOrders expects: qty + unitPrice.
+  // getOrders). Returns { items, totals } where items match what importOrders
+  // expects (qty + unitPrice) and totals split the order's money into
+  // subtotal / tax / shipping / discount (the order header lumps them into one
+  // OrderTotal). SP-API money fields are line totals, not per-unit.
   async _getOrderItems(amazonOrderId) {
     const data = await this._request('GET', `/orders/v0/orders/${encodeURIComponent(amazonOrderId)}/orderItems`);
-    const items = data.payload?.OrderItems || [];
-    return items.map((it) => {
+    const raw = data.payload?.OrderItems || [];
+    const num = (m) => parseFloat(m?.Amount || 0) || 0;
+    const totals = { subtotal: 0, tax: 0, shipping: 0, discount: 0 };
+    const items = raw.map((it) => {
       const qty = Number(it.QuantityOrdered || 1) || 1;
-      const lineTotal = parseFloat(it.ItemPrice?.Amount || 0); // SP-API price is the line total
+      const itemPrice = num(it.ItemPrice);          // line total for the item(s), pre-tax
+      const itemTax = num(it.ItemTax);
+      const shipping = num(it.ShippingPrice);
+      const shippingTax = num(it.ShippingTax);
+      const promo = num(it.PromotionDiscount);
+      const shipPromo = num(it.ShippingDiscount);
+      totals.subtotal += itemPrice;
+      totals.tax += itemTax + shippingTax;
+      totals.shipping += shipping;
+      totals.discount += promo + shipPromo;
       return {
         channelSku: it.SellerSKU || it.ASIN || null,
         name: it.Title || it.SellerSKU || 'Amazon item',
         qty,
-        unitPrice: qty > 0 ? lineTotal / qty : lineTotal,
+        unitPrice: qty > 0 ? itemPrice / qty : itemPrice,
       };
     });
+    // Round to 2dp to avoid float drift accumulating across many lines.
+    for (const k of Object.keys(totals)) totals[k] = Math.round(totals[k] * 100) / 100;
+    return { items, totals };
   }
 
   // Amazon SP-API Solicitations: request product review & seller feedback
@@ -208,6 +313,41 @@ class AmazonAdapter {
     return this.updateListing(sku, { qty: quantity });
   }
 
+  // Confirm a merchant-fulfilled (MFN) shipment back to Amazon so the buyer
+  // sees tracking and Amazon marks the order Shipped instead of auto-cancelling
+  // it. FBA orders ship themselves and must NOT be confirmed here.
+  // Docs: Orders API confirmShipment.
+  async confirmShipment(amazonOrderId, { trackingNumber, carrierCode, carrierName, shipDate } = {}) {
+    if (!trackingNumber) throw new Error('confirmShipment requires a trackingNumber');
+    // Amazon wants each line as { orderItemId, quantity } — fetch the item ids.
+    const itemsData = await this._request('GET', `/orders/v0/orders/${encodeURIComponent(amazonOrderId)}/orderItems`);
+    const orderItems = (itemsData.payload?.OrderItems || []).map((it) => ({
+      orderItemId: it.OrderItemId,
+      quantity: Number(it.QuantityOrdered || 1) || 1,
+    }));
+    if (!orderItems.length) throw new Error('confirmShipment: order has no items to confirm');
+
+    const packageDetail = {
+      packageReferenceId: `${amazonOrderId}-1`,
+      trackingNumber,
+      shipDate: (shipDate ? new Date(shipDate) : new Date()).toISOString(),
+      orderItems,
+    };
+    // Amazon needs a carrier: prefer the standardized carrierCode, else the
+    // free-text carrierName.
+    if (carrierCode) packageDetail.carrierCode = carrierCode;
+    else if (carrierName) packageDetail.carrierName = carrierName;
+    else packageDetail.carrierName = 'Other';
+
+    const token = await this._getAccessToken();
+    const { data } = await axios.post(
+      `${this.endpoint}/orders/v0/orders/${encodeURIComponent(amazonOrderId)}/shipmentConfirmation`,
+      { marketplaceId: this.marketplaceId, packageDetail },
+      { headers: { 'x-amz-access-token': token, 'Content-Type': 'application/json' } }
+    );
+    return { channel: 'AMAZON', orderId: amazonOrderId, confirmed: true, response: data };
+  }
+
   // Pull the seller's FBA catalog + on-hand stock (SKU, title, quantity) in one
   // shot so a first-time tenant can seed products/inventory. FBA only — MFN
   // stock lives in Kartriq. Paginated via nextToken.
@@ -260,16 +400,23 @@ class AmazonAdapter {
       discount: 0,
       paymentMethod: o.PaymentMethod,
       paymentStatus: o.PaymentExecutionDetail ? 'PAID' : 'PENDING',
-      status: o.OrderStatus === 'Shipped' ? 'SHIPPED' : 'PENDING',
+      status: AMAZON_ORDER_STATUS[o.OrderStatus] || 'PENDING',
       orderedAt: new Date(o.PurchaseDate),
       // Fulfillment model: AFN = Amazon FBA, MFN = Merchant Fulfilled
       fulfillment_channel: o.FulfillmentChannel,
       fulfillmentCenter: o.ShippingAddress?.CountryCode
         ? `${o.FulfillmentChannel}-${o.ShippingAddress?.StateOrRegion || ''}`
         : null,
-      // FBA orders ship with AWB already assigned
-      awb: o.ShipmentServiceLevelCategory || null,
-      trackingUrl: o.AmazonOrderId ? `https://www.amazon.in/gp/your-account/order-details?orderID=${o.AmazonOrderId}` : null,
+      // ShipmentServiceLevelCategory is the shipping speed (e.g. "Standard"),
+      // NOT a tracking number — leave awb null. The real carrier + tracking#
+      // arrive via a shipment-confirmation feed we don't yet consume, so we
+      // stash the service level separately for reference rather than
+      // masquerading it as an AWB.
+      awb: null,
+      shipmentServiceLevel: o.ShipmentServiceLevelCategory || null,
+      trackingUrl: o.AmazonOrderId
+        ? `https://www.${AMAZON_DOMAIN[this.region] || 'amazon.in'}/gp/your-account/order-details?orderID=${o.AmazonOrderId}`
+        : null,
     };
   }
 }
