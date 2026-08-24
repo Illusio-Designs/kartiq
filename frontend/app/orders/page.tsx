@@ -9,7 +9,7 @@ import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import {
   Button, Badge, Card, Modal, Input, Textarea, Select, Pagination, Tooltip, Loader, Tabs, EmptyState, DatePicker, Checkbox,
 } from '@/components/ui';
-import { AlertTriangle, CheckCircle2, Package, Plus, Star, Trash2, XCircle, Zap, Hand, Layers, ShoppingBag, Plug, RefreshCw, Download, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Eye, Pencil, Lock, Truck, Info } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Plus, Star, Trash2, XCircle, Zap, Hand, Layers, ShoppingBag, Plug, RefreshCw, Download, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Eye, Pencil, Lock, Truck, Info } from 'lucide-react';
 import { toast } from '@/store/toast.store';
 import Link from 'next/link';
 
@@ -634,21 +634,39 @@ export default function OrdersPage() {
 
           {/* Mobile list */}
           <div className="md:hidden divide-y divide-slate-100">
-            {(data?.orders || []).map((o: any) => (
-              <Link key={o.id} href={`/orders/${o.id}`} className="flex items-center gap-3 p-4 hover:bg-slate-50/70 transition-colors">
-                <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
-                  <Package size={15} className="text-emerald-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold text-slate-900 text-sm truncate">{o.channelOrderId || o.orderNumber}</div>
-                  <div className="text-xs text-slate-500 truncate">{o.customer?.name} · {o.channel?.name}</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-bold text-slate-900">{formatCurrency(o.total)}</div>
-                  <Badge variant={o.status === 'DELIVERED' ? 'emerald' : 'slate'} className="mt-1">{o.status}</Badge>
-                </div>
-              </Link>
-            ))}
+            {sortedOrders.map((o: any) => {
+              const isAmazon = String(o.channel?.type || '').toUpperCase().includes('AMAZON');
+              const fulLabel = o.fulfillmentType === 'CHANNEL' ? (isAmazon ? 'FBA' : 'Channel')
+                : o.fulfillmentType === 'DROPSHIP' ? 'Dropship' : (isAmazon ? 'MFN' : 'Self');
+              const fulVariant = o.fulfillmentType === 'CHANNEL' ? 'violet' : o.fulfillmentType === 'DROPSHIP' ? 'amber' : 'blue';
+              return (
+                <Link key={o.id} href={`/orders/${o.id}`} className="flex items-start gap-3 p-4 hover:bg-slate-50/70 transition-colors">
+                  <span className="w-9 h-9 rounded-lg flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0 mt-0.5" style={{ background: avatarColor(o.customer?.name || '?') }}>
+                    {initials(o.customer?.name || '?')}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-slate-900 text-sm truncate">{o.channelOrderId || o.orderNumber}</div>
+                    <div className="text-xs text-slate-500 truncate">{o.customer?.name} · {o.channel?.name}</div>
+                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                      <Badge variant={fulVariant} dot>{fulLabel}</Badge>
+                      <Badge variant={o.status === 'DELIVERED' ? 'emerald' : o.status === 'CANCELLED' ? 'rose' : 'slate'}>{o.status}</Badge>
+                    </div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    {isAwaitingTotal(o) ? (
+                      <>
+                        <div className="text-sm font-semibold text-slate-400">{formatCurrency(0)}</div>
+                        <div className="flex items-center justify-end gap-1 text-[10px] font-semibold text-amber-600 mt-0.5">
+                          <span className="w-1 h-1 rounded-full bg-amber-500" /> awaiting Amazon
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-sm font-bold text-slate-900">{formatCurrency(o.total)}</div>
+                    )}
+                  </div>
+                </Link>
+              );
+            })}
           </div>
 
           {(data?.total || 0) > pageSize && (

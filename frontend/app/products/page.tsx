@@ -131,7 +131,37 @@ export default function ProductsPage() {
         ) : data?.products?.length ? (
           <>
             <Card className="p-0 overflow-hidden">
-              <div className="overflow-x-auto">
+              {/* Mobile: card list */}
+              <div className="md:hidden divide-y divide-slate-100">
+                {filteredProducts.map((p: any) => {
+                  const st = stockStatus(p);
+                  const price = p.variants?.[0]?.sellingPrice;
+                  const thumb = p.images?.[0];
+                  return (
+                    <div key={p.id} className="flex items-start gap-3 p-4">
+                      <Link href={`/products/${p.id}`} className="w-11 h-11 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {thumb ? (
+                          <Image src={thumb} alt={p.name} width={44} height={44} className="w-full h-full object-cover" sizes="44px" unoptimized={typeof thumb === 'string' && thumb.startsWith('data:')} />
+                        ) : <Package size={16} className="text-slate-300" />}
+                      </Link>
+                      <div className="flex-1 min-w-0">
+                        <Link href={`/products/${p.id}`} className="block font-semibold text-slate-800 text-sm truncate">{p.name}</Link>
+                        <div className="text-[11px] text-slate-400 font-mono truncate">{p.sku}</div>
+                        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                          <Badge variant={STATUS_META[st].variant} dot>{STATUS_META[st].label}</Badge>
+                          <span className="text-[11px] text-slate-500 font-semibold">{Number(p.stockAvailable ?? 0)} units</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                        <span className={`text-sm font-bold ${Number(price) > 0 ? 'text-slate-900' : 'text-slate-400'}`}>{Number(price) > 0 ? formatCurrency(Number(price)) : '₹0'}</span>
+                        <Button variant="outline" size="sm" leftIcon={<Boxes size={12} />} onClick={() => setAdjustProduct(p)}>Stock</Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Desktop: table */}
+              <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
