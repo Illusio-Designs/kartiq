@@ -54,9 +54,17 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         }
         setAuthChecked(true);
       })
-      .catch(() => {
-        logout();
-        router.replace('/login');
+      .catch((err: any) => {
+        // Only a 401 means the token is genuinely invalid/expired — log out then.
+        // For transient backend failures (5xx / network — common on constrained
+        // shared MySQL), keep the already-persisted session and let the user in
+        // rather than bouncing them to /login on every refresh.
+        if (err?.response?.status === 401) {
+          logout();
+          router.replace('/login');
+        } else {
+          setAuthChecked(true);
+        }
       });
   }, []);
 
