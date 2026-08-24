@@ -45,7 +45,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
       className="fixed inset-0 z-50 flex justify-end bg-[#0B1220]/60 backdrop-blur-sm animate-fade-in"
       onClick={onClose}
     >
-      <aside
+      <div
         role="dialog"
         aria-modal="true"
         className={cn(
@@ -75,7 +75,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
             {footer}
           </div>
         )}
-      </aside>
+      </div>
     </div>
   );
 }
