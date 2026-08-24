@@ -7,6 +7,7 @@ import { Analytics } from '@/components/Analytics';
 import { CookieConsent } from '@/components/CookieConsent';
 import { WebVitalsReporter } from '@/components/WebVitalsReporter';
 import { loadSeo } from '@/lib/seo';
+import { THEME_INIT_SCRIPT } from '@/lib/theme';
 
 // Brand display font — Agency, served from /public/font/agency.otf.
 // Wrapped in next/font/local so Next handles preloading + size-adjust to
@@ -107,8 +108,12 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={agency.variable}>
+    <html lang="en" className={agency.variable} suppressHydrationWarning>
       <head>
+        {/* Set the theme class on <html> before first paint so there is no
+            flash of the wrong theme. Default follows the OS; a stored user
+            choice overrides it. Must stay ahead of any rendered markup. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         {/* Structured data — Organization */}
         <script
           type="application/ld+json"

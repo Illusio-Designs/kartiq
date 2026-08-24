@@ -11,6 +11,7 @@ import { HelpTrigger } from '@/components/HelpDrawer';
 import { InboxTrigger } from '@/components/InboxDrawer';
 import { UserMenu } from '@/components/UserMenu';
 import { WalletPill } from '@/components/wallet/WalletPill';
+import { ThemeToggle } from '@/components/theme/ThemeToggle';
 
 export function Topbar() {
   const { user, hasPermission } = useAuthStore();
@@ -45,7 +46,7 @@ export function Topbar() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xl border-b border-slate-200 px-4 md:px-6 h-16 flex items-center gap-3">
+    <header className="sticky top-0 z-30 bg-white/95 dark:bg-[#0d1424]/90 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 px-4 md:px-6 h-16 flex items-center gap-3">
       {/* Mobile menu toggle */}
       <button
         onClick={() => setMobileSidebar(true)}
@@ -126,6 +127,10 @@ export function Topbar() {
             <WalletPill />
           </div>
         )}
+
+        {/* Theme toggle — universal. Cycles Light → Dark → System and
+            persists the choice; System follows the OS setting. */}
+        <ThemeToggle />
 
         {/* Inbox — kept on every breakpoint because the unread badge is
             the primary signal that something needs attention. */}

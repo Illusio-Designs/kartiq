@@ -48,6 +48,37 @@
     --body-bg: #f8fafc;            /* slate-50 */
     --body-glow-1: rgba(6, 212, 184, 0.05);
     --body-glow-2: rgba(6, 182, 212, 0.04);
+
+    /* Neutral surfaces used by the dark retrofit (below). In light mode these
+       just mirror the existing light values so anything referencing them is
+       consistent; the .dark block re-points them to the dark palette. */
+    --surface:   #ffffff;          /* cards / panels (maps bg-white)        */
+    --surface-2: #f8fafc;          /* subtle sections / hovers (slate-50)   */
+    --surface-3: #f1f5f9;          /* slightly stronger fill (slate-100)    */
+    --hairline:  #e2e8f0;          /* borders (slate-200)                   */
+  }
+
+  /* ── Dark theme ──
+     Applied when <html> carries the `.dark` class (set by lib/theme.ts,
+     defaulting to the OS preference). Overrides the shared tokens; the
+     compatibility layer near the end of this file remaps the neutral
+     Tailwind utilities the app uses so pages go dark without per-file edits. */
+  .dark {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 96%;
+    --border: 215 28% 22%;
+    --input:  215 28% 22%;
+
+    --brand-soft: 170 60% 14%;
+
+    --surface:   #131c2e;          /* cards / panels                        */
+    --surface-2: #0e1626;          /* subtle sections / hovers              */
+    --surface-3: #1b2740;          /* stronger fill                         */
+    --hairline:  #24314d;          /* borders                               */
+
+    --body-bg: #0a1120;
+    --body-glow-1: rgba(6, 212, 184, 0.07);
+    --body-glow-2: rgba(6, 182, 212, 0.06);
   }
 
   html, body {
@@ -354,4 +385,72 @@
   textarea {
     font-size: 16px;
   }
+}
+
+/* ==========================================================================
+   Dark mode compatibility layer
+   --------------------------------------------------------------------------
+   The app was built light-first with hardcoded neutral utilities (bg-white,
+   text-slate-*, border-slate-*). Rather than editing 89 files, we remap those
+   NEUTRAL utilities under `.dark`. Two-class selectors (`.dark .bg-white`)
+   outrank Tailwind's single-class utilities, and being last in the file they
+   also win any specificity ties — while explicit `dark:` utilities on a
+   component (higher specificity or later) can still override when needed.
+
+   Colored accent tints (emerald-50/amber-50/rose-50 pills, etc.) are left
+   as-is: they stay legible as light-colored chips on dark surfaces.
+   ========================================================================== */
+
+/* Custom component classes that bake in `bg-white` via @apply, so the utility
+   remap below can't reach them. */
+.dark .glass          { background: rgba(19, 28, 46, 0.72); border-color: rgba(255,255,255,0.08); }
+.dark .card-premium   { background-color: var(--surface); border-color: var(--hairline); }
+.dark .btn-secondary  { background-color: var(--surface); color: #e2e8f0; border-color: var(--hairline); }
+.dark .btn-secondary:hover { background-color: var(--surface-3); border-color: var(--hairline); }
+.dark .btn-ghost      { color: #cbd5e1; }
+.dark .btn-ghost:hover { background-color: rgba(255,255,255,0.06); color: #fff; }
+.dark .input-premium  { background-color: var(--surface); color: #e2e8f0; border-color: var(--hairline); }
+.dark .input-premium::placeholder { color: #64748b; }
+
+/* Surfaces */
+.dark .bg-white                        { background-color: var(--surface); }
+.dark .bg-slate-50, .dark .bg-gray-50  { background-color: var(--surface-2); }
+.dark .bg-slate-100, .dark .bg-gray-100 { background-color: var(--surface-3); }
+.dark .bg-slate-200, .dark .bg-gray-200 { background-color: #29385a; }
+
+/* Hover surfaces */
+.dark .hover\:bg-white:hover                          { background-color: var(--surface-3); }
+.dark .hover\:bg-slate-50:hover, .dark .hover\:bg-gray-50:hover   { background-color: var(--surface-2); }
+.dark .hover\:bg-slate-100:hover, .dark .hover\:bg-gray-100:hover { background-color: var(--surface-3); }
+.dark .hover\:bg-slate-200:hover, .dark .hover\:bg-gray-200:hover { background-color: #33456b; }
+
+/* Neutral text — colored text (emerald/rose/amber/etc.) is intentionally untouched */
+.dark .text-black,
+.dark .text-slate-900, .dark .text-gray-900 { color: #f1f5f9; }
+.dark .text-slate-800, .dark .text-gray-800 { color: #e2e8f0; }
+.dark .text-slate-700, .dark .text-gray-700 { color: #cbd5e1; }
+.dark .text-slate-600, .dark .text-gray-600 { color: #aeb9cc; }
+.dark .text-slate-500, .dark .text-gray-500 { color: #94a3b8; }
+.dark .text-slate-400, .dark .text-gray-400 { color: #7e8ba3; }
+
+/* Borders + dividers */
+.dark .border-slate-100, .dark .border-gray-100,
+.dark .border-slate-200, .dark .border-gray-200,
+.dark .border-slate-300, .dark .border-gray-300 { border-color: var(--hairline); }
+/* Opacity-variant neutral borders (e.g. Card's border-slate-200/80) */
+.dark .border-slate-200\/50, .dark .border-slate-200\/70, .dark .border-slate-200\/80,
+.dark .border-slate-100\/80 { border-color: var(--hairline); }
+.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-gray-100  > :not([hidden]) ~ :not([hidden]),
+.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-gray-200  > :not([hidden]) ~ :not([hidden]) { border-color: var(--hairline); }
+
+/* Placeholders */
+.dark .placeholder\:text-slate-400::placeholder,
+.dark .placeholder\:text-gray-400::placeholder { color: #64748b; }
+
+/* Loading shimmer gradient */
+.dark .animate-shimmer {
+  background: linear-gradient(110deg, #172136 8%, #24314d 18%, #172136 33%);
+  background-size: 200% 100%;
 }
