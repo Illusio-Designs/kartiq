@@ -50,6 +50,9 @@ export default function OrderDetailPage() {
               {order.channelOrderId || order.orderNumber}
             </h1>
             <p className="text-sm text-slate-500 mt-1 font-mono">{order.orderNumber}</p>
+            <span className={`inline-block mt-2 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${order.channelOrderId ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
+              {order.channelOrderId ? `Auto-synced from ${order.channel?.name || 'channel'}` : 'Manually created'}
+            </span>
           </div>
           <span className={`px-3 py-1 rounded-full text-xs font-bold ${statusClass}`}>{order.status}</span>
         </div>
