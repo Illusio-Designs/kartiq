@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { channelApi } from '@/lib/api';
 import {
-  ArrowLeft, RefreshCw, Download, Upload,
+  ArrowLeft, Upload,
   Plug, AlertCircle, Trash2, KeyRound, CheckCircle2,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -33,21 +33,6 @@ export default function ChannelDetailPage() {
     queryKey: ['channel-listings', id],
     queryFn: () => channelApi.listListings(id).then(r => r.data),
     enabled: !!channel,
-  });
-
-  const testMutation = useMutation({
-    mutationFn: () => channelApi.test(id),
-    onSuccess: (res) => toast.success(`Connected: ${JSON.stringify(res.data)}`),
-    onError: (err: any) => toast.error(err.response?.data?.error || err.message),
-  });
-
-  const syncOrdersMutation = useMutation({
-    mutationFn: () => channelApi.syncOrders(id),
-    onSuccess: (res) => {
-      toast.success(`Synced: ${res.data.imported} imported, ${res.data.skipped} skipped, ${res.data.failed} failed`);
-      qc.invalidateQueries({ queryKey: ['channel', id] });
-    },
-    onError: (err: any) => toast.error(err.response?.data?.details || err.response?.data?.error || err.message),
   });
 
   const syncInventoryMutation = useMutation({
@@ -155,24 +140,8 @@ export default function ChannelDetailPage() {
           />
         )}
 
-        {/* Action cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <ActionCard
-            icon={RefreshCw}
-            title="Test Connection"
-            description="Ping the channel API to verify credentials."
-            onClick={() => testMutation.mutate()}
-            loading={testMutation.isPending}
-            disabled={!hasCredentials}
-          />
-          <ActionCard
-            icon={Download}
-            title="Sync Orders"
-            description="Pull the latest orders from this channel."
-            onClick={() => syncOrdersMutation.mutate()}
-            loading={syncOrdersMutation.isPending}
-            disabled={!hasCredentials}
-          />
+        {/* Action */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <ActionCard
             icon={Upload}
             title="Push Inventory"
