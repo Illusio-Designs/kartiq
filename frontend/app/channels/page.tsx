@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchStore } from '@/store/search.store';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { channelApi } from '@/lib/api';
+import { channelApi, oauthApi } from '@/lib/api';
 import {
   Plug, CheckCircle2, Circle, Clock, ExternalLink, Inbox, Sparkles, Lock,
   ShoppingBag, Zap, Truck, Globe, MessageCircle, Building2, Boxes, ChevronRight, HelpCircle, Mail,
@@ -552,15 +552,29 @@ function ChannelCard({
 function ConnectModal({
   entry, onClose, onSuccess,
 }: { entry: CatalogEntry; onClose: () => void; onSuccess: () => void }) {
+  // OAuth-capable channels (Amazon, Shopify, Flipkart, Meta, …) authorize in a
+  // browser tab — the seller never pastes API keys. Non-OAuth channels keep the
+  // manual paste form driven by the catalog's credentialsSchema.
+  const oauthProvider = getSchemaForType(entry.type)?.oauth;
+
   const [name, setName] = useState(`My ${entry.name}`);
   const [credentials, setCredentials] = useState<Record<string, any>>({});
   const [error, setError] = useState('');
+  const [phase, setPhase] = useState<'idle' | 'authorizing' | 'waiting' | 'success'>('idle');
+
+  const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const popupRef = useRef<Window | null>(null);
+  const doneRef = useRef(false);
+  const channelIdRef = useRef<string | null>(null); // reuse the channel across retries
+  const stopPoll = () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = undefined; } };
+  useEffect(() => () => stopPoll(), []);
 
   const { data: detail } = useQuery({
     queryKey: ['channel-catalog-entry', entry.type],
     queryFn: () => channelApi.catalogEntry(entry.type).then(r => r.data),
   });
 
+  // Manual paste flow (non-OAuth channels only)
   const createMutation = useMutation({
     mutationFn: async () => {
       const { data: created } = await channelApi.create({ name, type: entry.type, category: entry.category });
@@ -575,7 +589,90 @@ function ConnectModal({
   // Merge in `help` text from the frontend channel-schemas (single source of truth for tooltips)
   const frontendSchema = getSchemaForType(entry.type);
   const helpByKey = new Map((frontendSchema?.fields || []).map((f) => [f.key, f.help]));
-  const schema = backendSchema.map((f: any) => ({ ...f, help: helpByKey.get(f.key) }));
+  let schema = backendSchema.map((f: any) => ({ ...f, help: helpByKey.get(f.key) }));
+  // For OAuth channels, drop the manual credential inputs (Seller ID, Refresh
+  // Token, API keys) — keep only marketplace-selection fields the consent URL
+  // needs (region / shop). The seller grants access in the browser instead.
+  if (oauthProvider) schema = schema.filter((f: any) => f.key === 'region' || f.key === 'shop');
+
+  const consentUrl = async (channelId: string): Promise<string> => {
+    switch (oauthProvider) {
+      case 'amazon':       return (await oauthApi.amazonStart(channelId, credentials.region)).data.url;
+      case 'shopify':      return (await oauthApi.shopifyStart(channelId, credentials.shop)).data.url;
+      case 'flipkart':     return (await oauthApi.flipkartStart(channelId)).data.url;
+      case 'meta':         return (await oauthApi.metaStart(channelId)).data.url;
+      case 'lazada':       return (await oauthApi.lazadaStart(channelId, credentials.region || 'SG')).data.url;
+      case 'shopee':       return (await oauthApi.shopeeStart(channelId, credentials.region || 'SG')).data.url;
+      case 'mercadolibre': return (await oauthApi.mercadoLibreStart(channelId, credentials.region || 'AR')).data.url;
+      case 'allegro':      return (await oauthApi.allegroStart(channelId, false)).data.url;
+      case 'wish':         return (await oauthApi.wishStart(channelId)).data.url;
+      default: throw new Error(`OAuth for ${oauthProvider} is not supported yet`);
+    }
+  };
+
+  const authorize = async () => {
+    setError('');
+    if (oauthProvider === 'shopify' && !credentials.shop) {
+      setError('Enter your myshopify.com store domain first.');
+      return;
+    }
+    setPhase('authorizing');
+    try {
+      // Create the channel once, then reuse it on retry so repeated Authorize
+      // clicks don't create duplicate channels.
+      if (!channelIdRef.current) {
+        const { data: created } = await channelApi.create({ name, type: entry.type, category: entry.category });
+        channelIdRef.current = created.id;
+      }
+      const channelId = channelIdRef.current!;
+      const url = await consentUrl(channelId);
+
+      // Open the provider's consent screen in a new browser tab.
+      popupRef.current = window.open(url, '_blank');
+      if (!popupRef.current) {
+        setError('Your browser blocked the sign-in tab. Allow pop-ups for this site and click Authorize again.');
+        setPhase('idle');
+        return;
+      }
+      popupRef.current.focus?.();
+
+      stopPoll();
+      doneRef.current = false;
+      setPhase('waiting');
+      let attempts = 0;
+      const MAX_ATTEMPTS = 90; // 90 × 2s = 3 min
+      pollRef.current = setInterval(async () => {
+        attempts += 1;
+        try {
+          const r = await oauthApi.status(oauthProvider!, channelId);
+          if (r.data.connected) {
+            doneRef.current = true;
+            stopPoll();
+            setPhase('success');
+            setTimeout(onSuccess, 1000);
+            return;
+          }
+          if (r.data.error) { stopPoll(); setError(r.data.error); setPhase('idle'); return; }
+        } catch { /* transient — keep polling */ }
+        if (popupRef.current?.closed && !doneRef.current) {
+          stopPoll();
+          setPhase('idle');
+          setError(`Sign-in tab closed before finishing. Click "Authorize with ${entry.name}" to try again.`);
+          return;
+        }
+        if (attempts >= MAX_ATTEMPTS && !doneRef.current) {
+          stopPoll();
+          setPhase('idle');
+          setError('Authorization timed out. Please retry and approve access in the new tab.');
+        }
+      }, 2000);
+    } catch (e: any) {
+      setError(e?.response?.data?.error || e.message);
+      setPhase('idle');
+    }
+  };
+
+  const busy = phase === 'authorizing' || phase === 'waiting' || createMutation.isPending;
 
   return (
     <Modal
@@ -586,14 +683,27 @@ function ConnectModal({
       size="md"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button
-            variant="primary"
-            loading={createMutation.isPending}
-            onClick={() => { setError(''); createMutation.mutate(); }}
-          >
-            {createMutation.isPending ? 'Connecting…' : 'Connect Channel'}
-          </Button>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+          {oauthProvider ? (
+            <Button
+              variant="primary"
+              loading={busy}
+              disabled={phase === 'success'}
+              onClick={authorize}
+            >
+              {phase === 'success' ? 'Connected'
+                : phase === 'waiting' ? 'Waiting for authorization…'
+                : `Authorize with ${entry.name}`}
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              loading={createMutation.isPending}
+              onClick={() => { setError(''); createMutation.mutate(); }}
+            >
+              {createMutation.isPending ? 'Connecting…' : 'Connect Channel'}
+            </Button>
+          )}
         </>
       }
     >
@@ -616,6 +726,12 @@ function ConnectModal({
           </div>
         )}
 
+        {oauthProvider && (
+          <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl p-3">
+            🔒 Secure sign-in — click <span className="font-semibold">Authorize with {entry.name}</span> and approve access in the new browser tab. No API keys to copy or paste.
+          </div>
+        )}
+
         <Field label="Channel Name" value={name} onChange={setName} required />
         {schema.map((field: any) => (
           <Field
@@ -629,6 +745,12 @@ function ConnectModal({
             help={field.help}
           />
         ))}
+
+        {phase === 'waiting' && (
+          <p className="text-xs text-slate-500">
+            A new tab opened for {entry.name} sign-in. Approve access there — this window updates automatically once it’s done.
+          </p>
+        )}
 
         {error && <p className="text-xs text-rose-600 font-medium">{error}</p>}
       </div>

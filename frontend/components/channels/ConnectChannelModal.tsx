@@ -32,7 +32,13 @@ export function ConnectChannelModal({
   const [message, setMessage] = useState('');
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const popupRef = useRef<Window | null>(null);
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+  // Tracks a completed connection so the popup-closed / timeout branches don't
+  // misfire after success (setInterval closes over stale `status` state).
+  const doneRef = useRef(false);
+  const stopPoll = () => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = undefined; }
+  };
+  useEffect(() => () => stopPoll(), []);
 
   // Webhook URL surfaced for each channel — the tenant copies this into the
   // external platform's dashboard so we receive events.
@@ -110,49 +116,58 @@ export function ConnectChannelModal({
         throw new Error(`OAuth provider ${provider} not implemented yet`);
       }
 
-      // Open consent in a popup
-      const w = 560, h = 760;
-      const left = window.screenX + (window.innerWidth - w) / 2;
-      const top  = window.screenY + (window.innerHeight - h) / 2;
-      popupRef.current = window.open(
-        url,
-        'kartriq-oauth',
-        `width=${w},height=${h},left=${left},top=${top}`
-      );
+      // Open the provider's consent screen in a new browser tab (more reliable
+      // than a sized popup — avoids popup blockers and works on mobile).
+      popupRef.current = window.open(url, '_blank');
       if (!popupRef.current) {
         setStatus('error');
         setMessage('Popup blocked. Please allow popups for this site and retry.');
         return;
       }
+      popupRef.current.focus?.();
 
+      // Reset guards and clear any poller from a previous attempt (re-entrancy).
+      stopPoll();
+      doneRef.current = false;
       setStatus('idle');
-      setMessage('Waiting for authorization…');
+      setMessage(`Waiting for authorization… complete the sign-in in the ${schema.name} window.`);
 
-      // Poll the channel status until credentials land or popup closes
+      // Poll the channel status until credentials land, the popup closes, or we
+      // hit the timeout (90 × 2s = 3 min) so we never poll forever.
+      let attempts = 0;
+      const MAX_ATTEMPTS = 90;
       pollRef.current = setInterval(async () => {
+        attempts += 1;
         try {
           const r = await oauthApi.status(provider, channelId);
           if (r.data.connected) {
-            clearInterval(pollRef.current);
+            doneRef.current = true;
+            stopPoll();
             setStatus('success');
             setMessage(`${schema.name} connected`);
             setTimeout(() => onConnected(), 1200);
             return;
           }
           if (r.data.error) {
-            clearInterval(pollRef.current);
+            stopPoll();
             setStatus('error');
             setMessage(r.data.error);
             return;
           }
-          if (popupRef.current?.closed) {
-            clearInterval(pollRef.current);
-            if (status !== 'success') {
-              setStatus('idle');
-              setMessage('Authorization cancelled');
-            }
-          }
-        } catch {}
+        } catch {
+          // transient network/status error — keep polling until timeout
+        }
+        if (popupRef.current?.closed && !doneRef.current) {
+          stopPoll();
+          setStatus('idle');
+          setMessage(`Authorization window closed before finishing. Click "Authorize with ${schema.name}" to try again.`);
+          return;
+        }
+        if (attempts >= MAX_ATTEMPTS && !doneRef.current) {
+          stopPoll();
+          setStatus('error');
+          setMessage(`Authorization timed out. Please retry and make sure you approve access in the ${schema.name} window.`);
+        }
       }, 2000);
     } catch (e: any) {
       setStatus('error');
@@ -163,6 +178,14 @@ export function ConnectChannelModal({
   const missing = schema.fields
     .filter((f) => f.required && !values[f.key])
     .map((f) => f.label);
+
+  // For OAuth channels the primary action is the Authorize popup, but several
+  // (e.g. Amazon) also document a manual "paste a self-authorized refresh
+  // token" fallback. Surface a secondary Save button once the user has typed a
+  // real credential — the OAuth helper fields below don't count as creds.
+  const OAUTH_HELPER_KEYS = new Set(['region', 'shop', 'sandbox']);
+  const hasPastedCreds = !!schema.oauth &&
+    Object.entries(values).some(([k, v]) => v && !OAUTH_HELPER_KEYS.has(k));
 
   const submit = async () => {
     if (missing.length) {
@@ -200,15 +223,28 @@ export function ConnectChannelModal({
             Cancel
           </Button>
           {schema.oauth ? (
-            <Button
-              variant="primary"
-              leftIcon={<ShieldCheck size={14} />}
-              loading={status === 'saving'}
-              disabled={status === 'success'}
-              onClick={startOAuth}
-            >
-              {status === 'success' ? 'Connected' : `Authorize with ${schema.name}`}
-            </Button>
+            <>
+              {hasPastedCreds && (
+                <Button
+                  variant="secondary"
+                  leftIcon={<Plug size={14} />}
+                  loading={status === 'saving'}
+                  disabled={status === 'success'}
+                  onClick={submit}
+                >
+                  Save pasted credentials
+                </Button>
+              )}
+              <Button
+                variant="primary"
+                leftIcon={<ShieldCheck size={14} />}
+                loading={status === 'saving'}
+                disabled={status === 'success'}
+                onClick={startOAuth}
+              >
+                {status === 'success' ? 'Connected' : `Authorize with ${schema.name}`}
+              </Button>
+            </>
           ) : (
             <Button
               variant="primary"
