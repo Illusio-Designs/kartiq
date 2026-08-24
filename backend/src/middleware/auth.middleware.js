@@ -113,23 +113,33 @@ const DEV_AUTH_ENABLED =
 const authenticate = async (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token provided' });
-  try {
-    // ── Dev bypass: "dev:<email>" loads a seeded user, no JWT needed
-    if (DEV_AUTH_ENABLED && token.startsWith('dev:')) {
-      const email = token.slice(4).trim().toLowerCase();
-      const ctx = await loadUserContext(email, { byEmail: true });
-      if (!ctx) return res.status(401).json({ error: `Dev user not found: ${email}` });
-      req.user = ctx.user;
-      req.tenant = ctx.tenant;
-      req.plan = ctx.plan;
-      req.subscription = ctx.subscription;
-      req.permissions = ctx.permissions;
-      await applyImpersonation(req);
-      return next();
+
+  // Step 1 — resolve who the caller claims to be. A failure to verify the JWT
+  // is a genuine auth error (401). Dev bypass ("dev:<email>") skips the JWT.
+  let lookup; // { value, byEmail }
+  if (DEV_AUTH_ENABLED && token.startsWith('dev:')) {
+    lookup = { value: token.slice(4).trim().toLowerCase(), byEmail: true };
+  } else {
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({ error: 'Invalid or expired token' });
     }
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const ctx = await loadUserContext(decoded.id);
-    if (!ctx) return res.status(401).json({ error: 'User no longer exists' });
+    lookup = { value: decoded.id, byEmail: false };
+  }
+
+  // Step 2 — load the user context. A DB / server failure here is TRANSIENT
+  // (503), not an auth failure. Returning 401 (as this used to) wrongly logged
+  // users out on every refresh whenever the database hiccupped — a real problem
+  // on shared hosts with tight MySQL connection limits.
+  try {
+    const ctx = await loadUserContext(lookup.value, { byEmail: lookup.byEmail });
+    if (!ctx) {
+      return res.status(401).json({
+        error: lookup.byEmail ? `Dev user not found: ${lookup.value}` : 'User no longer exists',
+      });
+    }
     req.user = ctx.user;
     req.tenant = ctx.tenant;
     req.plan = ctx.plan;
@@ -137,8 +147,9 @@ const authenticate = async (req, res, next) => {
     req.permissions = ctx.permissions;
     await applyImpersonation(req);
     next();
-  } catch {
-    res.status(401).json({ error: 'Invalid or expired token' });
+  } catch (err) {
+    console.error('[authenticate] context load failed:', err?.code || '', err?.message || err);
+    res.status(503).json({ error: 'Service temporarily unavailable — please retry.' });
   }
 };
 
