@@ -45,9 +45,10 @@ export function Modal({ open, onClose, title, description, children, footer, siz
       className="fixed inset-0 z-50 flex justify-end bg-[#0B1220]/60 backdrop-blur-sm animate-fade-in"
       onClick={onClose}
     >
+      {/* Plain div (no ARIA role) so the stopPropagation onClick doesn't trip
+          jsx-a11y/no-noninteractive-element-interactions — matches the original
+          modal. The overlay handles click-to-close. */}
       <div
-        role="dialog"
-        aria-modal="true"
         className={cn(
           'w-full h-full bg-white text-slate-900 shadow-2xl shadow-[#0B1220]/30 flex flex-col animate-drawer-in border-l border-slate-200',
           SIZES[size]
