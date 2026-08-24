@@ -9,9 +9,25 @@ import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import {
   Button, Badge, Card, Modal, Input, Textarea, Select, Pagination, Tooltip, Loader, Tabs, EmptyState, DatePicker, Checkbox,
 } from '@/components/ui';
-import { AlertTriangle, CheckCircle2, Package, Plus, Star, Trash2, XCircle, Zap, Hand, Layers, ShoppingBag, Plug, RefreshCw, Download, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Package, Plus, Star, Trash2, XCircle, Zap, Hand, Layers, ShoppingBag, Plug, RefreshCw, Download, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Eye, Pencil, Lock, Truck, Info } from 'lucide-react';
 import { toast } from '@/store/toast.store';
 import Link from 'next/link';
+
+// Deterministic avatar colour + initials for a customer name.
+const AVATAR_COLORS = ['#08b5a6', '#2563eb', '#7c3aed', '#e11d48', '#0e9f6e', '#b45309'];
+function avatarColor(name: string): string {
+  let sum = 0;
+  for (const c of name) sum += c.charCodeAt(0);
+  return AVATAR_COLORS[sum % AVATAR_COLORS.length];
+}
+function initials(name: string): string {
+  return (name || '?').split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
+}
+// A channel order that has landed with no total yet — Amazon reports no order
+// total while an order is still Pending; it backfills on the next sync.
+function isAwaitingTotal(o: any): boolean {
+  return (!o.total || Number(o.total) === 0) && (o.status === 'PENDING' || o.dataCompleteness === 'PARTIAL' || o.dataCompleteness === 'MINIMAL') && !!o.channelOrderId;
+}
 
 // Local-date → YYYY-MM-DD (the shape the orders API expects). Uses local
 // getFullYear/Month/Date, not toISOString, so a date never shifts a day across
@@ -67,6 +83,16 @@ const STATUSES = [
   { value: 'CANCELLED',  label: 'Cancelled' },
 ];
 
+// Statuses a seller can set on an editable (MFN / manual) order.
+const EDIT_STATUSES = [
+  { value: 'PENDING',    label: 'Pending' },
+  { value: 'CONFIRMED',  label: 'Confirmed' },
+  { value: 'PROCESSING', label: 'Processing' },
+  { value: 'SHIPPED',    label: 'Shipped' },
+  { value: 'DELIVERED',  label: 'Delivered' },
+  { value: 'CANCELLED',  label: 'Cancelled' },
+];
+
 const RISK_FILTERS = [
   { value: '',        label: 'All Risk' },
   { value: 'LOW',     label: 'Low' },
@@ -106,6 +132,31 @@ export default function OrdersPage() {
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
   const [colsOpen, setColsOpen] = useState(false);
   const colsRef = useRef<HTMLDivElement>(null);
+  // Per-order quick-edit slide-over (shared Modal renders as a right drawer).
+  const [editOrder, setEditOrder] = useState<any | null>(null);
+  const [editStatus, setEditStatus] = useState('PENDING');
+  const [editTracking, setEditTracking] = useState('');
+  const [editCourier, setEditCourier] = useState('');
+  const [noteDismissed, setNoteDismissed] = useState(false);
+  useEffect(() => {
+    try { setNoteDismissed(localStorage.getItem('kartriq-orders-zero-note') === '1'); } catch { /* ignore */ }
+  }, []);
+  const openEdit = (o: any) => {
+    setEditOrder(o);
+    setEditStatus(o.status || 'PENDING');
+    setEditTracking(o.trackingNumber || o.awb || '');
+    setEditCourier(o.courierName || '');
+  };
+  const editStatusMutation = useMutation({
+    mutationFn: (body: { status: string; trackingNumber?: string; courierName?: string }) =>
+      orderApi.updateStatus(editOrder.id, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      setEditOrder(null);
+      toast.success('Order updated');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Failed to update order'),
+  });
 
   // Restore hidden columns from localStorage on mount.
   useEffect(() => {
@@ -244,7 +295,19 @@ export default function OrdersPage() {
           </td>
         );
       case 'customer':
-        return <td key={key} className="px-4 py-3 text-slate-700">{o.customer?.name}</td>;
+        return (
+          <td key={key} className="px-4 py-3">
+            <div className="flex items-center gap-2.5">
+              <span
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-extrabold text-white flex-shrink-0"
+                style={{ background: avatarColor(o.customer?.name || '?') }}
+              >
+                {initials(o.customer?.name || '?')}
+              </span>
+              <span className="text-slate-700 font-medium truncate max-w-[180px]">{o.customer?.name || '—'}</span>
+            </div>
+          </td>
+        );
       case 'channel':
         return <td key={key} className="px-4 py-3 text-slate-500">{o.channel?.name}</td>;
       case 'fulfillment':
@@ -270,7 +333,20 @@ export default function OrdersPage() {
           </td>
         );
       case 'total':
-        return <td key={key} className="px-4 py-3 font-bold text-slate-900">{formatCurrency(o.total)}</td>;
+        return (
+          <td key={key} className="px-4 py-3">
+            {isAwaitingTotal(o) ? (
+              <div>
+                <span className="font-semibold text-slate-400">{formatCurrency(0)}</span>
+                <div className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 mt-0.5">
+                  <span className="w-1 h-1 rounded-full bg-amber-500" /> awaiting Amazon
+                </div>
+              </div>
+            ) : (
+              <span className="font-bold text-slate-900">{formatCurrency(o.total)}</span>
+            )}
+          </td>
+        );
       case 'rto':
         return (
           <td key={key} className="px-4 py-3">
@@ -417,6 +493,24 @@ export default function OrdersPage() {
           </div>
         )}
 
+        {/* ₹0.00 explainer — shown while any loaded order is still awaiting its
+            total from the channel. Dismissal is remembered per browser. */}
+        {!noteDismissed && (data?.orders || []).some((o: any) => isAwaitingTotal(o)) && (
+          <div className="flex items-start gap-2.5 rounded-xl p-3 text-sm border bg-amber-50 border-amber-200 text-amber-800">
+            <Info size={16} className="text-amber-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <span className="font-bold">Some orders show ₹0.00.</span> Amazon doesn&apos;t report an order total while an order is still <span className="font-semibold">Pending</span> — the amount (and the <span className="font-semibold">PARTIAL</span> flag) fill in automatically on the next sync.
+            </div>
+            <button
+              onClick={() => { setNoteDismissed(true); try { localStorage.setItem('kartriq-orders-zero-note', '1'); } catch { /* ignore */ } }}
+              className="p-0.5 hover:bg-amber-100 rounded text-amber-700"
+              aria-label="Dismiss"
+            >
+              <XCircle size={15} />
+            </button>
+          </div>
+        )}
+
         {/* Table */}
         <Card className="overflow-hidden">
           <div className="hidden md:block overflow-x-auto">
@@ -451,31 +545,43 @@ export default function OrdersPage() {
                     <td className="px-4 py-3 text-slate-500 font-semibold">{(page - 1) * pageSize + idx + 1}</td>
                     {visibleColumns.map((c) => renderCell(o, c.key))}
                     <td className="px-4 py-3">
-                      {o.needsApproval ? (
-                        <div className="flex items-center gap-1">
-                          <Tooltip content="Approve order">
-                            <Button variant="outline" size="icon" onClick={() => approveMutation.mutate(o.id)} disabled={approveMutation.isPending}>
-                              <CheckCircle2 size={13} />
+                      <div className="flex items-center justify-end gap-1">
+                        {o.needsApproval && (
+                          <>
+                            <Tooltip content="Approve order">
+                              <Button variant="outline" size="icon" onClick={() => approveMutation.mutate(o.id)} disabled={approveMutation.isPending}>
+                                <CheckCircle2 size={13} />
+                              </Button>
+                            </Tooltip>
+                            <Tooltip content="Reject order">
+                              <Button variant="danger" size="icon" onClick={() => rejectMutation.mutate(o.id)} disabled={rejectMutation.isPending}>
+                                <XCircle size={13} />
+                              </Button>
+                            </Tooltip>
+                          </>
+                        )}
+                        {o.status === 'DELIVERED' && (
+                          <Tooltip content={o.reviewRequestedAt ? `Requested on ${new Date(o.reviewRequestedAt).toLocaleDateString()}` : 'Request product review'}>
+                            <Button variant="secondary" size="icon" onClick={() => reviewMutation.mutate(o.id)} disabled={reviewMutation.isPending || !!o.reviewRequestedAt}>
+                              <Star size={13} />
                             </Button>
                           </Tooltip>
-                          <Tooltip content="Reject order">
-                            <Button variant="danger" size="icon" onClick={() => rejectMutation.mutate(o.id)} disabled={rejectMutation.isPending}>
-                              <XCircle size={13} />
-                            </Button>
-                          </Tooltip>
-                        </div>
-                      ) : o.status === 'DELIVERED' ? (
-                        <Tooltip content={o.reviewRequestedAt ? `Requested on ${new Date(o.reviewRequestedAt).toLocaleDateString()}` : 'Request product review'}>
-                          <Button
-                            variant="secondary"
-                            size="icon"
-                            onClick={() => reviewMutation.mutate(o.id)}
-                            disabled={reviewMutation.isPending || !!o.reviewRequestedAt}
-                          >
-                            <Star size={13} />
-                          </Button>
+                        )}
+                        <Tooltip content="View order">
+                          <Link href={`/orders/${o.id}`}>
+                            <Button variant="outline" size="icon"><Eye size={13} /></Button>
+                          </Link>
                         </Tooltip>
-                      ) : null}
+                        {o.fulfillmentType === 'CHANNEL' ? (
+                          <Tooltip content="Fulfilled by Amazon — managed by the channel">
+                            <span><Button variant="outline" size="icon" disabled><Lock size={13} /></Button></span>
+                          </Tooltip>
+                        ) : (
+                          <Tooltip content="Edit fulfillment">
+                            <Button variant="outline" size="icon" onClick={() => openEdit(o)}><Pencil size={13} /></Button>
+                          </Tooltip>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )) : (
@@ -540,6 +646,82 @@ export default function OrdersPage() {
       </div>
 
       <NewOrderModal open={modalOpen} onClose={() => setModalOpen(false)} />
+
+      {/* Per-order quick-edit slide-over. MFN / manual orders are editable;
+          FBA orders are read-only (Amazon manages fulfillment). */}
+      <Modal
+        open={!!editOrder}
+        onClose={() => setEditOrder(null)}
+        title={editOrder ? (editOrder.channelOrderId || editOrder.orderNumber) : 'Order'}
+        description={editOrder?.customer?.name ? `${editOrder.customer.name} · ${editOrder.channel?.name || 'Order'}` : undefined}
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditOrder(null)}>Close</Button>
+            {editOrder && editOrder.fulfillmentType !== 'CHANNEL' && (
+              <Button
+                loading={editStatusMutation.isPending}
+                onClick={() => editStatusMutation.mutate({
+                  status: editStatus,
+                  trackingNumber: editTracking || undefined,
+                  courierName: editCourier || undefined,
+                })}
+              >
+                Save changes
+              </Button>
+            )}
+          </>
+        }
+      >
+        {editOrder && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge variant={editOrder.fulfillmentType === 'CHANNEL' ? 'violet' : editOrder.fulfillmentType === 'DROPSHIP' ? 'amber' : 'blue'} dot>
+                {(() => {
+                  const isAmazon = String(editOrder.channel?.type || '').toUpperCase().includes('AMAZON');
+                  if (editOrder.fulfillmentType === 'CHANNEL') return isAmazon ? 'Fulfilled by Amazon (FBA)' : 'Fulfilled by channel';
+                  if (editOrder.fulfillmentType === 'DROPSHIP') return 'Dropship';
+                  return isAmazon ? 'Self-fulfilled (MFN)' : 'Self-fulfilled';
+                })()}
+              </Badge>
+              <Badge variant={editOrder.status === 'DELIVERED' ? 'emerald' : editOrder.status === 'CANCELLED' ? 'rose' : 'slate'}>{editOrder.status}</Badge>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total</div>
+                <div className="text-sm font-bold text-slate-900 mt-0.5">{formatCurrency(editOrder.total || 0)}</div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ordered</div>
+                <div className="text-sm font-semibold text-slate-700 mt-0.5">{editOrder.orderedAt || editOrder.createdAt ? formatDateTime(editOrder.orderedAt || editOrder.createdAt) : '—'}</div>
+              </div>
+            </div>
+
+            {editOrder.fulfillmentType === 'CHANNEL' ? (
+              <div className="flex items-start gap-2.5 rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm text-violet-800">
+                <Truck size={16} className="text-violet-600 mt-0.5 flex-shrink-0" />
+                <div><span className="font-bold">Fulfilled by Amazon.</span> Stock and shipping are handled by Amazon, so this order is read-only in Kartriq — its status and tracking sync in automatically.</div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 text-sm font-bold text-slate-800">
+                  <Truck size={15} className="text-emerald-600" /> Update fulfillment
+                  <span className="text-xs font-normal text-slate-400">you ship this order</span>
+                </div>
+                <Select label="Status" value={editStatus} onChange={setEditStatus} options={EDIT_STATUSES} fullWidth />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Input label="Tracking number" value={editTracking} onChange={(e) => setEditTracking(e.target.value)} placeholder="e.g. 1Z999AA10123" />
+                  <Input label="Courier" value={editCourier} onChange={(e) => setEditCourier(e.target.value)} placeholder="e.g. Delhivery" />
+                </div>
+                {editOrder.channelOrderId && editOrder.fulfillmentType === 'SELF' && (
+                  <p className="text-xs text-slate-500">Marking this shipped with a tracking number confirms the shipment back to {editOrder.channel?.name || 'the channel'} so the buyer sees tracking.</p>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </Modal>
     </DashboardLayout>
   );
 }
