@@ -51,11 +51,13 @@ const getOrders = async (req, res) => {
     // Knex-backed Prisma shim — unknown columns pass through to SQL directly
     const where = { tenantId: tid(req) };
     if (status) where.status = String(status);
-    // Date range on the order date (orderedAt). dateTo is inclusive of the day.
+    // Date range on createdAt — the field the Orders table's Date column shows,
+    // and one every order has (orderedAt is null for manual/older orders, so
+    // filtering on it silently dropped rows). dateTo is inclusive of the day.
     if (dateFrom || dateTo) {
-      where.orderedAt = {};
-      if (dateFrom) where.orderedAt.gte = new Date(String(dateFrom));
-      if (dateTo) { const d = new Date(String(dateTo)); d.setHours(23, 59, 59, 999); where.orderedAt.lte = d; }
+      where.createdAt = {};
+      if (dateFrom) where.createdAt.gte = new Date(String(dateFrom));
+      if (dateTo) { const d = new Date(String(dateTo)); d.setHours(23, 59, 59, 999); where.createdAt.lte = d; }
     }
     if (channelId) where.channelId = String(channelId);
     if (search) where.orderNumber = { contains: String(search) };

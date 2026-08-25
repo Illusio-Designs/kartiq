@@ -400,14 +400,14 @@ export default function OrdersPage() {
         );
       case 'total':
         return (
-          <td key={key} className="px-3 py-2.5">
+          <td key={key} className="px-3 py-2.5 whitespace-nowrap">
             {isAwaitingTotal(o) ? (
-              <div>
+              <span className="inline-flex items-center gap-1.5">
                 <span className="font-semibold text-slate-400">{formatCurrency(0)}</span>
-                <div className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 mt-0.5">
-                  <span className="w-1 h-1 rounded-full bg-amber-500" /> awaiting Amazon
-                </div>
-              </div>
+                <Tooltip content="Awaiting Amazon — the order total (and PARTIAL flag) fill in automatically on the next sync while the order is still Pending." wrap>
+                  <span className="inline-flex text-amber-500 cursor-help"><Info size={13} /></span>
+                </Tooltip>
+              </span>
             ) : (
               <span className="font-bold text-slate-900">{formatCurrency(o.total)}</span>
             )}
@@ -415,7 +415,7 @@ export default function OrdersPage() {
         );
       case 'rto':
         return (
-          <td key={key} className="px-3 py-2.5">
+          <td key={key} className="px-3 py-2.5 whitespace-nowrap">
             {o.rtoRiskLevel ? (
               <Tooltip content={`RTO Score: ${o.rtoScore}/100 · ${o.rtoRiskLevel}`}>
                 <span><Badge variant={riskVariant(o.rtoRiskLevel)} dot>{o.rtoScore ?? 0} {o.rtoRiskLevel}</Badge></span>
@@ -425,7 +425,7 @@ export default function OrdersPage() {
         );
       case 'status':
         return (
-          <td key={key} className="px-3 py-2.5">
+          <td key={key} className="px-3 py-2.5 whitespace-nowrap">
             {o.needsApproval ? (
               <Badge variant="rose" dot>NEEDS REVIEW</Badge>
             ) : (
