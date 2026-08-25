@@ -149,7 +149,7 @@ export default function OrdersPage() {
   const [search, setSearch] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [density, setDensity] = useState<Density>('comfortable');
+  const [density, setDensity] = useState<Density>('compact');
   const [bulkPending, setBulkPending] = useState(false);
   const [confirmUi, confirm] = useConfirm();
   useEffect(() => {

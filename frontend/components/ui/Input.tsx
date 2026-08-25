@@ -31,7 +31,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             ref={ref}
             id={autoId}
             className={cn(
-              'w-full px-4 py-2.5 text-sm bg-white text-slate-900 border rounded-xl transition-all duration-200',
+              'w-full px-3.5 py-2 text-sm bg-white text-slate-900 border rounded-xl transition-all duration-200',
               'placeholder:text-slate-400 focus:outline-none focus:ring-4',
               error
                 ? 'border-rose-300 focus:ring-rose-500/10 focus:border-rose-400'
@@ -76,7 +76,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           ref={ref}
           id={autoId}
           className={cn(
-            'w-full px-4 py-2.5 text-sm bg-white text-slate-900 border rounded-xl transition-all duration-200',
+            'w-full px-3.5 py-2 text-sm bg-white text-slate-900 border rounded-xl transition-all duration-200',
             'placeholder:text-slate-400 focus:outline-none focus:ring-4',
             error
               ? 'border-rose-300 focus:ring-rose-500/10 focus:border-rose-400'

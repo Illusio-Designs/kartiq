@@ -87,7 +87,7 @@ export default function ProductsPage() {
   const [channelFilter, setChannelFilter] = useState('');
   const [unpublishedOnly, setUnpublishedOnly] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [density, setDensity] = useState<Density>('comfortable');
+  const [density, setDensity] = useState<Density>('compact');
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [hidden, setHidden] = useState<Set<string>>(new Set());
