@@ -443,25 +443,7 @@ export default function OrdersPage() {
   return (
     <DashboardLayout>
       <div className="space-y-5 animate-slide-up">
-        <PageHeader
-          title="Orders"
-          subtitle={`${data?.total || 0} total orders`}
-          actions={
-            <>
-              <Button
-                variant="secondary"
-                leftIcon={<RefreshCw size={15} />}
-                loading={syncMutation.isPending}
-                onClick={() => syncMutation.mutate()}
-              >
-                Sync
-              </Button>
-              <Button leftIcon={<Plus size={15} />} onClick={() => setModalOpen(true)}>
-                New Order
-              </Button>
-            </>
-          }
-        />
+        <PageHeader title="Orders" />
 
         {/* Bulk actions (appears when rows are selected) */}
         <BulkActionBar count={selected.size} onClear={() => setSelected(new Set())}>
@@ -522,6 +504,19 @@ export default function OrdersPage() {
         <Card className="p-0 overflow-visible">
           {/* Header: tabs + toolbar + active filter chips */}
           <div className="p-3 sm:p-4 space-y-3 border-b border-slate-100 dark:border-slate-800">
+            {/* Title row — subtitle + primary actions, inside the card */}
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-sm font-medium text-slate-500">{`${data?.total || 0} total orders`}</p>
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" size="sm" leftIcon={<RefreshCw size={15} />} loading={syncMutation.isPending} onClick={() => syncMutation.mutate()}>
+                  Sync
+                </Button>
+                <Button size="sm" leftIcon={<Plus size={15} />} onClick={() => setModalOpen(true)}>
+                  New Order
+                </Button>
+              </div>
+            </div>
+
             {/* Fulfillment tabs */}
             <Tabs<FulfillmentTab>
               value={fulfillmentTab}
