@@ -2,54 +2,80 @@
 
 import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { userApi, roleApi, billingApi } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 import { useFilteredBySearch } from '@/lib/useGlobalSearch';
+import { formatDateTime } from '@/lib/utils';
 import { Plus, Trash2, Users, Shield, Save, Pencil, Mail, Send, Copy, Search, Lock, Sparkles } from 'lucide-react';
 import { toast } from '@/store/toast.store';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { PasswordInput } from '@/components/ui/PasswordInput';
 import { Checkbox } from '@/components/ui/Checkbox';
-import { Button } from '@/components/ui/Button';
-import { Tooltip } from '@/components/ui/Tooltip';
-import { Tabs, useConfirm } from '@/components/ui';
+import {
+  Button, Badge, Card, CardHeader, CardTitle, CardDescription, Avatar, Tooltip, Tabs, EmptyState, useConfirm,
+} from '@/components/ui';
 
 export default function TeamPage() {
   const { hasPermission } = useAuthStore();
   const [tab, setTab] = useState<'users' | 'roles'>('users');
+  // The primary action lives in the page header (Orders convention), so the
+  // "create" modal open-state is lifted here and handed to each tab.
+  const [newUserOpen, setNewUserOpen] = useState(false);
+  const [newRoleOpen, setNewRoleOpen] = useState(false);
+
+  const canManageUsers = hasPermission('users.create', 'users.update');
+  const canManageRoles = hasPermission('roles.create', 'roles.update');
 
   return (
     <DashboardLayout>
-      <div className="p-6 max-w-6xl mx-auto">
-        <h1 className="text-3xl font-bold bg-gradient-to-r from-[#06D4B8] to-[#06B6D4] bg-clip-text text-transparent">Team</h1>
-        <p className="text-slate-500 mt-1">Manage users and role-based access.</p>
+      <div className="space-y-5 animate-slide-up">
+        <PageHeader
+          title="Team"
+          subtitle="Invite teammates and control what each role can do"
+          actions={
+            <>
+              <Tabs<'users' | 'roles'>
+                value={tab}
+                onChange={setTab}
+                size="sm"
+                items={[
+                  { key: 'users', label: 'Users', icon: <Users size={14} /> },
+                  { key: 'roles', label: 'Roles', icon: <Shield size={14} /> },
+                ]}
+              />
+              {tab === 'users'
+                ? canManageUsers && (
+                    <Button size="sm" leftIcon={<Plus size={15} />} onClick={() => setNewUserOpen(true)}>
+                      Invite user
+                    </Button>
+                  )
+                : canManageRoles && (
+                    <Button size="sm" leftIcon={<Plus size={15} />} onClick={() => setNewRoleOpen(true)}>
+                      New role
+                    </Button>
+                  )}
+            </>
+          }
+        />
 
-        <div className="mt-6">
-          <Tabs<'users' | 'roles'>
-            value={tab}
-            onChange={setTab}
-            items={[
-              { key: 'users', label: 'Users', icon: <Users size={14} /> },
-              { key: 'roles', label: 'Roles', icon: <Shield size={14} /> },
-            ]}
-          />
-        </div>
-
-        <div className="mt-6">
-          {tab === 'users' ? <UsersTab canManage={hasPermission('users.create','users.update')} />
-                           : <RolesTab canManage={hasPermission('roles.create','roles.update')} />}
-        </div>
+        {tab === 'users'
+          ? <UsersTab canManage={canManageUsers} showNew={newUserOpen} setShowNew={setNewUserOpen} />
+          : <RolesTab canManage={canManageRoles} showNew={newRoleOpen} setShowNew={setNewRoleOpen} />}
       </div>
     </DashboardLayout>
   );
 }
 
 // ──────────────────────────────────────────────────────────────
-function UsersTab({ canManage }: { canManage: boolean }) {
+function UsersTab({ canManage, showNew, setShowNew }: {
+  canManage: boolean;
+  showNew: boolean;
+  setShowNew: (v: boolean) => void;
+}) {
   const [users, setUsers] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
-  const [showNew, setShowNew] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [confirmUi, askConfirm] = useConfirm();
 
@@ -84,18 +110,11 @@ function UsersTab({ canManage }: { canManage: boolean }) {
   return (
     <>
       {confirmUi}
-      {canManage && (
-        <div className="mb-4">
-          <Button variant="primary" leftIcon={<Plus size={16} />} onClick={() => setShowNew(true)}>
-            Add user
-          </Button>
-        </div>
-      )}
 
       <Modal
         open={showNew || !!editing}
         onClose={() => { setShowNew(false); setEditing(null); }}
-        title={editing ? 'Edit user' : 'Add user'}
+        title={editing ? 'Edit user' : 'Invite user'}
         size="lg"
       >
         <UserForm
@@ -106,98 +125,127 @@ function UsersTab({ canManage }: { canManage: boolean }) {
         />
       </Modal>
 
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-            <tr>
-              <th className="text-left p-3">#</th>
-              <th className="text-left p-3">Name</th>
-              <th className="text-left p-3">Email</th>
-              <th className="text-left p-3">Roles</th>
-              <th className="text-center p-3">Active</th>
-              <th className="p-3"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredUsers.map((u, idx) => (
-              <tr key={u.id} className="border-t border-slate-100">
-                <td className="p-3 text-slate-500 font-semibold">{idx + 1}</td>
-                <td className="p-3 font-semibold">
-                  <div className="flex items-center gap-2">
-                    {u.name}
-                    {u.isPlatformAdmin && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 uppercase tracking-wider">
-                        Platform Admin
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className="p-3 text-slate-600">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span>{u.email}</span>
-                    {u.pendingInvite && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 uppercase tracking-wider">
-                        <Mail size={10} /> Pending invite
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className="p-3">
-                  <div className="flex flex-wrap gap-1">
-                    {u.roles?.length ? u.roles.map((ur: any) => (
-                      <span key={ur.role.id} className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
-                        {ur.role.name}
-                      </span>
-                    )) : u.isPlatformAdmin ? (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">All access</span>
-                    ) : null}
-                  </div>
-                </td>
-                <td className="p-3 text-center">{u.isActive ? '✅' : '—'}</td>
-                <td className="p-3 flex gap-2 justify-end">
-                  {canManage && !u.isPlatformAdmin && (
-                    <>
-                      {u.pendingInvite && (
-                        <Tooltip content="Resend invite email">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={async () => {
-                              try {
-                                const r = await userApi.resendInvite(u.id);
-                                toast.success('Invite email re-sent.');
-                                if (r.data?.devInviteUrl) {
-                                  // Dev only: surface the magic link so admins
-                                  // can copy it when SMTP isn't configured yet.
-                                  console.info('[invite] dev URL:', r.data.devInviteUrl);
-                                }
-                              } catch (err: any) {
-                                toast.error(err?.response?.data?.error || 'Could not resend invite');
-                              }
-                            }}
-                          >
-                            <Send size={14} />
-                          </Button>
-                        </Tooltip>
-                      )}
-                      <Tooltip content="Edit user">
-                        <Button variant="ghost" size="icon" onClick={() => setEditing(u)}>
-                          <Pencil size={14} />
-                        </Button>
-                      </Tooltip>
-                      <Tooltip content="Deactivate user">
-                        <Button variant="danger" size="icon" onClick={() => del(u.id)}>
-                          <Trash2 size={14} />
-                        </Button>
-                      </Tooltip>
-                    </>
-                  )}
-                </td>
+      <Card className="p-0 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50/50 border-b border-slate-100">
+              <tr className="text-left text-[10px] uppercase tracking-widest text-slate-400">
+                <th className="px-4 py-2.5 font-bold">Member</th>
+                <th className="px-4 py-2.5 font-bold">Role</th>
+                <th className="px-4 py-2.5 font-bold">Status</th>
+                <th className="px-4 py-2.5 font-bold whitespace-nowrap">Last active</th>
+                <th className="px-4 py-2.5 font-bold text-right">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredUsers.length ? filteredUsers.map((u) => {
+                // No dedicated last-active field exists yet — show a real
+                // timestamp when the API provides one, otherwise a neutral dash
+                // (never a fabricated value).
+                const lastActive = u.lastLoginAt || u.lastActiveAt;
+                return (
+                  <tr key={u.id} className="hover:bg-slate-50/70 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Avatar name={u.name} size="sm" />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-slate-900 truncate">{u.name}</span>
+                            {u.isPlatformAdmin && <Badge variant="amber">Platform admin</Badge>}
+                          </div>
+                          <div className="text-xs text-slate-500 truncate">{u.email}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1.5">
+                        {u.roles?.length ? u.roles.map((ur: any) => (
+                          <Badge key={ur.role.id} variant="emerald">{ur.role.name}</Badge>
+                        )) : u.isPlatformAdmin ? (
+                          <Badge variant="slate">All access</Badge>
+                        ) : (
+                          <span className="text-xs text-slate-400">No role</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {u.pendingInvite ? (
+                        <Badge variant="amber" dot><Mail size={10} /> Invited</Badge>
+                      ) : u.isActive ? (
+                        <Badge variant="emerald" dot>Active</Badge>
+                      ) : (
+                        <Badge variant="slate" dot>Inactive</Badge>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
+                      {lastActive ? formatDateTime(lastActive) : <span className="text-slate-400">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        {canManage && !u.isPlatformAdmin ? (
+                          <>
+                            {u.pendingInvite && (
+                              <Tooltip content="Resend invite email">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={async () => {
+                                    try {
+                                      const r = await userApi.resendInvite(u.id);
+                                      toast.success('Invite email re-sent.');
+                                      if (r.data?.devInviteUrl) {
+                                        // Dev only: surface the magic link so admins
+                                        // can copy it when SMTP isn't configured yet.
+                                        console.info('[invite] dev URL:', r.data.devInviteUrl);
+                                      }
+                                    } catch (err: any) {
+                                      toast.error(err?.response?.data?.error || 'Could not resend invite');
+                                    }
+                                  }}
+                                >
+                                  <Send size={14} />
+                                </Button>
+                              </Tooltip>
+                            )}
+                            <Tooltip content="Edit user">
+                              <Button variant="ghost" size="icon" onClick={() => setEditing(u)}>
+                                <Pencil size={14} />
+                              </Button>
+                            </Tooltip>
+                            <Tooltip content="Deactivate user">
+                              <Button variant="danger" size="icon" onClick={() => del(u.id)}>
+                                <Trash2 size={14} />
+                              </Button>
+                            </Tooltip>
+                          </>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              }) : (
+                <tr>
+                  <td colSpan={5} className="p-0">
+                    <EmptyState
+                      icon={<Users size={26} />}
+                      iconBg="bg-emerald-50 text-emerald-600"
+                      title="No team members"
+                      description="Invite teammates and assign each a role to control what they can see and do."
+                      action={canManage ? (
+                        <Button size="sm" leftIcon={<Plus size={14} />} onClick={() => setShowNew(true)}>
+                          Invite user
+                        </Button>
+                      ) : undefined}
+                    />
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </>
   );
 }
@@ -279,11 +327,14 @@ function UserForm({ initial, roles, onClose, onSave }: {
 }
 
 // ──────────────────────────────────────────────────────────────
-function RolesTab({ canManage }: { canManage: boolean }) {
+function RolesTab({ canManage, showNew, setShowNew }: {
+  canManage: boolean;
+  showNew: boolean;
+  setShowNew: (v: boolean) => void;
+}) {
   const [roles, setRoles] = useState<any[]>([]);
   const [perms, setPerms] = useState<any[]>([]);
   const [editing, setEditing] = useState<any>(null);
-  const [showNew, setShowNew] = useState(false);
   const [confirmUi, askConfirm] = useConfirm();
   const [usage, setUsage] = useState<{ used: number; limit: number | null } | null>(null);
 
@@ -364,35 +415,6 @@ function RolesTab({ canManage }: { canManage: boolean }) {
     <>
       {confirmUi}
 
-      {/* Plan-limit + new-role header */}
-      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-        <div className="flex items-center gap-3">
-          {usage && usage.limit != null && (
-            <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-full px-3 py-1.5">
-              <strong className={atLimit ? 'text-rose-700' : 'text-slate-900'}>
-                {usage.used}
-              </strong>{' '}
-              of <strong>{usage.limit}</strong> custom roles used
-              {atLimit && <span className="ml-2 text-rose-600 font-bold">· at limit</span>}
-            </div>
-          )}
-          {usage && usage.limit == null && (
-            <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
-              <strong>Unlimited</strong> custom roles on your plan
-            </div>
-          )}
-        </div>
-        {canManage && (
-          <Button
-            variant="primary"
-            leftIcon={<Plus size={16} />}
-            onClick={() => { setEditing(null); setShowNew(true); }}
-          >
-            New role
-          </Button>
-        )}
-      </div>
-
       <Modal
         open={showNew || !!editing}
         onClose={() => { setEditing(null); setShowNew(false); }}
@@ -408,57 +430,70 @@ function RolesTab({ canManage }: { canManage: boolean }) {
         />
       </Modal>
 
-      {/* Custom roles */}
-      <div>
-        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Custom roles</div>
-        {customRoles.length === 0 ? (
-          <div className="border border-dashed border-slate-300 rounded-2xl p-10 text-center">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 mb-3">
-              <Sparkles size={20} />
+      <div className="space-y-5">
+        {/* Custom roles */}
+        <Card className="p-0 overflow-hidden">
+          <CardHeader className="pb-3">
+            <div>
+              <CardTitle>Custom roles</CardTitle>
+              <CardDescription>Roles you define with exactly the permissions each job needs</CardDescription>
             </div>
-            <h3 className="font-bold text-slate-900">No custom roles yet</h3>
-            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-              Define a role like &quot;Warehouse manager&quot; or &quot;Read-only auditor&quot;
-              with exactly the permissions that job needs, then assign it to teammates.
-            </p>
-            {canManage && (
-              <Button
-                className="mt-4"
-                variant="primary"
-                leftIcon={<Plus size={14} />}
-                onClick={() => { setEditing(null); setShowNew(true); }}
-              >
-                Create your first role
-              </Button>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {customRoles.map((r) => (
-              <RoleCard key={r.id} role={r} canManage={canManage} onEdit={() => setEditing(r)} onClone={() => clone(r)} onDelete={() => del(r)} />
+            {usage && (usage.limit != null ? (
+              <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-full px-3 py-1.5 whitespace-nowrap">
+                <strong className={atLimit ? 'text-rose-700' : 'text-slate-900'}>{usage.used}</strong>{' '}
+                of <strong>{usage.limit}</strong> used
+                {atLimit && <span className="ml-1.5 text-rose-600 font-bold">· at limit</span>}
+              </div>
+            ) : (
+              <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5 whitespace-nowrap">
+                <strong>Unlimited</strong> on your plan
+              </div>
             ))}
-          </div>
+          </CardHeader>
+
+          {customRoles.length === 0 ? (
+            <EmptyState
+              icon={<Sparkles size={26} />}
+              iconBg="bg-emerald-50 text-emerald-600"
+              title="No custom roles yet"
+              description={'Define a role like "Warehouse manager" or "Read-only auditor" with exactly the permissions that job needs, then assign it to teammates.'}
+              action={canManage ? (
+                <Button size="sm" leftIcon={<Plus size={14} />} onClick={() => { setEditing(null); setShowNew(true); }}>
+                  Create your first role
+                </Button>
+              ) : undefined}
+            />
+          ) : (
+            <div className="divide-y divide-slate-100 border-t border-slate-100">
+              {customRoles.map((r) => (
+                <RoleRow key={r.id} role={r} canManage={canManage} onEdit={() => setEditing(r)} onClone={() => clone(r)} onDelete={() => del(r)} />
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* Built-in / system roles — read-only */}
+        {systemRoles.length > 0 && (
+          <Card className="p-0 overflow-hidden">
+            <CardHeader className="pb-3">
+              <div>
+                <CardTitle className="flex items-center gap-1.5"><Lock size={13} className="text-slate-400" /> Built-in roles</CardTitle>
+                <CardDescription>System roles ship with Kartriq and can be viewed but not edited</CardDescription>
+              </div>
+            </CardHeader>
+            <div className="divide-y divide-slate-100 border-t border-slate-100">
+              {systemRoles.map((r) => (
+                <RoleRow key={r.id} role={r} canManage={canManage} onEdit={() => setEditing(r)} systemOnly />
+              ))}
+            </div>
+          </Card>
         )}
       </div>
-
-      {/* Built-in / system roles — read-only */}
-      {systemRoles.length > 0 && (
-        <div className="mt-8">
-          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-            <Lock size={11} /> Built-in roles
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {systemRoles.map((r) => (
-              <RoleCard key={r.id} role={r} canManage={canManage} onEdit={() => setEditing(r)} systemOnly />
-            ))}
-          </div>
-        </div>
-      )}
     </>
   );
 }
 
-function RoleCard({
+function RoleRow({
   role, canManage, onEdit, onClone, onDelete, systemOnly,
 }: {
   role: any;
@@ -470,73 +505,79 @@ function RoleCard({
 }) {
   const permCount = role.permissions?.length || 0;
   const userCount = role._count?.users || 0;
-  // Show a short permission preview so each card is scannable.
+  // Show a short permission preview so each row is scannable.
   const previewCodes: string[] = (role.permissions || [])
     .slice(0, 4)
     .map((rp: any) => rp.permission?.code)
     .filter(Boolean);
-  const wildcard = previewCodes.includes('*');
+  const wildcard = (role.permissions || []).some((rp: any) => rp.permission?.code === '*');
+
   return (
-    <div className={`p-4 rounded-2xl border ${role.isSystem ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200 hover:border-emerald-300 hover:shadow-md transition-all'}`}>
-      <div className="flex items-start justify-between gap-3">
+    <div className="flex items-center justify-between gap-4 px-4 py-3.5 hover:bg-slate-50/70 transition-colors">
+      <div className="flex items-start gap-3 min-w-0">
+        <span className={`w-9 h-9 rounded-xl grid place-items-center flex-shrink-0 ${role.isSystem ? 'bg-slate-100 text-slate-500' : 'bg-emerald-50 text-emerald-600'}`}>
+          <Shield size={16} />
+        </span>
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <Shield size={14} className={role.isSystem ? 'text-slate-500' : 'text-emerald-600'} />
-            <div className="font-bold text-slate-900 truncate">{role.name}</div>
-            {role.isSystem && (
-              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 bg-white border border-slate-200 rounded-full px-1.5 py-0.5">
-                system
-              </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-bold text-slate-900 truncate">{role.name}</span>
+            {role.isSystem && <Badge variant="slate">System</Badge>}
+            <span className="text-[11px] text-slate-400 font-mono truncate">{role.code}</span>
+          </div>
+          {role.description && (
+            <div className="text-xs text-slate-500 mt-0.5 line-clamp-1">{role.description}</div>
+          )}
+          <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+            {wildcard ? (
+              <Badge variant="emerald">Full access · all permissions</Badge>
+            ) : permCount === 0 ? (
+              <span className="text-[11px] text-slate-400 italic">No permissions yet</span>
+            ) : (
+              <>
+                <span className="text-[11px] font-semibold text-slate-500">
+                  {permCount} permission{permCount === 1 ? '' : 's'}
+                </span>
+                {previewCodes.map((c) => (
+                  <span key={c} className="text-[10px] font-mono text-slate-600 bg-slate-100 rounded px-1.5 py-0.5">{c}</span>
+                ))}
+                {permCount > previewCodes.length && (
+                  <span className="text-[10px] text-slate-400">+{permCount - previewCodes.length} more</span>
+                )}
+              </>
             )}
           </div>
-          <div className="text-[11px] text-slate-500 font-mono mt-0.5 truncate">{role.code}</div>
-          {role.description && (
-            <div className="text-xs text-slate-600 mt-2 line-clamp-2">{role.description}</div>
-          )}
-        </div>
-        <div className="text-right flex-shrink-0">
-          <div className="text-xs font-bold text-slate-700">{userCount}</div>
-          <div className="text-[10px] text-slate-500 uppercase tracking-wider">user{userCount === 1 ? '' : 's'}</div>
         </div>
       </div>
 
-      <div className="mt-3 flex items-center gap-2 flex-wrap">
-        {wildcard ? (
-          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100 rounded-full px-2 py-0.5">
-            Full access
-          </span>
-        ) : (
-          <>
-            {previewCodes.map((c) => (
-              <span key={c} className="text-[10px] font-mono text-slate-600 bg-slate-100 rounded px-1.5 py-0.5">{c}</span>
-            ))}
-            {permCount > previewCodes.length && (
-              <span className="text-[10px] text-slate-500">+{permCount - previewCodes.length} more</span>
+      <div className="flex items-center gap-3 flex-shrink-0">
+        <div className="text-right hidden sm:block">
+          <div className="text-sm font-bold text-slate-700">{userCount}</div>
+          <div className="text-[10px] text-slate-400 uppercase tracking-wider">user{userCount === 1 ? '' : 's'}</div>
+        </div>
+        {canManage && (
+          <div className="flex items-center gap-1">
+            <Tooltip content={systemOnly ? 'View role' : 'Edit role'}>
+              <Button variant="ghost" size="icon" onClick={onEdit}>
+                <Pencil size={14} />
+              </Button>
+            </Tooltip>
+            {!role.isSystem && onClone && (
+              <Tooltip content="Clone role">
+                <Button variant="ghost" size="icon" onClick={onClone}>
+                  <Copy size={14} />
+                </Button>
+              </Tooltip>
             )}
-            {permCount === 0 && (
-              <span className="text-[10px] text-slate-400 italic">no permissions yet</span>
+            {!role.isSystem && onDelete && (
+              <Tooltip content="Delete role">
+                <Button variant="danger" size="icon" onClick={onDelete}>
+                  <Trash2 size={14} />
+                </Button>
+              </Tooltip>
             )}
-          </>
+          </div>
         )}
       </div>
-
-      {canManage && (
-        <div className="flex gap-2 mt-3 pt-3 border-t border-slate-100">
-          <Button variant="ghost" size="sm" leftIcon={<Pencil size={12} />} onClick={onEdit}>
-            {systemOnly ? 'View' : 'Edit'}
-          </Button>
-          {!role.isSystem && onClone && (
-            <Button variant="ghost" size="sm" leftIcon={<Copy size={12} />} onClick={onClone}>
-              Clone
-            </Button>
-          )}
-          {!role.isSystem && onDelete && (
-            <Button variant="danger" size="sm" leftIcon={<Trash2 size={12} />} onClick={onDelete} className="ml-auto">
-              Delete
-            </Button>
-          )}
-        </div>
-      )}
     </div>
   );
 }

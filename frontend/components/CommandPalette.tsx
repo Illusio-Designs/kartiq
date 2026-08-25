@@ -19,10 +19,10 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Package, ShoppingBag, Users, Plug, Truck, FileText, Building2,
-  Store, Wallet, Settings, BarChart3, Gauge, Plus, Search, ArrowRight, CornerDownLeft,
-  Briefcase, LifeBuoy, Activity, Cpu, FileEdit, Inbox, Megaphone,
+  Store, Wallet, Settings, BarChart3, Plus, Search, ArrowRight, CornerDownLeft,
+  LifeBuoy, Activity, Cpu, FileEdit, Inbox, Megaphone,
 } from 'lucide-react';
-import { productApi, orderApi, customerApi, leadsApi, adminApi } from '@/lib/api';
+import { productApi, orderApi, leadsApi, adminApi } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 
 type CmdItem = {
@@ -129,15 +129,12 @@ export function CommandPalette() {
       // Quick actions
       { id: 'new-order',    group: 'Quick actions', label: 'Create new order',    icon: Plus, run: go('/orders?new=1') },
       { id: 'new-product',  group: 'Quick actions', label: 'Create new product',  icon: Plus, run: go('/products?new=1') },
-      { id: 'new-customer', group: 'Quick actions', label: 'Create new customer', icon: Plus, run: go('/customers?new=1') },
       { id: 'topup',        group: 'Quick actions', label: 'Top up wallet',       icon: Wallet, run: go('/dashboard/billing') },
 
       // Navigation
       { id: 'go-dashboard',  group: 'Pages', label: 'Dashboard',     icon: LayoutDashboard, run: go('/dashboard') },
       { id: 'go-orders',     group: 'Pages', label: 'Orders',        icon: ShoppingBag,     run: go('/orders') },
       { id: 'go-products',   group: 'Pages', label: 'Catalog',       icon: Package,         run: go('/products') },
-      { id: 'go-customers',  group: 'Pages', label: 'Customers',     icon: Users,           run: go('/customers') },
-      { id: 'go-vendors',    group: 'Pages', label: 'Vendors',       icon: Briefcase,       run: go('/vendors') },
       { id: 'go-warehouses', group: 'Pages', label: 'Warehouses',    icon: Store,           run: go('/warehouses') },
       { id: 'go-channels',   group: 'Pages', label: 'Channels',      icon: Plug,            run: go('/channels') },
       { id: 'go-shipments',  group: 'Pages', label: 'Shipments',     icon: Truck,           run: go('/shipments') },
@@ -147,7 +144,6 @@ export function CommandPalette() {
       // Settings + billing
       { id: 'go-settings', group: 'Settings', label: 'Settings',         icon: Settings, run: go('/settings') },
       { id: 'go-billing',  group: 'Settings', label: 'Billing & wallet', icon: Wallet,   run: go('/dashboard/billing') },
-      { id: 'go-usage',    group: 'Settings', label: 'Usage & limits',   icon: Gauge,    run: go('/usage') },
       { id: 'go-audit',    group: 'Settings', label: 'Activity log',     keywords: 'audit security history changes', icon: Settings, run: go('/audit') },
       { id: 'go-referrals', group: 'Settings', label: 'Refer & earn',    keywords: 'referral affiliate share invite reward earn', icon: Settings, run: go('/referrals') },
       { id: 'go-team',     group: 'Settings', label: 'Team',             icon: Users,    run: go('/dashboard/team') },
@@ -230,10 +226,9 @@ export function CommandPalette() {
             }
           }
         } else {
-          const [p, o, c] = await Promise.allSettled([
+          const [p, o] = await Promise.allSettled([
             productApi.list({ search: q, limit: 5 }),
             orderApi.list({ search: q, limit: 5 }),
-            customerApi.list({ search: q, limit: 5 }),
           ]);
           if (p.status === 'fulfilled') {
             const arr = p.value.data?.products || p.value.data || [];
@@ -258,19 +253,6 @@ export function CommandPalette() {
                 hint: [r.status, r.totalAmount && `₹${r.totalAmount}`].filter(Boolean).join(' · '),
                 icon: ShoppingBag,
                 run: () => { setOpen(false); router.push(`/orders?id=${r.id}`); },
-              });
-            }
-          }
-          if (c.status === 'fulfilled') {
-            const arr = c.value.data?.customers || c.value.data || [];
-            for (const r of arr) {
-              items.push({
-                id: `cus:${r.id}`,
-                group: 'Customers',
-                label: r.name || r.email || r.id,
-                hint: r.email || r.phone,
-                icon: Users,
-                run: () => { setOpen(false); router.push(`/customers?id=${r.id}`); },
               });
             }
           }
@@ -346,7 +328,7 @@ export function CommandPalette() {
             ref={inputRef}
             value={query}
             onChange={(e) => { setQuery(e.target.value); setActive(0); }}
-            placeholder="Type a command, page, or search products / orders / customers…"
+            placeholder="Type a command, page, or search products / orders…"
             className="flex-1 bg-transparent outline-none text-sm text-slate-900 placeholder:text-slate-400"
           />
           <kbd className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">
