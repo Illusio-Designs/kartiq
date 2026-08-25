@@ -641,7 +641,7 @@ export default function OrdersPage() {
                     {visibleColumns.map((c) => renderCell(o, c.key))}
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end gap-1">
-                        {o.needsApproval && (
+                        {!!o.needsApproval && (
                           <>
                             <Tooltip content="Approve order">
                               <Button variant="outline" size="icon" onClick={() => approveMutation.mutate(o.id)} disabled={approveMutation.isPending}>

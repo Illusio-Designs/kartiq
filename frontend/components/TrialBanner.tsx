@@ -66,8 +66,8 @@ export function TrialBanner() {
       aria-live="polite"
       className={`flex items-center gap-3 px-4 py-2.5 border-b text-sm ${
         isExpired || isUrgent
-          ? 'bg-rose-50 border-rose-200 text-rose-900'
-          : 'bg-amber-50 border-amber-200 text-amber-900'
+          ? 'bg-rose-50 border-rose-200 text-rose-900 dark:bg-rose-950/40 dark:border-rose-900/50 dark:text-rose-200'
+          : 'bg-amber-50 border-amber-200 text-amber-900 dark:bg-amber-950/40 dark:border-amber-900/50 dark:text-amber-200'
       }`}
     >
       {isUrgent || isExpired ? (
