@@ -56,6 +56,10 @@
     --surface-2: #f8fafc;          /* subtle sections / hovers (slate-50)   */
     --surface-3: #f1f5f9;          /* slightly stronger fill (slate-100)    */
     --hairline:  #e2e8f0;          /* borders (slate-200)                   */
+
+    /* Loading-skeleton colours (react-loading-skeleton reads these). */
+    --skeleton-base: #f1f5f9;
+    --skeleton-highlight: #e2e8f0;
   }
 
   /* ── Dark theme ──
@@ -79,6 +83,9 @@
     --body-bg: #0a1120;
     --body-glow-1: rgba(6, 212, 184, 0.07);
     --body-glow-2: rgba(6, 182, 212, 0.06);
+
+    --skeleton-base: #1b2740;
+    --skeleton-highlight: #24314d;
   }
 
   html, body {
@@ -423,6 +430,22 @@
 .dark .hover\:bg-slate-50:hover, .dark .hover\:bg-gray-50:hover   { background-color: var(--surface-2); }
 .dark .hover\:bg-slate-100:hover, .dark .hover\:bg-gray-100:hover { background-color: var(--surface-3); }
 .dark .hover\:bg-slate-200:hover, .dark .hover\:bg-gray-200:hover { background-color: #33456b; }
+
+/* Opacity-variant LIGHT neutral surfaces (table headers, card/modal footers,
+   subtle fills, hover rows). These translucent classes are separate from the
+   solid ones above, so without this they leaked a light band into dark mode
+   (e.g. the washed-out Orders table header). Mapped to a faint translucent
+   white so they read as a subtle lighter band over any dark surface.
+   NOTE: bg-slate-900/* is intentionally NOT remapped — those are dark scrims
+   (modal/sidebar backdrops) that should stay dark. */
+.dark .bg-white\/60, .dark .bg-white\/70, .dark .bg-white\/80,
+.dark .bg-slate-50\/30, .dark .bg-slate-50\/40, .dark .bg-slate-50\/50,
+.dark .bg-slate-50\/60, .dark .bg-slate-50\/70, .dark .bg-slate-50\/80,
+.dark .bg-gray-50\/30, .dark .bg-gray-50\/50, .dark .bg-gray-50\/60,
+.dark .bg-slate-100\/50, .dark .bg-slate-100\/60 { background-color: rgba(255,255,255,0.04); }
+.dark .hover\:bg-slate-50\/40:hover, .dark .hover\:bg-slate-50\/50:hover,
+.dark .hover\:bg-slate-50\/60:hover, .dark .hover\:bg-slate-50\/70:hover,
+.dark .hover\:bg-slate-100\/50:hover, .dark .hover\:bg-gray-50\/50:hover { background-color: rgba(255,255,255,0.06); }
 
 /* Neutral text — colored text (emerald/rose/amber/etc.) is intentionally untouched */
 .dark .text-black,

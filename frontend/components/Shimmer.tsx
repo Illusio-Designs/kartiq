@@ -9,7 +9,7 @@ export { Skeleton };
 /** Themed skeleton wrapper — matches Kartriq's emerald design */
 export function ShimmerTheme({ children }: { children: React.ReactNode }) {
   return (
-    <SkeletonTheme baseColor="#f1f5f9" highlightColor="#e2e8f0">
+    <SkeletonTheme baseColor="var(--skeleton-base)" highlightColor="var(--skeleton-highlight)">
       {children}
     </SkeletonTheme>
   );
