@@ -584,3 +584,73 @@
 .dark .border-violet-100, .dark .border-violet-200 { border-color: rgba(139,92,246,.34); }
 .dark .border-purple-100, .dark .border-purple-200 { border-color: rgba(168,85,247,.34); }
 .dark .border-indigo-100, .dark .border-indigo-200 { border-color: rgba(99,102,241,.32); }
+
+/* ==========================================================================
+   BRAND RECOLOR — emerald → Kartriq teal/cyan (matches the logo)
+   The app was built with `emerald-*` as its accent (green). The logo is a
+   teal → cyan gradient (#06D4B8 → #06B6D4 → #0891B2). Rather than editing the
+   emerald class on hundreds of elements, we remap the emerald utility scale to
+   the brand teal/cyan here — unlayered, so these win over Tailwind's utilities
+   (same specificity, but unlayered CSS beats @layer utilities). This recolors
+   the whole app — dashboard and marketing — to the logo palette in one place.
+   Dark-mode emerald tints are retuned to teal above/below in the .dark blocks.
+   ========================================================================== */
+
+/* Solid / tint backgrounds */
+.bg-emerald-50  { background-color: #e9fbf7; }
+.bg-emerald-100 { background-color: #c8f6ee; }
+.bg-emerald-200 { background-color: #98ece1; }
+.bg-emerald-400 { background-color: #1fcabb; }
+.bg-emerald-500 { background-color: #06d4b8; }
+.bg-emerald-600 { background-color: #06b6d4; }
+.bg-emerald-700 { background-color: #0e8fa8; }
+.hover\:bg-emerald-50:hover  { background-color: #d9f6f0; }
+.hover\:bg-emerald-100:hover { background-color: #b4f0e6; }
+.hover\:bg-emerald-600:hover { background-color: #05a6c0; }
+.hover\:bg-emerald-700:hover { background-color: #0a7f96; }
+.group:hover .group-hover\:bg-emerald-50 { background-color: #d9f6f0; }
+
+/* Foreground text — tuned for readable contrast on light surfaces */
+.text-emerald-500 { color: #0bbfa9; }
+.text-emerald-600 { color: #0891b2; }
+.text-emerald-700 { color: #0e7490; }
+.text-emerald-800 { color: #155e75; }
+.hover\:text-emerald-600:hover { color: #0891b2; }
+.hover\:text-emerald-700:hover { color: #0e7490; }
+.group:hover .group-hover\:text-emerald-600 { color: #0891b2; }
+.group:hover .group-hover\:text-emerald-700 { color: #0e7490; }
+
+/* Borders */
+.border-emerald-100 { border-color: #c8f6ee; }
+.border-emerald-200 { border-color: #98ece1; }
+.border-emerald-300 { border-color: #5fddce; }
+.border-emerald-400 { border-color: #22c8bb; }
+.border-emerald-500 { border-color: #06d4b8; }
+.focus\:border-emerald-400:focus { border-color: #22c8bb; }
+
+/* Gradient stops (btn-primary + hero/section gradients) */
+.from-emerald-400 { --tw-gradient-from: #1fcabb var(--tw-gradient-from-position); --tw-gradient-to: rgb(31 202 187 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+.from-emerald-500 { --tw-gradient-from: #06d4b8 var(--tw-gradient-from-position); --tw-gradient-to: rgb(6 212 184 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+.from-emerald-600 { --tw-gradient-from: #06b6d4 var(--tw-gradient-from-position); --tw-gradient-to: rgb(6 182 212 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+.via-emerald-500  { --tw-gradient-to: rgb(6 212 184 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), #06d4b8 var(--tw-gradient-via-position), var(--tw-gradient-to); }
+.to-emerald-500   { --tw-gradient-to: #06d4b8 var(--tw-gradient-to-position); }
+.to-emerald-600   { --tw-gradient-to: #06b6d4 var(--tw-gradient-to-position); }
+.to-emerald-700   { --tw-gradient-to: #0891b2 var(--tw-gradient-to-position); }
+
+/* Rings + colored shadows (focus rings, button glow) */
+.ring-emerald-500 { --tw-ring-color: #06b6d4; }
+.focus\:ring-emerald-500\/10:focus { --tw-ring-color: rgba(6,182,212,.12); }
+.focus\:ring-emerald-500\/20:focus { --tw-ring-color: rgba(6,182,212,.22); }
+.shadow-emerald-500\/25 { --tw-shadow-color: rgba(6,212,184,.28); }
+.hover\:shadow-emerald-500\/40:hover { --tw-shadow-color: rgba(6,182,212,.42); }
+
+/* Dark mode: retune the emerald tints (were green) to teal/cyan so the accent
+   matches the logo on dark too. These override the emerald-green .dark rules
+   set earlier in this file (same specificity, later wins). */
+.dark .bg-emerald-50  { background-color: rgba(6,182,212,.14); }
+.dark .bg-emerald-100 { background-color: rgba(6,182,212,.22); }
+.dark .hover\:bg-emerald-50:hover  { background-color: rgba(6,182,212,.18); }
+.dark .hover\:bg-emerald-100:hover { background-color: rgba(6,182,212,.26); }
+.dark .group:hover .group-hover\:bg-emerald-50 { background-color: rgba(6,182,212,.18); }
+.dark .text-emerald-500, .dark .text-emerald-600, .dark .text-emerald-700, .dark .text-emerald-800 { color: #2dd4bf; }
+.dark .border-emerald-100, .dark .border-emerald-200, .dark .border-emerald-300 { border-color: rgba(6,182,212,.34); }

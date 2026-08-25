@@ -1,8 +1,25 @@
-// Theme preference: what the user picked. 'system' follows the OS setting,
+// Theme preference: what the user picked. 'system' follows an automatic rule,
 // which is also the default when nothing has been stored yet.
 export type ThemePref = 'light' | 'dark' | 'system';
 
 export const THEME_KEY = 'kartriq-theme';
+
+// Public / marketing routes. On these, the 'system' preference resolves by
+// TIME OF DAY (day → light, night → dark) instead of the OS setting, so the
+// marketing site greets visitors with a theme that matches their local time.
+// Inside the app (dashboard), 'system' follows the OS preference as usual.
+const PUBLIC_RE =
+  /^\/(?:$|about|features|pricing|solutions|integrations|contact|resources|privacy|terms|login|onboarding|accept-invite)(?:\/|$)/;
+
+export function isPublicPath(path: string): boolean {
+  return PUBLIC_RE.test(path);
+}
+
+/** Daytime window: 07:00–18:59 local time reads as "light". */
+export function isDayTime(d: Date = new Date()): boolean {
+  const h = d.getHours();
+  return h >= 7 && h < 19;
+}
 
 export function getStoredTheme(): ThemePref {
   if (typeof window === 'undefined') return 'system';
@@ -23,25 +40,24 @@ export function systemPrefersDark(): boolean {
   );
 }
 
-/** Resolve a preference to an actual light/dark decision. */
-export function resolveDark(pref: ThemePref): boolean {
-  return pref === 'dark' || (pref === 'system' && systemPrefersDark());
-}
-
-// Public / marketing / auth pages are designed light-only — dark mode belongs to
-// the authenticated dashboard. Keep these routes light regardless of the stored
-// preference so an OS-dark visitor never sees a half-themed marketing site.
-const PUBLIC_RE = /^\/(?:$|about|features|pricing|solutions|integrations|contact|resources|privacy|terms|login)(?:\/|$)/;
-export function isPublicPath(pathname: string): boolean {
-  return PUBLIC_RE.test(pathname || '/');
+/** Resolve a preference to an actual light/dark decision.
+ *  For 'system' the rule depends on where we are:
+ *   - public/marketing routes → time of day (night = dark)
+ *   - app routes → OS preference
+ *  An explicit 'light' / 'dark' choice always wins, everywhere. */
+export function resolveDark(pref: ThemePref, pathname?: string): boolean {
+  if (pref === 'dark') return true;
+  if (pref === 'light') return false;
+  const path = pathname ?? (typeof location !== 'undefined' ? location.pathname : '');
+  if (isPublicPath(path)) return !isDayTime();
+  return systemPrefersDark();
 }
 
 /** Apply a preference to <html>: toggles `.dark` and the native color-scheme.
- *  Forced light on public routes (see PUBLIC_RE). */
+ *  Applies everywhere — the marketing pages are dark-aware too. */
 export function applyTheme(pref: ThemePref): void {
   if (typeof document === 'undefined') return;
-  const path = typeof window !== 'undefined' ? window.location.pathname : '/';
-  const dark = !isPublicPath(path) && resolveDark(pref);
+  const dark = resolveDark(pref);
   const el = document.documentElement;
   el.classList.toggle('dark', dark);
   // Drives native form controls, scrollbars and the browser UI to match.
@@ -51,5 +67,6 @@ export function applyTheme(pref: ThemePref): void {
 // Runs inline in <head> BEFORE first paint so the correct theme is on the
 // <html> element before React hydrates — this is what prevents a flash of the
 // wrong theme (FOUC). Kept tiny and wrapped in try/catch so a storage error
-// can never block rendering. Default (no stored value) follows the OS.
-export const THEME_INIT_SCRIPT = `(function(){try{var pub=/^\\/(?:$|about|features|pricing|solutions|integrations|contact|resources|privacy|terms|login)(?:\\/|$)/.test(location.pathname);var p=localStorage.getItem('${THEME_KEY}')||'system';var d=!pub&&(p==='dark'||(p==='system'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches));var e=document.documentElement;e.classList.toggle('dark',d);e.style.colorScheme=d?'dark':'light';}catch(e){}})();`;
+// can never block rendering. Mirrors resolveDark() exactly: explicit choice
+// wins; otherwise public routes go by time of day and app routes by OS.
+export const THEME_INIT_SCRIPT = `(function(){try{var path=location.pathname;var pub=/^\\/(?:$|about|features|pricing|solutions|integrations|contact|resources|privacy|terms|login|onboarding|accept-invite)(?:\\/|$)/.test(path);var p=localStorage.getItem('${THEME_KEY}')||'system';var d;if(p==='dark'){d=true;}else if(p==='light'){d=false;}else if(pub){var h=new Date().getHours();d=!(h>=7&&h<19);}else{d=!!(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);}var e=document.documentElement;e.classList.toggle('dark',d);e.style.colorScheme=d?'dark':'light';}catch(e){}})();`;

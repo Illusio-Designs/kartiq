@@ -131,6 +131,26 @@ const FAQ = [
   },
 ];
 
+// ── Full plan comparison (real feature matrix across the 4 plans) ──────
+const COMPARE_COLUMNS = ['Starter', 'Growth', 'Scale', 'Enterprise'];
+type CompareCell = string | boolean;
+const COMPARE_ROWS: Array<[string, CompareCell, CompareCell, CompareCell, CompareCell]> = [
+  ['SKUs', '10,000', '50,000', '200,000', 'Unlimited'],
+  ['Facilities', '1', '2', '5', 'Unlimited'],
+  ['User roles', '3', '5', '10', 'Unlimited'],
+  ['Orders / month', '500', '2,500', '10,000', 'Unlimited'],
+  ['Sales channels', '2', '7', '15', 'All'],
+  ['Pay-as-you-go', false, true, true, true],
+  ['Payment reconciliation', true, true, true, true],
+  ['Purchase management', false, true, true, true],
+  ['Video management (VMS)', false, true, true, true],
+  ['Advanced warehouse ops', false, false, true, true],
+  ['Custom reports', false, false, true, true],
+  ['Vendor management', false, false, true, true],
+  ['Custom / API integration', false, false, false, true],
+  ['ERP integration', false, false, false, true],
+];
+
 export default function PricingPage() {
   const [yearly, setYearly] = useState(true);
   interface PlanView {
@@ -163,8 +183,8 @@ export default function PricingPage() {
     <PublicLayout>
       <section className="relative overflow-hidden pt-20 pb-16">
         <div className="absolute inset-0 -z-10">
-          <div className="absolute top-20 left-1/4 w-96 h-96 rounded-full bg-emerald-400/20 blur-[120px]" />
-          <div className="absolute top-40 right-1/4 w-96 h-96 rounded-full bg-teal-400/20 blur-[120px]" />
+          <div className="absolute top-20 left-1/4 w-96 h-96 rounded-full bg-emerald-400/20 dark:bg-emerald-500/10 blur-[120px]" />
+          <div className="absolute top-40 right-1/4 w-96 h-96 rounded-full bg-teal-400/20 dark:bg-teal-500/10 blur-[120px]" />
         </div>
 
         <div className="max-w-7xl mx-auto px-6 text-center">
@@ -207,13 +227,13 @@ export default function PricingPage() {
 
       {/* Plan cards */}
       <section className="pb-24">
-        <div className="max-w-6xl mx-auto px-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
           {PLANS.map(plan => (
             <div
               key={plan.name}
-              className={`relative rounded-3xl p-8 ${
+              className={`relative flex flex-col h-full rounded-2xl p-6 ${
                 plan.highlight
-                  ? 'bg-gradient-to-br from-emerald-500 via-emerald-600 to-emerald-700 text-white shadow-2xl shadow-emerald-500/30 scale-[1.02] border border-white/10'
+                  ? 'bg-gradient-to-br from-emerald-500 via-emerald-600 to-emerald-700 text-white shadow-2xl shadow-emerald-500/30 border border-white/10 lg:-my-2'
                   : 'bg-white border border-slate-200 shadow-[0_2px_20px_rgba(15,15,30,0.04)]'
               }`}
             >
@@ -229,23 +249,34 @@ export default function PricingPage() {
                 <h3 className={`text-2xl font-bold ${plan.highlight ? 'text-white' : 'text-slate-900'}`}>
                   {plan.name}
                 </h3>
-                <p className={`text-sm mt-1 ${plan.highlight ? 'text-white/70' : 'text-slate-500'}`}>
+                <p className={`text-sm mt-1 min-h-[2.75rem] leading-snug ${plan.highlight ? 'text-white/70' : 'text-slate-500'}`}>
                   {plan.tagline}
                 </p>
               </div>
 
               <div className="mt-8">
-                <div className="flex items-baseline gap-1">
-                  <span className={`text-5xl font-bold tracking-tight ${plan.highlight ? 'text-white' : 'text-slate-900'}`}>
-                    ₹{yearly ? plan.price.yearly.toLocaleString() : plan.price.monthly.toLocaleString()}
-                  </span>
-                  <span className={`text-sm font-semibold ${plan.highlight ? 'text-white/60' : 'text-slate-500'}`}>
-                    /{yearly ? 'year' : 'month'}
-                  </span>
-                </div>
-                {plan.price.monthly === 0 && (
+                {plan.cta === 'Talk to Sales' ? (
+                  <div className={`text-5xl font-bold tracking-tight ${plan.highlight ? 'text-white' : 'text-slate-900'}`}>
+                    Custom
+                  </div>
+                ) : (
+                  <div className="flex items-baseline gap-1">
+                    <span className={`text-5xl font-bold tracking-tight ${plan.highlight ? 'text-white' : 'text-slate-900'}`}>
+                      ₹{yearly ? plan.price.yearly.toLocaleString() : plan.price.monthly.toLocaleString()}
+                    </span>
+                    <span className={`text-sm font-semibold ${plan.highlight ? 'text-white/60' : 'text-slate-500'}`}>
+                      /{yearly ? 'year' : 'month'}
+                    </span>
+                  </div>
+                )}
+                {plan.cta !== 'Talk to Sales' && plan.price.monthly === 0 && (
                   <p className={`text-xs mt-1 font-semibold ${plan.highlight ? 'text-white/70' : 'text-slate-500'}`}>
                     Free forever
+                  </p>
+                )}
+                {plan.cta !== 'Talk to Sales' && plan.price.monthly > 0 && yearly && (
+                  <p className={`text-xs mt-1 font-semibold ${plan.highlight ? 'text-white/60' : 'text-slate-500'}`}>
+                    ₹{plan.price.monthly.toLocaleString()}/mo billed monthly
                   </p>
                 )}
               </div>
@@ -280,7 +311,7 @@ export default function PricingPage() {
                 </Link>
               )}
 
-              <div className="mt-8 pt-8 border-t border-slate-200/50 space-y-3">
+              <div className={`mt-8 pt-8 border-t space-y-3 flex-1 ${plan.highlight ? 'border-white/20' : 'border-slate-200/70'}`}>
                 {plan.features.map(f => (
                   <div key={f} className="flex items-start gap-2.5 text-sm">
                     <CheckCircle2
@@ -299,6 +330,64 @@ export default function PricingPage() {
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Comparison table */}
+      <section className="pb-24">
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="text-center mb-10">
+            <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900">
+              Compare every plan
+            </h2>
+          </div>
+          <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-[0_2px_20px_rgba(15,15,30,0.04)]">
+            <table className="w-full min-w-[720px] border-collapse text-sm">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-white/[0.04]">
+                  <th className="text-left font-bold text-slate-900 px-4 py-4">What you get</th>
+                  {COMPARE_COLUMNS.map(col => (
+                    <th
+                      key={col}
+                      className={`text-center font-bold px-4 py-4 ${
+                        col === 'Growth' ? 'text-emerald-600' : 'text-slate-900'
+                      }`}
+                    >
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {COMPARE_ROWS.map((row, i) => {
+                  const [label, ...cells] = row;
+                  return (
+                    <tr
+                      key={label}
+                      className={`border-t border-slate-100 dark:border-white/[0.06] ${
+                        i % 2 === 1 ? 'bg-slate-50/60 dark:bg-white/[0.02]' : ''
+                      }`}
+                    >
+                      <td className="text-left font-semibold text-slate-700 px-4 py-3.5">{label}</td>
+                      {cells.map((cell, j) => (
+                        <td key={j} className="text-center px-4 py-3.5">
+                          {typeof cell === 'boolean' ? (
+                            cell ? (
+                              <CheckCircle2 size={18} className="inline text-emerald-500" />
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )
+                          ) : (
+                            <span className="text-slate-700 font-medium">{cell}</span>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 

@@ -7,7 +7,7 @@ import { ChannelMarquee, ALL_CHANNELS } from '@/components/ChannelMarquee';
 import { CountUp } from '@/components/CountUp';
 import { publicApi } from '@/lib/api';
 import { getIcon } from '@/lib/icon';
-import { Sparkles, ArrowRight, Play, Users, Globe, Star, ChevronDown } from 'lucide-react';
+import { Sparkles, ArrowRight, Play, Users, Globe, Star, ChevronDown, Check } from 'lucide-react';
 import { CardSkeleton, ShimmerTheme } from '@/components/Shimmer';
 import { useDemoTrigger } from '@/components/public/DemoTrigger';
 import Skeleton from 'react-loading-skeleton';
@@ -22,6 +22,32 @@ interface ContentRow {
   icon: string | null;
   data: any;
 }
+
+// ── Pricing teaser (static marketing copy — full pricing lives on /pricing) ──
+const PRICING_TEASER = [
+  {
+    name: 'Starter',
+    tagline: 'For micro-businesses launching their first online channels.',
+    yearly: 14990,
+    popular: false,
+    features: ['1 facility', '10,000 SKUs', '3 user roles', '500 orders / month'],
+  },
+  {
+    name: 'Growth',
+    tagline: 'For growing brands strengthening their multi-channel operations.',
+    yearly: 49990,
+    popular: true,
+    features: ['2 facilities', '50,000 SKUs', '5 user roles', '2,500 orders / month'],
+  },
+  {
+    name: 'Scale',
+    tagline: 'For scaling brands that need full omnichannel coverage and warehouse ops.',
+    yearly: 149990,
+    popular: false,
+    features: ['5 facilities', '200,000 SKUs', '10 user roles', '10,000 orders / month'],
+  },
+];
+const inr = (n: number) => n.toLocaleString('en-IN');
 
 export default function LandingPage() {
   const [stats, setStats] = useState<{
@@ -484,33 +510,106 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ═══ NEWSLETTER ═══════════════════════════════════════════ */}
+      {/* ═══ PRICING TEASER ═══════════════════════════════════════ */}
+      <section className="py-24 bg-slate-50">
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="text-center max-w-2xl mx-auto mb-12" data-reveal="rise">
+            <div className="text-xs font-bold text-emerald-700 uppercase tracking-widest mb-3">
+              Pricing
+            </div>
+            <h2 className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 leading-tight">
+              Simple plans that <span className="gradient-text">scale with you.</span>
+            </h2>
+            <p className="mt-5 text-base text-slate-600 max-w-xl mx-auto">
+              Start with a 14-day trial. Pay-as-you-go beyond your plan — never a hard wall.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-stretch" data-stagger>
+            {PRICING_TEASER.map((p) => (
+              <div
+                key={p.name}
+                data-reveal
+                className={`relative rounded-2xl p-6 flex flex-col hover-lift transition-all ${
+                  p.popular
+                    ? 'bg-white border-2 border-emerald-500 shadow-xl shadow-emerald-500/20'
+                    : 'bg-white border border-slate-200 shadow-sm hover:shadow-lg'
+                }`}
+              >
+                {p.popular && (
+                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-600 text-white text-[10px] font-bold uppercase tracking-wider shadow-md">
+                    <Star size={10} className="fill-white" /> Most popular
+                  </span>
+                )}
+                <div className="font-bold text-lg text-slate-900">{p.name}</div>
+                <p className="text-xs text-slate-500 mt-1 leading-relaxed min-h-[2.5rem]">{p.tagline}</p>
+                <div className="mt-4 text-3xl font-bold text-slate-900">
+                  ₹{inr(p.yearly)}
+                  <span className="text-sm font-semibold text-slate-500"> /yr</span>
+                </div>
+                <ul className="mt-5 mb-6 space-y-2.5 flex-1">
+                  {p.features.map((f) => (
+                    <li key={f} className="flex items-start gap-2 text-sm text-slate-600">
+                      <Check size={15} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Link
+                  href="/pricing"
+                  className={`text-center px-4 py-2.5 rounded-full text-sm font-semibold transition-all hover:-translate-y-0.5 ${
+                    p.popular
+                      ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                      : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
+                  }`}
+                >
+                  See plan
+                </Link>
+              </div>
+            ))}
+          </div>
+
+          <div className="text-center mt-10" data-reveal="zoom">
+            <Link
+              href="/pricing"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-full shadow-md shadow-emerald-500/20 hover:shadow-lg hover:-translate-y-0.5 transition-all"
+            >
+              See full pricing <ArrowRight size={13} />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ CTA BAND ═════════════════════════════════════════════ */}
       <section className="py-24">
         <div className="max-w-5xl mx-auto px-6" data-reveal="zoom">
-          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-700 p-10 md:p-14 shadow-2xl shadow-emerald-500/30">
-            <div className="absolute top-0 right-0 w-96 h-96 rounded-full bg-white/10 blur-3xl -translate-y-1/2 translate-x-1/4 animate-pulse-soft" />
+          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-700 p-10 md:p-16 text-center shadow-2xl shadow-emerald-500/30">
+            <div className="absolute top-0 right-0 w-96 h-96 rounded-full bg-white/15 blur-3xl -translate-y-1/2 translate-x-1/4 animate-pulse-soft" />
             <div className="absolute bottom-0 left-1/4 w-80 h-80 rounded-full bg-emerald-300/20 blur-3xl translate-y-1/2 animate-pulse-soft" style={{ animationDelay: '1.5s' }} />
 
-            <div className="relative grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-              <div>
-                <h2 className="text-3xl md:text-4xl font-bold text-white tracking-tight leading-tight">
-                  Join Our Newsletter
-                </h2>
-                <p className="mt-3 text-sm text-white/80 leading-relaxed max-w-md">
-                  Get the latest commerce insights, product updates, and actionable tips delivered to your inbox. No spam, ever.
-                </p>
-              </div>
-              <form className="flex flex-col sm:flex-row gap-2" onSubmit={e => e.preventDefault()}>
-                <input
-                  type="email"
-                  placeholder="Enter your email"
-                  className="flex-1 px-4 py-3 bg-white/10 backdrop-blur border border-white/20 text-white placeholder:text-white/60 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-white/40"
-                />
-                <button type="submit" className="inline-flex items-center justify-center gap-1.5 px-5 py-3 bg-white text-emerald-700 text-sm font-bold rounded-full hover:bg-emerald-50 hover:-translate-y-0.5 transition-all group">
-                  Subscribe
-                  <ArrowRight size={13} className="group-hover:translate-x-1 transition-transform" />
+            <div className="relative">
+              <h2 className="text-3xl md:text-5xl font-bold text-white tracking-tight leading-tight">
+                Sell everywhere. Ship anything.
+              </h2>
+              <p className="mt-4 text-sm md:text-base text-white/85 leading-relaxed max-w-xl mx-auto">
+                Join fast-growing sellers running their whole operation on Kartriq. Connect your first channel in under 5 minutes.
+              </p>
+              <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+                <Link
+                  href={ctaPrimary.href}
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-white text-emerald-700 text-sm font-bold rounded-full hover:bg-emerald-50 hover:-translate-y-0.5 transition-all group"
+                >
+                  Create your free account
+                  <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => openDemo({ source: 'demo', title: ctaSecondary.label || 'Schedule a Demo' })}
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-white/10 backdrop-blur border border-white/25 text-white text-sm font-semibold rounded-full hover:bg-white/20 transition-all group"
+                >
+                  <Play size={12} fill="currentColor" className="group-hover:scale-125 transition-transform" /> Schedule a demo
                 </button>
-              </form>
+              </div>
             </div>
           </div>
         </div>

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { PublicLayout } from '@/components/layout/PublicLayout';
 import {
   Sparkles, Mail, MessageCircle, Phone, MapPin, Send, CheckCircle2, AlertCircle,
+  Instagram, Facebook,
 } from 'lucide-react';
 import { leadsApi } from '@/lib/api';
 import { collectErrors, validateEmail, validateText } from '@/lib/validators';
@@ -72,7 +73,7 @@ export default function ContactPage() {
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100 text-xs font-bold text-emerald-700 uppercase tracking-wider mb-4">
             <Sparkles size={12} /> Contact
           </div>
-          <h1 className="text-5xl md:text-6xl font-bold tracking-tight bg-gradient-to-r from-[#06D4B8] to-[#06B6D4] bg-clip-text text-transparent leading-tight">
+          <h1 className="text-5xl md:text-6xl font-bold tracking-tight text-slate-900 leading-tight">
             Let's <span className="gradient-text">talk commerce.</span>
           </h1>
           <p className="mt-5 text-lg text-slate-600 max-w-xl mx-auto">
@@ -82,36 +83,70 @@ export default function ContactPage() {
       </section>
 
       <section className="pb-24">
-        <div className="max-w-6xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-5 gap-8">
-          {/* Contact info cards */}
-          <div className="lg:col-span-2 space-y-4">
+        <div className="max-w-6xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-5 gap-6 lg:gap-8 items-start">
+          {/* Contact info column */}
+          <div className="lg:col-span-2 space-y-3">
             {[
-              { icon: Mail, title: 'Email', value: 'info@kartriq.com', link: 'mailto:info@kartriq.com' },
-              { icon: MessageCircle, title: 'Chat', value: 'Live chat 9am – 9pm IST', link: '#' },
+              { icon: Mail, title: 'Email', value: 'finverasolutionsllp@gmail.com', link: 'mailto:finverasolutionsllp@gmail.com' },
               { icon: Phone, title: 'Call', value: '+91 84900 09684', link: 'tel:+918490009684' },
-              { icon: MapPin, title: 'Office', value: '211-212, Runway Heights, Ayodhya Chowk, 150ft Ring Road, Rajkot 360001, Gujarat, India', link: '#' },
+              { icon: MapPin, title: 'Office', value: '211-212, Runway Heights, Ayodhya Chowk, 150ft Ring Road, Rajkot 360001, Gujarat, India', link: null },
+              { icon: MessageCircle, title: 'Chat', value: 'Live chat 9am – 9pm IST, Mon–Sat', link: null },
             ].map(c => {
               const Icon = c.icon;
-              return (
-                <a
-                  key={c.title}
-                  href={c.link}
-                  className="flex items-start gap-4 p-5 bg-white border border-slate-200 rounded-2xl hover:border-emerald-200 hover:shadow-md transition-all group"
-                >
-                  <div className="w-11 h-11 rounded-xl bg-emerald-50 group-hover:bg-emerald-100 flex items-center justify-center transition-colors">
+              const inner = (
+                <>
+                  <div className="w-11 h-11 flex-shrink-0 rounded-xl bg-emerald-50 group-hover:bg-emerald-100 flex items-center justify-center transition-colors">
                     <Icon size={18} className="text-emerald-600" />
                   </div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">{c.title}</div>
-                    <div className="text-sm font-bold text-slate-900 mt-1">{c.value}</div>
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{c.title}</div>
+                    <div className="text-sm font-semibold text-slate-900 mt-1 break-words leading-snug">{c.value}</div>
                   </div>
+                </>
+              );
+              const base = 'flex items-start gap-4 p-4 bg-white border border-slate-200 rounded-2xl shadow-sm transition-all group';
+              return c.link ? (
+                <a key={c.title} href={c.link} className={`${base} hover:border-emerald-200 hover:shadow-md`}>
+                  {inner}
                 </a>
+              ) : (
+                <div key={c.title} className={base}>
+                  {inner}
+                </div>
               );
             })}
+
+            {/* Social / connect block */}
+            <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-sm">
+              <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Connect with us</div>
+              <div className="flex items-center gap-2.5 mt-3">
+                {[
+                  { icon: Instagram, label: 'Instagram', link: 'https://www.instagram.com/kartriq_ecommerce/' },
+                  { icon: Facebook, label: 'Facebook', link: 'https://www.facebook.com/profile.php?id=61589343608997' },
+                  { icon: Mail, label: 'Email', link: 'mailto:finverasolutionsllp@gmail.com' },
+                ].map(s => {
+                  const SIcon = s.icon;
+                  const external = s.link.startsWith('http');
+                  return (
+                    <a
+                      key={s.label}
+                      href={s.link}
+                      aria-label={s.label}
+                      {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                      className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center hover:bg-emerald-50 hover:text-emerald-600 transition-colors"
+                    >
+                      <SIcon size={18} />
+                    </a>
+                  );
+                })}
+              </div>
+              <div className="text-xs text-slate-500 mt-3">finverasolutionsllp@gmail.com</div>
+              <div className="text-xs text-slate-500 mt-1">Managed by Finvera Solutions LLP, Rajkot, India.</div>
+            </div>
           </div>
 
           {/* Contact form */}
-          <div className="lg:col-span-3 bg-white rounded-3xl border border-slate-200 p-8 md:p-10 shadow-sm">
+          <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 md:p-10 shadow-sm">
             {submitted ? (
               <div className="text-center py-10">
                 <div className="w-16 h-16 mx-auto rounded-2xl bg-emerald-100 flex items-center justify-center mb-4">
@@ -128,8 +163,9 @@ export default function ContactPage() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Name</label>
+                    <label htmlFor="contact-name" className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Name</label>
                     <input
+                      id="contact-name"
                       required
                       value={form.name}
                       onChange={e => {
@@ -142,8 +178,9 @@ export default function ContactPage() {
                     {fieldErrors.name && <p className="text-xs text-rose-600 mt-1 font-medium">{fieldErrors.name}</p>}
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Email</label>
+                    <label htmlFor="contact-email" className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Email</label>
                     <input
+                      id="contact-email"
                       required
                       type="email"
                       value={form.email}
@@ -172,8 +209,9 @@ export default function ContactPage() {
                   ]}
                 />
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Message</label>
+                  <label htmlFor="contact-message" className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Message</label>
                   <textarea
+                    id="contact-message"
                     required
                     rows={5}
                     value={form.message}

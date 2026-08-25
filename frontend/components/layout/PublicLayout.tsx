@@ -4,7 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
-  Sparkles, Menu, X, Twitter, Linkedin, Instagram, Youtube, Heart, ChevronDown, ArrowRight,
+  Menu, X, Instagram, Facebook, Heart, ChevronDown, ArrowRight,
   Mail, Phone,
 } from 'lucide-react';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
@@ -78,41 +78,39 @@ export function PublicNav() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/85 border-b border-slate-200">
+    <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/85 dark:bg-[#0e1a24]/85 border-b border-slate-200">
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center">
           <Image src="/brand/kartriq-logo.png" alt="Kartriq" width={150} height={37} priority className="h-8 w-auto" />
         </Link>
 
         <nav className="hidden md:flex items-center gap-1">
-          {/* Interleave: Home, [Solutions dropdown], Features, Pricing, [Resources], [Company]
-              We render main[] in order, inserting dropdowns at anchor positions. */}
+          {/* Home, Features … (main[]) then the three mega menus at their anchor
+              positions. Panels anchor to their own trigger; the rightmost two
+              (Resources / Company) align right so they never run off-screen. */}
           {groups.main.map((m) => (
             <NavLinkRow key={m.id} href={m.href || '#'} current={pathname}>{m.title}</NavLinkRow>
           ))}
 
           {groups.solutions.length > 0 && (
-            <Dropdown
-              label="Solutions"
-              items={groups.solutions}
+            <MegaMenu
+              label="Solutions" variant="solutions" items={groups.solutions}
               active={activeMenu === 'solutions'}
               onEnter={() => setActiveMenu('solutions')}
               onLeave={() => setActiveMenu(null)}
             />
           )}
           {groups.resources.length > 0 && (
-            <Dropdown
-              label="Resources"
-              items={groups.resources}
+            <MegaMenu
+              label="Resources" variant="resources" items={groups.resources}
               active={activeMenu === 'resources'}
               onEnter={() => setActiveMenu('resources')}
               onLeave={() => setActiveMenu(null)}
             />
           )}
           {groups.company.length > 0 && (
-            <Dropdown
-              label="Company"
-              items={groups.company}
+            <MegaMenu
+              label="Company" variant="company" items={groups.company}
               active={activeMenu === 'company'}
               onEnter={() => setActiveMenu('company')}
               onLeave={() => setActiveMenu(null)}
@@ -167,51 +165,119 @@ function NavLinkRow({ href, current, children }: { href: string; current: string
   );
 }
 
-function Dropdown({
-  label, items, active, onEnter, onLeave,
+// A single link row inside a mega panel: icon tile + title + subtitle.
+function MegaLink({ item }: { item: NavLink }) {
+  const Icon = getIcon(item.icon);
+  return (
+    <Link
+      href={item.href || '#'}
+      className="group relative flex items-start gap-3 p-2.5 rounded-xl hover:bg-emerald-50 transition-colors"
+    >
+      <div className="w-9 h-9 rounded-lg bg-slate-100 group-hover:bg-white flex items-center justify-center flex-shrink-0 transition-colors">
+        <Icon size={16} className="text-emerald-600" />
+      </div>
+      <div className="min-w-0">
+        <div className="text-sm font-bold text-slate-900 group-hover:text-emerald-700 transition-colors leading-tight">
+          {item.title}
+        </div>
+        {item.subtitle && (
+          <div className="text-xs text-slate-500 mt-0.5 leading-snug">{item.subtitle}</div>
+        )}
+      </div>
+      <ArrowRight size={14} className="absolute right-3 top-3.5 text-emerald-600 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
+    </Link>
+  );
+}
+
+const COL_HEAD = 'text-[11px] font-bold uppercase tracking-[0.13em] text-slate-400 px-2.5 pb-2 pt-0.5';
+
+// Full-width mega panel. Layout varies by menu:
+//  - solutions: two link columns + a featured promo card (left-anchored, wide)
+//  - resources: two link columns + a footer row (right-anchored)
+//  - company:   a hero card + a single link column (right-anchored, narrow)
+function MegaMenu({
+  label, variant, items, active, onEnter, onLeave,
 }: {
   label: string;
+  variant: 'solutions' | 'resources' | 'company';
   items: NavLink[];
   active: boolean;
   onEnter: () => void;
   onLeave: () => void;
 }) {
+  const alignRight = variant !== 'solutions';
+  const width = variant === 'solutions' ? 'w-[760px]' : variant === 'resources' ? 'w-[560px]' : 'w-[340px]';
+  const mid = Math.ceil(items.length / 2);
+  const colA = items.slice(0, mid);
+  const colB = items.slice(mid);
+
   return (
-    <div className="relative" onMouseEnter={onEnter} onMouseLeave={onLeave}>
+    <div className="static md:relative" onMouseEnter={onEnter} onMouseLeave={onLeave}>
       <button
         className={cn(
           'flex items-center gap-1 px-4 py-2 text-sm font-semibold rounded-lg whitespace-nowrap transition-colors',
-          active ? "text-emerald-700 bg-emerald-50" : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+          active ? 'text-emerald-700 bg-emerald-50' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
         )}
       >
         {label} <ChevronDown size={13} className={cn('transition-transform', active && 'rotate-180')} />
       </button>
 
       {active && (
-        <div className="absolute top-full left-0 pt-3 w-[420px]">
+        <div className={cn('absolute top-full pt-3 max-w-[calc(100vw-2rem)]', width, alignRight ? 'right-0' : 'left-0')}>
           <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl shadow-slate-900/10 p-3 animate-fade-in">
-            {items.map((item) => {
-              const Icon = getIcon(item.icon);
-              return (
-                <Link
-                  key={item.id}
-                  href={item.href || '#'}
-                  className="flex items-start gap-3 p-3 rounded-xl hover:bg-emerald-50 transition-colors group"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-emerald-50 group-hover:bg-white flex items-center justify-center flex-shrink-0 transition-colors">
-                    <Icon size={16} className="text-emerald-600" />
+            {variant === 'solutions' && (
+              <div className="grid grid-cols-[1fr_1fr_240px] gap-3">
+                <div>
+                  <div className={COL_HEAD}>Sell &amp; Fulfill</div>
+                  {colA.map((i) => <MegaLink key={i.id} item={i} />)}
+                </div>
+                <div>
+                  <div className={COL_HEAD}>Move &amp; Measure</div>
+                  {colB.map((i) => <MegaLink key={i.id} item={i} />)}
+                </div>
+                <div className="rounded-xl p-4 flex flex-col justify-between text-white bg-gradient-to-br from-emerald-600 via-emerald-500 to-emerald-400 relative overflow-hidden">
+                  <div>
+                    <div className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-white/85">Integrations</div>
+                    <div className="text-lg font-extrabold leading-tight mt-2">One catalog,<br />56+ channels.</div>
+                    <p className="text-xs text-white/90 mt-1.5 leading-snug">Push inventory and pull orders from every marketplace and courier — in real time.</p>
                   </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-bold text-slate-900 group-hover:text-emerald-700 transition-colors">
-                      {item.title}
-                    </div>
-                    {item.subtitle && (
-                      <div className="text-xs text-slate-500 mt-0.5 line-clamp-1">{item.subtitle}</div>
-                    )}
+                  <Link href="/integrations" className="mt-4 inline-flex items-center gap-1.5 self-start bg-white text-emerald-700 text-xs font-bold px-3 py-2 rounded-full hover:gap-2.5 transition-all">
+                    Explore integrations <ArrowRight size={13} />
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {variant === 'resources' && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className={COL_HEAD}>Learn</div>
+                    {colA.map((i) => <MegaLink key={i.id} item={i} />)}
                   </div>
-                </Link>
-              );
-            })}
+                  <div>
+                    <div className={COL_HEAD}>Support</div>
+                    {colB.map((i) => <MegaLink key={i.id} item={i} />)}
+                  </div>
+                </div>
+                <div className="mt-2 pt-3 px-2.5 border-t border-slate-100 flex items-center justify-between gap-3">
+                  <span className="text-xs text-slate-500">Guides, docs and live demos to get you shipping faster.</span>
+                  <Link href="/resources" className="text-xs font-bold text-emerald-700 inline-flex items-center gap-1 whitespace-nowrap">
+                    Browse all <ArrowRight size={13} />
+                  </Link>
+                </div>
+              </>
+            )}
+
+            {variant === 'company' && (
+              <>
+                <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3.5 mb-1">
+                  <div className="text-sm font-extrabold text-slate-900">Built for Indian commerce</div>
+                  <div className="text-xs text-slate-500 mt-1 leading-snug">From Rajkot to every marketplace — meet the team behind Kartriq.</div>
+                </div>
+                {items.map((i) => <MegaLink key={i.id} item={i} />)}
+              </>
+            )}
           </div>
         </div>
       )}
@@ -296,11 +362,11 @@ export function PublicFooter() {
               </p>
               <div className="mt-5 space-y-2 text-sm">
                 <a
-                  href="mailto:info@kartriq.com"
+                  href="mailto:finverasolutionsllp@gmail.com"
                   className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors"
                 >
                   <Mail size={14} className="text-slate-400" />
-                  <span>info@kartriq.com</span>
+                  <span>finverasolutionsllp@gmail.com</span>
                 </a>
                 <a
                   href="tel:+918490009684"
@@ -311,10 +377,8 @@ export function PublicFooter() {
                 </a>
               </div>
               <div className="flex items-center gap-4 mt-6">
-                <SocialLink href="#" label="X (Twitter)"><Twitter size={18} /></SocialLink>
-                <SocialLink href="#" label="Instagram"><Instagram size={18} /></SocialLink>
-                <SocialLink href="#" label="LinkedIn"><Linkedin size={18} /></SocialLink>
-                <SocialLink href="#" label="YouTube"><Youtube size={18} /></SocialLink>
+                <SocialLink href="https://www.instagram.com/kartriq_ecommerce/" label="Instagram"><Instagram size={18} /></SocialLink>
+                <SocialLink href="https://www.facebook.com/profile.php?id=61589343608997" label="Facebook"><Facebook size={18} /></SocialLink>
               </div>
             </div>
 
@@ -379,7 +443,9 @@ function SocialLink({ href, label, children }: { href: string; label: string; ch
     <a
       href={href}
       aria-label={label}
-      className="text-slate-400 hover:text-slate-900 transition-colors"
+      target="_blank"
+      rel="noopener noreferrer"
+      className="w-9 h-9 grid place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
     >
       {children}
     </a>

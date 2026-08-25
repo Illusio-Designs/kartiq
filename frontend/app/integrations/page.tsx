@@ -109,15 +109,6 @@ export default function IntegrationsPage() {
     });
   }, [data, activeCategory, statusFilter, search]);
 
-  const grouped = useMemo(() => {
-    const map: Record<string, Item[]> = {};
-    for (const it of filtered) {
-      if (!map[it.category]) map[it.category] = [];
-      map[it.category].push(it);
-    }
-    return map;
-  }, [filtered]);
-
   const counts = useMemo(() => {
     if (!data?.items) return {} as Record<string, number>;
     const m: Record<string, number> = { ALL: data.items.length };
@@ -129,7 +120,7 @@ export default function IntegrationsPage() {
 
   return (
     <PublicLayout>
-      <main className="bg-gradient-to-b from-white via-emerald-50/40 to-white">
+      <main className="bg-gradient-to-b from-white via-emerald-50/40 to-white dark:from-slate-950 dark:via-emerald-950/20 dark:to-slate-950">
 
         {/* ─── HERO ─────────────────────────────────────────────────── */}
         <section className="relative overflow-hidden pt-20 pb-12">
@@ -166,7 +157,7 @@ export default function IntegrationsPage() {
         </section>
 
         {/* ─── SEARCH + STATUS FILTER ─────────────────────────────── */}
-        <section className="sticky top-0 z-20 bg-white/85 backdrop-blur-md border-y border-slate-200 py-3">
+        <section className="sticky top-0 z-20 bg-white/85 dark:bg-slate-900/80 backdrop-blur-md border-y border-slate-200 py-3">
           <div className="max-w-5xl mx-auto px-6 flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2 flex-1 min-w-[240px] bg-slate-100 rounded-xl px-3 py-2">
               <Search size={16} className="text-slate-400" />
@@ -217,7 +208,7 @@ export default function IntegrationsPage() {
 
         {/* ─── CHANNEL GRID ───────────────────────────────────────── */}
         <section className="py-10">
-          <div className="max-w-6xl mx-auto px-6 space-y-12">
+          <div className="max-w-6xl mx-auto px-6">
             {!data ? (
               <div className="text-center py-20 text-slate-500">Loading integrations…</div>
             ) : filtered.length === 0 ? (
@@ -226,28 +217,21 @@ export default function IntegrationsPage() {
                 <p className="text-sm text-slate-500 mt-1">Try a different search or category.</p>
               </div>
             ) : (
-              CATEGORY_ORDER.filter((cat) => grouped[cat]?.length).map((cat) => {
-                const meta = CATEGORY_META[cat] || { label: cat, tagline: '', icon: ShoppingBag };
-                const Icon = meta.icon;
-                return (
-                  <div key={cat} id={`cat-${cat}`}>
-                    <div className="flex items-center gap-3 mb-5">
-                      <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20">
-                        <Icon size={20} />
-                      </div>
-                      <div>
-                        <h2 className="text-xl font-bold text-slate-900 tracking-tight">{meta.label}</h2>
-                        <p className="text-xs text-slate-500">{meta.tagline} · {grouped[cat].length} channels</p>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {grouped[cat].map((it) => (
-                        <ChannelTile key={it.type} item={it} />
-                      ))}
-                    </div>
-                  </div>
-                );
-              })
+              <>
+                <div className="flex items-center justify-between mb-5">
+                  <h2 className="text-lg font-bold text-slate-900 tracking-tight">
+                    {activeCategory === 'ALL' ? 'All channels' : (CATEGORY_META[activeCategory]?.label || activeCategory)}
+                  </h2>
+                  <span className="text-xs font-bold text-slate-500">
+                    {filtered.length} {filtered.length === 1 ? 'channel' : 'channels'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {filtered.map((it) => (
+                    <ChannelTile key={it.type} item={it} />
+                  ))}
+                </div>
+              </>
             )}
           </div>
         </section>
@@ -287,14 +271,16 @@ function CategoryTab({ id, label, count, active, onClick }: { id: string; label:
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
-        active ? 'bg-emerald-600 text-white shadow' : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300'
+      className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
+        active
+          ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-md shadow-emerald-500/20'
+          : 'bg-white border border-slate-200 text-slate-600 hover:border-emerald-300'
       }`}
       data-category={id}
     >
       {label}
-      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-        active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+      <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
+        active ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-500'
       }`}>{count}</span>
     </button>
   );
