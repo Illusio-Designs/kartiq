@@ -36,7 +36,7 @@ const {
 } = ecomAdapters;
 
 const {
-  BlinkitAdapter, ZeptoAdapter, SwiggyInstamartAdapter, BBNowAdapter,
+  BlinkitAdapter, SwiggyInstamartAdapter, BBNowAdapter,
   FlipkartMinutesAdapter, Tata1mgAdapter, DunzoAdapter, CountryDelightAdapter,
 } = quickcomAdapters;
 
@@ -122,7 +122,7 @@ const CHANNEL_CATEGORY = {
   FIRSTCRY: 'ECOM', PEPPERFRY: 'ECOM', CROMA: 'ECOM', TATA_NEU: 'ECOM',
 
   // QUICKCOM
-  BLINKIT: 'QUICKCOM', ZEPTO: 'QUICKCOM',
+  BLINKIT: 'QUICKCOM',
   SWIGGY_INSTAMART: 'QUICKCOM', BB_NOW: 'QUICKCOM',
   FLIPKART_MINUTES: 'QUICKCOM', TATA_1MG: 'QUICKCOM',
   DUNZO: 'QUICKCOM', COUNTRY_DELIGHT: 'QUICKCOM',
@@ -240,7 +240,6 @@ function getAdapter(channel) {
 
     // ── QUICKCOM ──────────────────────────────────────────
     case 'BLINKIT':          return new BlinkitAdapter(creds);
-    case 'ZEPTO':            return new ZeptoAdapter(creds);
     case 'SWIGGY_INSTAMART': return new SwiggyInstamartAdapter(creds);
     case 'BB_NOW':           return new BBNowAdapter(creds);
 

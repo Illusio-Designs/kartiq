@@ -394,23 +394,6 @@ export const CHANNEL_SCHEMAS: Record<string, ChannelSchema> = {
     ],
   },
 
-  ZEPTO: {
-    type: 'ZEPTO',
-    name: 'Zepto',
-    description: 'Zepto seller API (Bearer token + X-Seller-Id header). API access is partnership-gated.',
-    docsUrl: 'https://sell.zeptonow.com',
-    steps: [
-      'Apply for seller access at https://sell.zeptonow.com',
-      'Once onboarded, ask your Zepto category manager for an API key',
-      'Find your Seller ID in the Zepto Seller Portal → Account → Profile',
-      'Paste both below and click Test & Save',
-    ],
-    fields: [
-      { key: 'apiKey',   label: 'API Key',   kind: 'password', required: true, secret: true, help: 'Provided by your Zepto category manager — email partnerships@zepto.co.in to request.' },
-      { key: 'sellerId', label: 'Seller ID', kind: 'text',     required: true, help: 'Zepto Seller Portal → Account → Profile. Numeric/alphanumeric ID assigned at onboarding.' },
-    ],
-  },
-
   SWIGGY_INSTAMART: {
     type: 'SWIGGY_INSTAMART',
     name: 'Swiggy Instamart',

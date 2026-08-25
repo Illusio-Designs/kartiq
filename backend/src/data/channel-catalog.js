@@ -293,20 +293,6 @@ const CATALOG = [
     applyUrl: 'https://partners.blinkit.com',
   },
   {
-    type: 'ZEPTO',
-    category: 'QUICKCOM',
-    name: 'Zepto',
-    tagline: '10-minute grocery delivery',
-    integrated: true,
-    requiresApproval: true,
-    features: ['orders', 'inventory'],
-    credentialsSchema: [
-      { key: 'apiKey',   label: 'API Key',   type: 'password', required: true },
-      { key: 'sellerId', label: 'Seller ID', type: 'text',     required: true },
-    ],
-    applyUrl: 'https://sell.zeptonow.com',
-  },
-  {
     type: 'SWIGGY_INSTAMART',
     category: 'QUICKCOM',
     name: 'Swiggy Instamart',

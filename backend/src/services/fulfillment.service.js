@@ -43,7 +43,6 @@ const CHANNEL_FULFILLMENT_HINT = {
   SHOPWARE:        'SELF',
 
   BLINKIT:           'CHANNEL', // dark store inventory
-  ZEPTO:             'CHANNEL',
   SWIGGY_INSTAMART:  'CHANNEL',
   BB_NOW:            'CHANNEL',
 
