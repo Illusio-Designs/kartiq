@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -8,9 +8,11 @@ import { orderApi, customerApi, channelApi, productApi } from '@/lib/api';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import {
-  Button, Badge, Card, Modal, Input, Textarea, Select, Pagination, Tooltip, Loader, Tabs, EmptyState, DatePicker, Checkbox,
+  Button, Badge, Card, Modal, Input, Textarea, Select, Pagination, Tooltip, Loader, Tabs, EmptyState, Checkbox,
+  SearchField, DateRangePicker, Popover, BulkActionBar, DensityToggle, Dropdown, Kbd, useConfirm,
 } from '@/components/ui';
-import { AlertTriangle, CheckCircle2, Plus, Star, Trash2, XCircle, Zap, Hand, Layers, ShoppingBag, Plug, RefreshCw, Download, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Eye, Pencil, Lock, Truck, Info } from 'lucide-react';
+import type { Density } from '@/components/ui';
+import { AlertTriangle, CheckCircle2, Plus, Star, Trash2, XCircle, Zap, Hand, Layers, ShoppingBag, Plug, RefreshCw, Download, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Eye, Pencil, Lock, Truck, Info, ListFilter, ArrowUpDown, Bookmark, X } from 'lucide-react';
 import { toast } from '@/store/toast.store';
 import Link from 'next/link';
 
@@ -43,16 +45,6 @@ function reviewEligible(o: any): boolean {
     if (shipped && Date.now() - new Date(shipped).getTime() >= AMZ_SHIPPED_REVIEW_DAYS * 86400000) return true;
   }
   return false;
-}
-
-// Local-date → YYYY-MM-DD (the shape the orders API expects). Uses local
-// getFullYear/Month/Date, not toISOString, so a date never shifts a day across
-// timezones.
-function toYMD(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
 }
 
 // Configurable order-table columns. The leading row number and trailing
@@ -146,17 +138,27 @@ export default function OrdersPage() {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
-  const [colsOpen, setColsOpen] = useState(false);
-  const colsRef = useRef<HTMLDivElement>(null);
   // Per-order quick-edit slide-over (shared Modal renders as a right drawer).
   const [editOrder, setEditOrder] = useState<any | null>(null);
   const [editStatus, setEditStatus] = useState('PENDING');
   const [editTracking, setEditTracking] = useState('');
   const [editCourier, setEditCourier] = useState('');
   const [noteDismissed, setNoteDismissed] = useState(false);
+  // In-table search (distinct from the global topbar search), row selection for
+  // bulk actions, and row density.
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [density, setDensity] = useState<Density>('comfortable');
+  const [bulkPending, setBulkPending] = useState(false);
+  const [confirmUi, confirm] = useConfirm();
   useEffect(() => {
     try { setNoteDismissed(localStorage.getItem('kartriq-orders-zero-note') === '1'); } catch { /* ignore */ }
+    try { const d = localStorage.getItem('kartriq-orders-density'); if (d === 'compact' || d === 'comfortable') setDensity(d); } catch { /* ignore */ }
   }, []);
+  const changeDensity = (d: Density) => {
+    setDensity(d);
+    try { localStorage.setItem('kartriq-orders-density', d); } catch { /* ignore */ }
+  };
   const openEdit = (o: any) => {
     setEditOrder(o);
     setEditStatus(o.status || 'PENDING');
@@ -194,15 +196,6 @@ export default function OrdersPage() {
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     else { setSortKey(key); setSortDir('asc'); }
   };
-  // Close the columns popover on outside click.
-  useEffect(() => {
-    const onClick = (e: MouseEvent) => {
-      if (colsRef.current && !colsRef.current.contains(e.target as Node)) setColsOpen(false);
-    };
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
-  }, []);
-
   const visibleColumns = ORDER_COLUMNS.filter((c) => !hiddenCols.has(c.key));
 
   const { data, isLoading } = useQuery({
@@ -221,15 +214,21 @@ export default function OrdersPage() {
 
   // Topbar global search — filters the visible orders by order number,
   // customer name/email/phone, channel order id and status.
-  const filteredOrders = useFilteredBySearch(data?.orders, (o: any) =>
-    `${o.orderNumber || ''} ${o.channelOrderId || ''} ${o.customer?.name || ''} ${o.customer?.email || ''} ${o.customer?.phone || ''} ${o.status || ''}`
-  );
+  const rowText = (o: any) =>
+    `${o.orderNumber || ''} ${o.channelOrderId || ''} ${o.customer?.name || ''} ${o.customer?.email || ''} ${o.customer?.phone || ''} ${o.channel?.name || ''} ${o.status || ''}`;
+  // Global topbar search first, then the in-table SearchField on top of it.
+  const filteredOrders = useFilteredBySearch(data?.orders, rowText);
+  const searchedOrders = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q ? filteredOrders.filter((o: any) => rowText(o).toLowerCase().includes(q)) : filteredOrders;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredOrders, search]);
 
   // Client-side sort of the loaded page (server already paginates/filters).
   const sortedOrders = useMemo(() => {
-    if (!sortKey || !ORDER_SORT[sortKey]) return filteredOrders;
+    if (!sortKey || !ORDER_SORT[sortKey]) return searchedOrders;
     const accessor = ORDER_SORT[sortKey];
-    const arr = [...filteredOrders];
+    const arr = [...searchedOrders];
     arr.sort((a, b) => {
       const x = accessor(a); const y = accessor(b);
       if (x < y) return sortDir === 'asc' ? -1 : 1;
@@ -237,14 +236,40 @@ export default function OrdersPage() {
       return 0;
     });
     return arr;
-  }, [filteredOrders, sortKey, sortDir]);
+  }, [searchedOrders, sortKey, sortDir]);
 
-  // Export the currently visible rows/columns to CSV.
-  const exportCsv = () => {
+  // ── Selection (bulk actions) ──
+  useEffect(() => { setSelected(new Set()); }, [page, status, risk, fulfillmentTab, dateFrom, dateTo]);
+  const allSelected = sortedOrders.length > 0 && sortedOrders.every((o: any) => selected.has(o.id));
+  const toggleAll = () => {
+    setSelected((prev) => {
+      if (sortedOrders.every((o: any) => prev.has(o.id))) return new Set();
+      return new Set(sortedOrders.map((o: any) => o.id));
+    });
+  };
+  const toggleOne = (id: string) => {
+    setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  };
+
+  // ── Active filters (popover count + removable chips) ──
+  const activeFilterCount = (status ? 1 : 0) + (risk ? 1 : 0) + (dateFrom || dateTo ? 1 : 0);
+  const statusLabel = STATUSES.find((s) => s.value === status)?.label;
+  const riskLabel = RISK_FILTERS.find((r) => r.value === risk)?.label;
+  const dateLabel = dateFrom && dateTo ? `${dateFrom} → ${dateTo}` : dateFrom ? `From ${dateFrom}` : dateTo ? `Until ${dateTo}` : '';
+  const activeChips = [
+    status ? { key: 'status', label: `Status: ${statusLabel}`, clear: () => { setStatus(''); setPage(1); } } : null,
+    risk ? { key: 'risk', label: `Risk: ${riskLabel}`, clear: () => { setRisk(''); setPage(1); } } : null,
+    (dateFrom || dateTo) ? { key: 'date', label: dateLabel, clear: () => { setDateFrom(''); setDateTo(''); setPage(1); } } : null,
+    search ? { key: 'search', label: `“${search}”`, clear: () => setSearch('') } : null,
+  ].filter(Boolean) as { key: string; label: string; clear: () => void }[];
+  const clearFilters = () => { setStatus(''); setRisk(''); setDateFrom(''); setDateTo(''); setSearch(''); setPage(1); };
+
+  // Export a set of rows (visible columns) to CSV.
+  const exportRows = (rows: any[]) => {
     const cols = ORDER_COLUMNS.filter((c) => !hiddenCols.has(c.key));
     const escape = (v: string) => `"${String(v).replaceAll('"', '""')}"`;
     const header = cols.map((c) => escape(c.label)).join(',');
-    const lines = sortedOrders.map((o: any) => cols.map((c) => escape(ORDER_CSV[c.key]?.(o) ?? '')).join(','));
+    const lines = rows.map((o: any) => cols.map((c) => escape(ORDER_CSV[c.key]?.(o) ?? '')).join(','));
     const csv = [header, ...lines].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -253,7 +278,30 @@ export default function OrdersPage() {
     a.download = `orders-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success(`Exported ${sortedOrders.length} order${sortedOrders.length !== 1 ? 's' : ''}`);
+    toast.success(`Exported ${rows.length} order${rows.length !== 1 ? 's' : ''}`);
+  };
+  const exportCsv = () => exportRows(sortedOrders);
+
+  // ── Bulk actions over the selected rows ──
+  const bulkSetStatus = async (nextStatus: string, verb: string) => {
+    const ids = [...selected];
+    if (!ids.length) return;
+    setBulkPending(true);
+    const res = await Promise.allSettled(ids.map((id) => orderApi.updateStatus(id, { status: nextStatus })));
+    const ok = res.filter((r) => r.status === 'fulfilled').length;
+    setBulkPending(false);
+    setSelected(new Set());
+    qc.invalidateQueries({ queryKey: ['orders'] });
+    if (ok) toast.success(`${verb} ${ok} order${ok !== 1 ? 's' : ''}${ok < ids.length ? ` · ${ids.length - ok} skipped` : ''}`);
+    else toast.error('Could not update the selected orders');
+  };
+  const cancelSelected = async () => {
+    const ok = await confirm({
+      title: `Cancel ${selected.size} order${selected.size !== 1 ? 's' : ''}?`,
+      description: 'The selected orders will be marked cancelled. This cannot be undone.',
+      variant: 'danger',
+    });
+    if (ok) bulkSetStatus('CANCELLED', 'Cancelled');
   };
 
   const approveMutation = useMutation({
@@ -425,61 +473,108 @@ export default function OrdersPage() {
           ]}
         />
 
-        {/* Filters */}
-        <div className="flex gap-3 flex-wrap items-end">
-          <Select value={status} onChange={setStatus} options={STATUSES} placeholder="All Statuses" />
-          <Select value={risk} onChange={setRisk} options={RISK_FILTERS} placeholder="All Risk" />
-          <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">From</label>
-            <DatePicker
-              value={dateFrom ? new Date(dateFrom) : null}
-              maxDate={dateTo ? new Date(dateTo) : undefined}
-              placeholder="Start date"
-              onChange={(d) => { setDateFrom(toYMD(d)); setPage(1); }}
-            />
-          </div>
-          <div>
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">To</label>
-            <DatePicker
-              value={dateTo ? new Date(dateTo) : null}
-              minDate={dateFrom ? new Date(dateFrom) : undefined}
-              placeholder="End date"
-              onChange={(d) => { setDateTo(toYMD(d)); setPage(1); }}
-            />
-          </div>
-          {(dateFrom || dateTo) && (
-            <Button variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}>
-              Clear dates
-            </Button>
-          )}
+        {/* Toolbar — search · views · filters · sort · columns · export · density */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <SearchField
+            value={search}
+            onChange={setSearch}
+            placeholder="Search orders, customers, channels…"
+            shortcut="/"
+            className="flex-1 min-w-[180px] max-w-sm"
+          />
+          <div className="hidden sm:block flex-1" />
 
-          {/* Table tools — column manager + CSV export */}
-          <div className="ml-auto flex items-end gap-2">
-            <div className="relative" ref={colsRef}>
-              <Button variant="outline" size="sm" leftIcon={<SlidersHorizontal size={14} />} onClick={() => setColsOpen((v) => !v)}>
-                Columns
+          <Dropdown
+            align="right"
+            trigger={<Button variant="ghost" size="sm" leftIcon={<Bookmark size={14} />}>Views</Button>}
+            items={[
+              { label: 'All orders', icon: <Layers size={14} />, onClick: () => { clearFilters(); setFulfillmentTab('all'); } },
+              { label: 'Needs shipping', icon: <Truck size={14} />, onClick: () => { setStatus('PROCESSING'); setRisk(''); setPage(1); } },
+              { label: 'High risk', icon: <AlertTriangle size={14} />, onClick: () => { setRisk('HIGH'); setPage(1); } },
+              { label: 'Needs review', icon: <Star size={14} />, onClick: () => { setRisk('APPROVAL'); setPage(1); } },
+            ]}
+          />
+
+          <Popover
+            align="right"
+            width="w-72"
+            trigger={
+              <Button variant="outline" size="sm" leftIcon={<ListFilter size={14} />}>
+                Filters
+                {activeFilterCount > 0 && (
+                  <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-bold">{activeFilterCount}</span>
+                )}
               </Button>
-              {colsOpen && (
-                <div className="absolute right-0 top-full mt-1.5 w-56 bg-white border border-slate-200 rounded-xl shadow-xl shadow-slate-900/10 p-2 z-50 animate-slide-up">
-                  <div className="px-1.5 pb-1.5 mb-1 border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Show columns</div>
-                  <div className="space-y-1 px-1.5 py-1">
-                    {ORDER_COLUMNS.map((c) => (
-                      <Checkbox
-                        key={c.key}
-                        checked={!hiddenCols.has(c.key)}
-                        onCheckedChange={() => toggleCol(c.key)}
-                        label={c.label}
-                      />
-                    ))}
-                  </div>
+            }
+          >
+            <div className="p-3 w-72 space-y-3">
+              <Select label="Status" fullWidth value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={STATUSES} placeholder="All Statuses" />
+              <Select label="Risk" fullWidth value={risk} onChange={(v) => { setRisk(v); setPage(1); }} options={RISK_FILTERS} placeholder="All Risk" />
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Date range</label>
+                <DateRangePicker from={dateFrom} to={dateTo} onChange={(f, t) => { setDateFrom(f); setDateTo(t); setPage(1); }} />
+              </div>
+              {activeFilterCount > 0 && (
+                <div className="pt-2 border-t border-slate-100">
+                  <button type="button" onClick={clearFilters} className="text-xs font-bold text-slate-500 hover:text-slate-700">Clear all filters</button>
                 </div>
               )}
             </div>
-            <Button variant="outline" size="sm" leftIcon={<Download size={14} />} onClick={exportCsv}>
-              Export CSV
-            </Button>
-          </div>
+          </Popover>
+
+          <Dropdown
+            align="right"
+            trigger={<Button variant="ghost" size="sm" leftIcon={<ArrowUpDown size={14} />}>Sort</Button>}
+            items={ORDER_COLUMNS.filter((c) => c.sortable).map((c) => ({
+              label: `${c.label}${sortKey === c.key ? (sortDir === 'asc' ? '  ↑' : '  ↓') : ''}`,
+              onClick: () => toggleSort(c.key),
+            }))}
+          />
+
+          <Popover
+            align="right"
+            width="w-56"
+            trigger={<Button variant="ghost" size="sm" leftIcon={<SlidersHorizontal size={14} />}>Columns</Button>}
+          >
+            <div className="p-2">
+              <div className="px-1.5 pb-1.5 mb-1 border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Show columns</div>
+              <div className="space-y-1 px-1.5 py-1">
+                {ORDER_COLUMNS.map((c) => (
+                  <Checkbox key={c.key} checked={!hiddenCols.has(c.key)} onCheckedChange={() => toggleCol(c.key)} label={c.label} />
+                ))}
+              </div>
+            </div>
+          </Popover>
+
+          <Button variant="ghost" size="sm" leftIcon={<Download size={14} />} onClick={exportCsv}>Export</Button>
+          <DensityToggle value={density} onChange={changeDensity} />
         </div>
+
+        {/* Active filter chips */}
+        {activeChips.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Filters</span>
+            {activeChips.map((chip) => (
+              <button
+                key={chip.key}
+                type="button"
+                onClick={chip.clear}
+                className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors"
+              >
+                {chip.label}
+                <span className="w-4 h-4 grid place-items-center rounded-full bg-emerald-100"><X size={10} /></span>
+              </button>
+            ))}
+            <button type="button" onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-slate-600 underline underline-offset-2">Clear all</button>
+          </div>
+        )}
+
+        {/* Bulk actions (appears when rows are selected) */}
+        <BulkActionBar count={selected.size} onClear={() => setSelected(new Set())}>
+          <Button variant="outline" size="sm" leftIcon={<Truck size={13} />} loading={bulkPending} onClick={() => bulkSetStatus('SHIPPED', 'Marked shipped')}>Mark shipped</Button>
+          <Button variant="outline" size="sm" leftIcon={<Download size={13} />} onClick={() => exportRows(sortedOrders.filter((o: any) => selected.has(o.id)))}>Export</Button>
+          <Button variant="danger" size="sm" leftIcon={<XCircle size={13} />} loading={bulkPending} onClick={cancelSelected}>Cancel</Button>
+        </BulkActionBar>
 
         {/* Needs-approval banner */}
         {(data?.orders || []).some((o: any) => o.needsApproval) && risk !== 'APPROVAL' && (
@@ -531,10 +626,12 @@ export default function OrdersPage() {
         {/* Table */}
         <Card className="overflow-hidden">
           <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className={`w-full text-sm ${density === 'compact' ? 'tbl-compact' : ''}`}>
               <thead className="bg-slate-50/50 border-b border-slate-100">
                 <tr className="text-left text-[10px] uppercase tracking-widest text-slate-400">
-                  <th className="px-3 py-2.5 font-bold w-px whitespace-nowrap">#</th>
+                  <th className="px-3 py-2.5 font-bold w-px">
+                    <Tooltip content="Select all"><Checkbox checked={allSelected} onCheckedChange={toggleAll} /></Tooltip>
+                  </th>
                   {visibleColumns.map((c) => (
                     <th key={c.key} className={`px-3 py-2.5 font-bold ${c.key === 'order' ? 'w-full' : 'whitespace-nowrap'}`}>
                       {c.sortable ? (
@@ -557,9 +654,9 @@ export default function OrdersPage() {
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
                   <tr><td colSpan={visibleColumns.length + 2}><Loader size="sm" /></td></tr>
-                ) : sortedOrders.length ? sortedOrders.map((o: any, idx: number) => (
-                  <tr key={o.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="px-3 py-2.5 text-slate-500 font-semibold">{(page - 1) * pageSize + idx + 1}</td>
+                ) : sortedOrders.length ? sortedOrders.map((o: any) => (
+                  <tr key={o.id} className={`transition-colors ${selected.has(o.id) ? 'bg-emerald-50/60' : 'hover:bg-slate-50/70'}`}>
+                    <td className="px-3 py-2.5"><Checkbox checked={selected.has(o.id)} onCheckedChange={() => toggleOne(o.id)} /></td>
                     {visibleColumns.map((c) => renderCell(o, c.key))}
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end gap-1">
@@ -776,6 +873,8 @@ export default function OrdersPage() {
           </div>
         )}
       </Modal>
+
+      {confirmUi}
     </DashboardLayout>
   );
 }
