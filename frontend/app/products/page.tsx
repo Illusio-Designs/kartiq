@@ -81,6 +81,7 @@ export default function ProductsPage() {
   const [adjustProduct, setAdjustProduct] = useState<any | null>(null);
   // Toolbar / table state
   const [search, setSearch] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [category, setCategory] = useState('');
   const [brand, setBrand] = useState('');
   const [channelFilter, setChannelFilter] = useState('');
@@ -354,30 +355,12 @@ export default function ProductsPage() {
             ]}
           />
 
-          <Popover
-            align="right"
-            width="w-72"
-            trigger={
-              <Button variant="outline" size="sm" leftIcon={<ListFilter size={14} />}>
-                Filters
-                {activeFilterCount > 0 && (
-                  <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-bold">{activeFilterCount}</span>
-                )}
-              </Button>
-            }
-          >
-            <div className="p-3 w-72 space-y-3">
-              <Select label="Category" fullWidth value={category} onChange={(v) => { setCategory(v); setPage(1); }} options={categoryOptions} />
-              <Select label="Brand" fullWidth value={brand} onChange={(v) => { setBrand(v); setPage(1); }} options={brandOptions} />
-              <Select label="Channel" fullWidth value={channelFilter} onChange={(v) => { setChannelFilter(v); setPage(1); }} options={channelOptions} />
-              <Checkbox checked={unpublishedOnly} onCheckedChange={(v) => { setUnpublishedOnly(v); setPage(1); }} label="Unpublished only" />
-              {activeFilterCount > 0 && (
-                <div className="pt-2 border-t border-slate-100">
-                  <button type="button" onClick={clearFilters} className="text-xs font-bold text-slate-500 hover:text-slate-700">Clear all filters</button>
-                </div>
-              )}
-            </div>
-          </Popover>
+          <Button variant="outline" size="sm" leftIcon={<ListFilter size={14} />} onClick={() => setFiltersOpen(true)}>
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-bold">{activeFilterCount}</span>
+            )}
+          </Button>
 
           <Dropdown
             align="right"
@@ -603,6 +586,27 @@ export default function ProductsPage() {
 
       <NewProductModal open={modalOpen} onClose={() => setModalOpen(false)} />
       <StockAdjustDrawer product={adjustProduct} onClose={() => setAdjustProduct(null)} />
+
+      {/* Filters — opens as a right-side drawer */}
+      <Modal
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        title="Filters"
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => clearFilters()}>Clear all</Button>
+            <Button onClick={() => setFiltersOpen(false)}>Done</Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Select label="Category" fullWidth value={category} onChange={(v) => { setCategory(v); setPage(1); }} options={categoryOptions} />
+          <Select label="Brand" fullWidth value={brand} onChange={(v) => { setBrand(v); setPage(1); }} options={brandOptions} />
+          <Select label="Channel" fullWidth value={channelFilter} onChange={(v) => { setChannelFilter(v); setPage(1); }} options={channelOptions} />
+          <Checkbox checked={unpublishedOnly} onCheckedChange={(v) => { setUnpublishedOnly(v); setPage(1); }} label="Unpublished only" />
+        </div>
+      </Modal>
       {confirmUi}
     </DashboardLayout>
   );
