@@ -11,6 +11,8 @@ import { Button } from '@/components/ui/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { Loader } from '@/components/ui/Loader';
 import { Modal } from '@/components/ui/Modal';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
+import { Tooltip } from '@/components/ui/Tooltip';
 import { TopupModal, WALLET_CHANGED_EVENT } from '@/components/wallet/TopupModal';
 import { toast } from '@/store/toast.store';
 
@@ -32,6 +34,7 @@ export default function BillingPage() {
   });
   const [savingSettings, setSavingSettings] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
+  const [confirmUi, confirm] = useConfirm();
 
   const load = async () => {
     const [s, u, p, w, t, m] = await Promise.all([
@@ -64,7 +67,13 @@ export default function BillingPage() {
     }
   };
   const removeMethod = async (id: string) => {
-    if (!confirm('Remove this saved card?')) return;
+    const ok = await confirm({
+      title: 'Remove saved card?',
+      description: 'This card will be removed and can no longer be used for subscription auto-renewal.',
+      confirmLabel: 'Remove',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       await paymentApi.deleteMethod(id);
       toast.success('Method removed');
@@ -235,25 +244,33 @@ export default function BillingPage() {
                 >
                   <Zap size={12} /> Pay-as-you-go {sub.payAsYouGo ? 'ON' : 'OFF'}
                 </button>
-                <button
-                  onClick={async () => {
-                    if (!canManage) return;
-                    try {
-                      await billingApi.toggleAutoRenew(!sub.autoRenew);
-                      toast.success(`Auto-renew ${!sub.autoRenew ? 'enabled' : 'disabled'}`);
-                      await load();
-                    } catch (e: any) {
-                      toast.error(e?.response?.data?.error || 'Failed');
-                    }
-                  }}
-                  disabled={!canManage}
-                  className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold ${
-                    sub.autoRenew ? 'bg-emerald-400 text-slate-900' : 'bg-white/10 text-white'
-                  } disabled:opacity-50`}
-                  title={!sub.autoRenew && paymentMethods.filter((m: any) => m.isDefault).length === 0 ? 'Save a card on your next top-up first' : undefined}
-                >
-                  <Sparkles size={12} /> Auto-renew {sub.autoRenew ? 'ON' : 'OFF'}
-                </button>
+                {(() => {
+                  const autoRenewBtn = (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!canManage) return;
+                        try {
+                          await billingApi.toggleAutoRenew(!sub.autoRenew);
+                          toast.success(`Auto-renew ${!sub.autoRenew ? 'enabled' : 'disabled'}`);
+                          await load();
+                        } catch (e: any) {
+                          toast.error(e?.response?.data?.error || 'Failed');
+                        }
+                      }}
+                      disabled={!canManage}
+                      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold ${
+                        sub.autoRenew ? 'bg-emerald-400 text-slate-900' : 'bg-white/10 text-white'
+                      } disabled:opacity-50`}
+                    >
+                      <Sparkles size={12} /> Auto-renew {sub.autoRenew ? 'ON' : 'OFF'}
+                    </button>
+                  );
+                  const needsCard = !sub.autoRenew && paymentMethods.filter((m: any) => m.isDefault).length === 0;
+                  return needsCard
+                    ? <Tooltip content="Save a card on your next top-up first">{autoRenewBtn}</Tooltip>
+                    : autoRenewBtn;
+                })()}
               </div>
               {sub.autoRenew && paymentMethods.filter((m: any) => m.isDefault).length === 0 && (
                 <div className="text-[10px] text-amber-300 mt-1 max-w-[200px]">
@@ -276,15 +293,17 @@ export default function BillingPage() {
                   <div className="flex items-center gap-2">
                     <div className="text-xs uppercase tracking-wider text-slate-400 font-bold">Wallet balance</div>
                     {canManage && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setShowWalletSettings(true)}
-                        title="Wallet settings"
-                        className="h-7 w-7"
-                      >
-                        <Settings2 size={13} />
-                      </Button>
+                      <Tooltip content="Wallet settings">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setShowWalletSettings(true)}
+                          aria-label="Wallet settings"
+                          className="h-7 w-7"
+                        >
+                          <Settings2 size={13} />
+                        </Button>
+                      </Tooltip>
                     )}
                   </div>
                   <div className={`text-3xl font-bold mt-1 ${wallet.lowBalance ? 'text-rose-600' : 'text-slate-900'}`}>
@@ -465,6 +484,8 @@ export default function BillingPage() {
         onClose={() => setTopupOpen(false)}
         currentBalance={wallet ? Number(wallet.balance) : undefined}
       />
+
+      {confirmUi}
     </DashboardLayout>
   );
 }
@@ -480,10 +501,10 @@ function UsageCard({ label, used, limit }: { label: string; used: number; limit:
       </div>
       {limit && (
         <div className="h-1.5 rounded-full bg-slate-100 mt-2 overflow-hidden">
-          <div className={`h-full ${danger ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} />
+          <div className={`h-full ${danger ? 'bg-rose-500' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} />
         </div>
       )}
-      {danger && <div className="text-[10px] text-red-600 mt-1 flex items-center gap-1"><AlertCircle size={10} /> Near limit</div>}
+      {danger && <div className="text-[10px] text-rose-600 mt-1 flex items-center gap-1"><AlertCircle size={10} /> Near limit</div>}
     </div>
   );
 }

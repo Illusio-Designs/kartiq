@@ -33,6 +33,7 @@ export function DatePicker({ value, onChange, placeholder = 'Select date', class
   const [open, setOpen] = useState(false);
   const [viewDate, setViewDate] = useState(value || new Date());
   const ref = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   // Close on outside click
   useEffect(() => {
@@ -42,6 +43,25 @@ export function DatePicker({ value, onChange, placeholder = 'Select date', class
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
   }, []);
+
+  // Follow an externally-controlled value: when the parent sets/changes the
+  // selected date, jump the visible month to match (previously the calendar
+  // stayed on whatever month it opened with).
+  useEffect(() => {
+    if (value) setViewDate(value);
+  }, [value]);
+
+  // Roving arrow-key navigation across the day grid.
+  const onGridKey = (e: React.KeyboardEvent) => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+    const btns = Array.from(gridRef.current?.querySelectorAll<HTMLButtonElement>('button[data-day]') || []);
+    const idx = btns.findIndex((b) => b === document.activeElement);
+    if (idx < 0) return;
+    e.preventDefault();
+    const delta = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' ? -7 : 7;
+    const next = idx + delta;
+    if (next >= 0 && next < btns.length) btns[next].focus();
+  };
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
@@ -61,6 +81,7 @@ export function DatePicker({ value, onChange, placeholder = 'Select date', class
   return (
     <div ref={ref} className={cn('relative', className)}>
       <button
+        type="button"
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-semibold rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all"
       >
@@ -103,7 +124,7 @@ export function DatePicker({ value, onChange, placeholder = 'Select date', class
           </div>
 
           {/* Day grid */}
-          <div className="grid grid-cols-7 gap-0.5">
+          <div ref={gridRef} onKeyDown={onGridKey} className="grid grid-cols-7 gap-0.5">
             {Array.from({ length: firstDay }).map((_, i) => (
               <div key={`blank-${i}`} />
             ))}
@@ -117,6 +138,8 @@ export function DatePicker({ value, onChange, placeholder = 'Select date', class
               return (
                 <button
                   key={day}
+                  type="button"
+                  data-day={day}
                   disabled={isDisabled}
                   onClick={() => pick(day)}
                   className={cn(
@@ -138,6 +161,7 @@ export function DatePicker({ value, onChange, placeholder = 'Select date', class
           {/* Footer */}
           <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100">
             <button
+              type="button"
               onClick={() => {
                 onChange?.(new Date());
                 setOpen(false);
@@ -147,6 +171,7 @@ export function DatePicker({ value, onChange, placeholder = 'Select date', class
               Today
             </button>
             <button
+              type="button"
               onClick={() => setOpen(false)}
               className="text-xs font-bold text-slate-500 hover:text-slate-700"
             >

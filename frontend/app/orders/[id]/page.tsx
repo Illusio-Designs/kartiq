@@ -52,7 +52,7 @@ export default function OrderDetailPage() {
   useEffect(() => {
     if (order) {
       setStatusDraft(order.status || 'PENDING');
-      setTrackingDraft(order.trackingNumber || order.awb || '');
+      setTrackingDraft(order.trackingNumber || '');
       setCourierDraft(order.courierName || '');
     }
   }, [order?.id, order?.status]);
@@ -129,7 +129,7 @@ export default function OrderDetailPage() {
             ) : (
               <>
                 <div><span className="text-slate-400">Ships from</span> <span className="font-semibold text-slate-700">{order.warehouse?.name || '—'}</span></div>
-                {(order.trackingNumber || order.awb) && <div><span className="text-slate-400">Tracking</span> <span className="font-mono text-slate-700">{order.trackingNumber || order.awb}</span>{order.courierName ? <span className="text-slate-400"> · {order.courierName}</span> : null}</div>}
+                {order.trackingNumber && <div><span className="text-slate-400">Tracking</span> <span className="font-mono text-slate-700">{order.trackingNumber}</span>{order.courierName ? <span className="text-slate-400"> · {order.courierName}</span> : null}</div>}
               </>
             )}
           </div>

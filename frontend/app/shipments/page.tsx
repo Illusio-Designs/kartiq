@@ -291,6 +291,20 @@ function CreateShipmentModal({ open, onClose, onCreated }: { open: boolean; onCl
   const [charges, setCharges] = useState('');
   const [error, setError] = useState('');
 
+  // Orders to pick from — the create call needs the order id, so the user
+  // chooses a real order instead of pasting a UUID.
+  const { data: ordersData } = useQuery({
+    queryKey: ['orders-for-shipment'],
+    queryFn: () => orderApi.list({ limit: 100 }).then(r => r.data),
+    enabled: open,
+  });
+  const orderOptions = (ordersData?.orders || ordersData || []).map((o: any) => ({
+    value: o.id,
+    label: o.customer?.name
+      ? `${o.channelOrderId || o.orderNumber} · ${o.customer.name}`
+      : (o.channelOrderId || o.orderNumber),
+  }));
+
   const createMutation = useMutation({
     mutationFn: () => shipmentApi.create({
       orderId,
@@ -328,12 +342,12 @@ function CreateShipmentModal({ open, onClose, onCreated }: { open: boolean; onCl
       }
     >
       <div className="space-y-4">
-        <Input label="Order ID" value={orderId} onChange={(e) => setOrderId(e.target.value)} placeholder="Paste the order UUID" />
+        <Select label="Order" value={orderId} onChange={setOrderId} options={orderOptions} placeholder="Select an order…" fullWidth />
         <Input label="Courier Name" value={courierName} onChange={(e) => setCourierName(e.target.value)} placeholder="e.g. Delhivery, Shiprocket, BlueDart" />
         <Input label="AWB / Tracking Number" value={trackingNumber} onChange={(e) => setTrackingNumber(e.target.value)} placeholder="Optional" />
         <div className="grid grid-cols-2 gap-3">
-          <Input label="Weight (kg)" type="number" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="0.5" />
-          <Input label="Charges (₹)" type="number" value={charges} onChange={(e) => setCharges(e.target.value)} placeholder="0" />
+          <Input label="Weight (kg)" type="number" min={0} value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="0.5" />
+          <Input label="Charges (₹)" type="number" min={0} value={charges} onChange={(e) => setCharges(e.target.value)} placeholder="0" />
         </div>
         {error && <p className="text-xs text-rose-600 font-medium">{error}</p>}
       </div>

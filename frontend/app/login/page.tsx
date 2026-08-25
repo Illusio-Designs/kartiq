@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { authApi } from '@/lib/api';
 import { useAuthStore, isTokenExpired } from '@/store/auth.store';
-import { Sparkles, ArrowRight, Mail, Lock, AlertCircle, Loader2 } from 'lucide-react';
+import { Sparkles, ArrowRight, Mail, AlertCircle, Loader2 } from 'lucide-react';
+import { Input } from '@/components/ui/Input';
 import { PasswordInput } from '@/components/ui/PasswordInput';
 import { validateEmail, validateRequired } from '@/lib/validators';
 
@@ -123,7 +124,7 @@ export default function LoginPage() {
             <span className="font-bold text-lg text-slate-900">Kartriq</span>
           </Link>
 
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-[#06D4B8] to-[#06B6D4] bg-clip-text text-transparent tracking-tight">
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-[#06D4B8] to-[#0891b2] bg-clip-text text-transparent tracking-tight">
             {mfaToken ? 'Two-factor authentication' : 'Welcome back'}
           </h1>
           <p className="text-sm text-slate-500 mt-1">
@@ -172,35 +173,28 @@ export default function LoginPage() {
 
           {!mfaToken && (
           <form onSubmit={handleLogin} className="mt-8 space-y-4">
-            <div>
-              <label htmlFor="email" className="block text-xs font-bold text-slate-700 mb-1.5">Email</label>
-              <div className="relative">
-                <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  id="email"
-                  type="email"
-                  name="email"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => { setEmail(e.target.value); if (emailError) setEmailError(null); }}
-                  placeholder="you@company.com"
-                  className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 outline-none"
-                />
-              </div>
-              {emailError && <p className="text-xs text-rose-600 mt-1 font-medium">{emailError}</p>}
-            </div>
+            <Input
+              label="Email"
+              type="email"
+              name="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); if (emailError) setEmailError(null); }}
+              placeholder="you@company.com"
+              leftIcon={<Mail size={15} />}
+              error={emailError || undefined}
+            />
 
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-xs font-bold text-slate-700">Password</label>
-                <button
-                  type="button"
+                <Link
+                  href="/help"
                   className="text-xs font-bold text-emerald-600 hover:text-emerald-700"
-                  onClick={() => alert('Password reset coming soon. Contact support@kartriq.com.')}
                 >
                   Forgot?
-                </button>
+                </Link>
               </div>
               <PasswordInput
                 name="password"

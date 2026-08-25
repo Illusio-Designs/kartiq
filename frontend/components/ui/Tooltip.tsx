@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode, useState, useRef, useEffect, cloneElement, isValidElement } from 'react';
+import { ReactNode, useState, useRef, useEffect, useId, cloneElement, isValidElement } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 
@@ -27,6 +27,7 @@ export function Tooltip({ content, children, side = 'top', delay = 150, classNam
   const [mounted, setMounted] = useState(false);
   const wrapperRef = useRef<HTMLSpanElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const tipId = useId();
 
   useEffect(() => setMounted(true), []);
 
@@ -85,6 +86,8 @@ export function Tooltip({ content, children, side = 'top', delay = 150, classNam
         onMouseLeave={hide}
         onFocus={show}
         onBlur={hide}
+        // Link the trigger to the tooltip so screen readers announce the hint.
+        aria-describedby={open ? tipId : undefined}
         className="inline-flex"
       >
         {children}
@@ -92,6 +95,7 @@ export function Tooltip({ content, children, side = 'top', delay = 150, classNam
 
       {mounted && open && coords && createPortal(
         <div
+          id={tipId}
           role="tooltip"
           style={{
             position: 'fixed',
