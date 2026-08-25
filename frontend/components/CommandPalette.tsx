@@ -20,7 +20,7 @@ import { useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Package, ShoppingBag, Users, Plug, Truck, FileText, Building2,
   Store, Wallet, Settings, BarChart3, Gauge, Plus, Search, ArrowRight, CornerDownLeft,
-  ShoppingCart, Briefcase, LifeBuoy, Activity, Cpu, FileEdit, Inbox, Megaphone,
+  Briefcase, LifeBuoy, Activity, Cpu, FileEdit, Inbox, Megaphone,
 } from 'lucide-react';
 import { productApi, orderApi, customerApi, leadsApi, adminApi } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
@@ -136,13 +136,11 @@ export function CommandPalette() {
       { id: 'go-dashboard',  group: 'Pages', label: 'Dashboard',     icon: LayoutDashboard, run: go('/dashboard') },
       { id: 'go-orders',     group: 'Pages', label: 'Orders',        icon: ShoppingBag,     run: go('/orders') },
       { id: 'go-products',   group: 'Pages', label: 'Catalog',       icon: Package,         run: go('/products') },
-      { id: 'go-purchases',  group: 'Pages', label: 'Purchases',     icon: ShoppingCart,    run: go('/purchases') },
       { id: 'go-customers',  group: 'Pages', label: 'Customers',     icon: Users,           run: go('/customers') },
       { id: 'go-vendors',    group: 'Pages', label: 'Vendors',       icon: Briefcase,       run: go('/vendors') },
       { id: 'go-warehouses', group: 'Pages', label: 'Warehouses',    icon: Store,           run: go('/warehouses') },
       { id: 'go-channels',   group: 'Pages', label: 'Channels',      icon: Plug,            run: go('/channels') },
       { id: 'go-shipments',  group: 'Pages', label: 'Shipments',     icon: Truck,           run: go('/shipments') },
-      { id: 'go-invoices',   group: 'Pages', label: 'Invoices',      icon: FileText,        run: go('/invoices') },
       { id: 'go-reports',    group: 'Pages', label: 'Reports',       icon: BarChart3,       run: go('/reports') },
       { id: 'go-help',       group: 'Pages', label: 'Help desk',     icon: LifeBuoy,        run: go('/help') },
 

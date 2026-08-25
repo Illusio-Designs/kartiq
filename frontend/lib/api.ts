@@ -461,13 +461,6 @@ export const orderApi = {
     api.patch(`/orders/${id}/fulfillment`, body),
 };
 
-export const purchaseApi = {
-  list: (params?: any) => api.get('/purchases', { params }),
-  get: (id: string) => api.get(`/purchases/${id}`),
-  create: (data: any) => api.post('/purchases', data),
-  updateStatus: (id: string, status: string) => api.patch(`/purchases/${id}/status`, { status }),
-};
-
 export const vendorApi = {
   list: () => api.get('/vendors'),
   get: (id: string) => api.get(`/vendors/${id}`),
@@ -490,14 +483,6 @@ export const shipmentApi = {
   create: (data: any) => api.post('/shipments', data),
   updateStatus: (id: string, status: string) => api.patch(`/shipments/${id}/status`, { status }),
   delete: (id: string) => api.delete(`/shipments/${id}`),
-};
-
-export const invoiceApi = {
-  list: (params?: any) => api.get('/invoices', { params }),
-  get: (id: string) => api.get(`/invoices/${id}`),
-  create: (data: any) => api.post('/invoices', data),
-  pay: (id: string, data: any) => api.post(`/invoices/${id}/pay`, data),
-  delete: (id: string) => api.delete(`/invoices/${id}`),
 };
 
 // ─── Channels ──────────────────────────────────────────────────────────────
