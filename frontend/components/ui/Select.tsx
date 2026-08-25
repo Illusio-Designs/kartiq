@@ -29,7 +29,7 @@ const SIZE_CLASSES = {
 };
 
 export function Select({
-  value, onChange, options, placeholder = 'Select…', label, className, fullWidth, size = 'md', dropUp,
+  value, onChange, options, placeholder = 'Select…', label, className, fullWidth, size = 'sm', dropUp,
 }: SelectProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);

@@ -40,7 +40,7 @@ const SIZES = {
  *   />
  */
 export function Tabs<K extends string = string>({
-  value, onChange, items, className, size = 'md', fullWidth,
+  value, onChange, items, className, size = 'sm', fullWidth,
 }: TabsProps<K>) {
   const s = SIZES[size];
   return (
