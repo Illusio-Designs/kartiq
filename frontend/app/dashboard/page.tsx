@@ -3,14 +3,15 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { dashboardApi, channelApi } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 import {
-  Button, Tooltip, Badge, Card, DatePicker, Pagination, Dropdown, Avatar,
+  Tooltip, Badge, Card, DatePicker, Pagination, Dropdown, Avatar,
 } from '@/components/ui';
 import {
-  Wallet, TrendingDown, PiggyBank, MoreHorizontal, ArrowUp, ArrowDown,
-  ArrowUpRight, Plus, Send, Package, Info, RefreshCw,
+  Wallet, TrendingDown, ShoppingBag, MoreHorizontal, ArrowUp, ArrowDown,
+  ArrowUpRight, Plus, Package, Info, RefreshCw,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
@@ -68,33 +69,23 @@ export default function DashboardPage() {
   return (
     <DashboardLayout>
       <div className="space-y-5 animate-slide-up max-w-[1400px] mx-auto">
-        {/* ── Welcome header ────────────────────────────────────────────── */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
-              <span className="bg-gradient-to-r from-[#06D4B8] to-[#06B6D4] bg-clip-text text-transparent">
-                Welcome back
-              </span>{' '}
-              <span aria-hidden>👋</span>
-            </h1>
-            <p className="text-sm text-slate-500 mt-1">
-              Monitor and control what happens with your commerce today.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <DatePicker value={date} onChange={setDate} />
-          </div>
-        </div>
+        {/* ── Slim header: welcome subtitle + date picker (no big gradient h1) ── */}
+        <PageHeader
+          title="Dashboard"
+          subtitle="Welcome back — here's what's happening across your commerce today."
+          actions={<DatePicker value={date} onChange={setDate} />}
+        />
 
         {/* ── Stat cards ────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Card className="p-5 hover:shadow-lg transition-shadow">
-            <div className="flex items-center justify-between mb-4">
+          {/* Total Revenue */}
+          <Card className="p-5 flex flex-col gap-2.5 hover:shadow-lg transition-shadow">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 min-w-0">
                 <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
                   <Wallet size={15} className="text-emerald-600" />
                 </div>
-                <span className="text-sm font-semibold text-slate-700 truncate">Total Revenue</span>
+                <span className="text-sm font-semibold text-slate-600 truncate">Total Revenue</span>
                 <Tooltip content="Sum of all paid orders this month">
                   <Info size={12} className="text-slate-400 flex-shrink-0" />
                 </Tooltip>
@@ -110,10 +101,10 @@ export default function DashboardPage() {
                 ]}
               />
             </div>
-            <div className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
+            <div className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight tabular-nums">
               {formatCurrency(monthRevenue)}
             </div>
-            <div className="flex items-center gap-1.5 mt-2">
+            <div className="flex items-center gap-1.5">
               {revenueChangePct === null ? (
                 <span className="text-xs text-slate-400">No prior-month data</span>
               ) : (
@@ -126,67 +117,53 @@ export default function DashboardPage() {
                 </>
               )}
             </div>
-            <div className="flex items-center gap-2 mt-5">
-              <Link href="/orders" className="flex-1">
-                <Button variant="primary" size="sm" leftIcon={<Send size={12} />} fullWidth>
-                  View orders
-                </Button>
-              </Link>
-              <Link href="/reports" className="flex-1">
-                <Button variant="secondary" size="sm" fullWidth>
-                  Reports
-                </Button>
-              </Link>
-            </div>
           </Card>
 
-          <Card className="p-5 hover:shadow-lg transition-shadow">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-rose-50 flex items-center justify-center">
-                  <TrendingDown size={15} className="text-rose-600" />
+          {/* Total Orders */}
+          <Card className="p-5 flex flex-col gap-2.5 hover:shadow-lg transition-shadow">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                  <ShoppingBag size={15} className="text-blue-600" />
                 </div>
-                <span className="text-sm font-semibold text-slate-700">Low Stock SKUs</span>
-                <Tooltip content="Number of SKUs below their reorder point">
-                  <Info size={12} className="text-slate-400" />
-                </Tooltip>
-              </div>
-            </div>
-            <div className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
-              {(s.lowStockCount || 0).toLocaleString()}
-            </div>
-            <div className="flex items-center gap-1.5 mt-2">
-              <Badge variant="rose">
-                <ArrowDown size={10} /> SKUs
-              </Badge>
-              <span className="text-xs text-slate-400">below reorder point</span>
-            </div>
-            <div className="mt-5 text-xs text-slate-500">
-              Requires attention to avoid stockouts
-            </div>
-          </Card>
-
-          <Card className="p-5 hover:shadow-lg transition-shadow sm:col-span-2 lg:col-span-1">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
-                  <PiggyBank size={15} className="text-emerald-600" />
-                </div>
-                <span className="text-sm font-semibold text-slate-700">Total Orders</span>
+                <span className="text-sm font-semibold text-slate-600 truncate">Total Orders</span>
                 <Tooltip content="Orders across all connected channels">
-                  <Info size={12} className="text-slate-400" />
+                  <Info size={12} className="text-slate-400 flex-shrink-0" />
                 </Tooltip>
               </div>
             </div>
-            <div className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
+            <div className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight tabular-nums">
               {(s.totalOrders || 0).toLocaleString()}
             </div>
-            <div className="flex items-center gap-1.5 mt-2">
-              <Badge variant="emerald">{(s.pendingOrders || 0).toLocaleString()} pending</Badge>
-              <span className="text-xs text-slate-400">awaiting fulfillment</span>
+            <div className="flex items-center gap-1.5">
+              <Badge variant="blue">{(s.pendingOrders || 0).toLocaleString()} pending</Badge>
+              <span className="text-xs text-slate-400">
+                {(s.todayOrders || 0).toLocaleString()} received today
+              </span>
             </div>
-            <div className="mt-5 text-xs text-slate-500">
-              <span className="font-bold text-slate-700">{s.todayOrders || 0}</span> orders received today
+          </Card>
+
+          {/* Low Stock SKUs */}
+          <Card className="p-5 flex flex-col gap-2.5 hover:shadow-lg transition-shadow sm:col-span-2 lg:col-span-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-rose-50 flex items-center justify-center flex-shrink-0">
+                  <TrendingDown size={15} className="text-rose-600" />
+                </div>
+                <span className="text-sm font-semibold text-slate-600 truncate">Low Stock SKUs</span>
+                <Tooltip content="Number of SKUs below their reorder point">
+                  <Info size={12} className="text-slate-400 flex-shrink-0" />
+                </Tooltip>
+              </div>
+            </div>
+            <div className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight tabular-nums">
+              {(s.lowStockCount || 0).toLocaleString()}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Badge variant="rose">
+                <ArrowDown size={10} /> reorder
+              </Badge>
+              <span className="text-xs text-slate-400">below reorder point</span>
             </div>
           </Card>
         </div>
@@ -195,16 +172,19 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Card className="p-5 order-2 lg:order-1">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-bold text-slate-900">My Channels</h2>
+              <div>
+                <h2 className="font-bold text-slate-900">My Channels</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Connected sales & logistics</p>
+              </div>
               <Tooltip content="Connect a new channel">
                 <Link href="/channels" className="flex items-center gap-1 text-xs text-emerald-600 font-semibold hover:text-emerald-700">
                   <Plus size={12} /> Add New
                 </Link>
               </Tooltip>
             </div>
-            <div className="space-y-3">
+            <div className="space-y-1">
               {connectedChannels.length > 0 ? connectedChannels.map((c: any) => (
-                <div key={c.type} className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 transition-colors">
+                <div key={c.type} className="flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-50 transition-colors">
                   <div className="flex items-center gap-3 min-w-0">
                     <Avatar name={c.name || c.type} size="md" />
                     <div className="min-w-0">
@@ -227,12 +207,10 @@ export default function DashboardPage() {
           <Card className="p-5 lg:col-span-2 order-1 lg:order-2">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
               <div>
-                <h2 className="font-bold text-slate-900">Overview</h2>
-                <p className="text-xs text-slate-500 mt-0.5">Revenue trend across all channels</p>
+                <h2 className="font-bold text-slate-900">Revenue Overview</h2>
+                <p className="text-xs text-slate-500 mt-0.5">12-month trend across all channels</p>
               </div>
-              <div className="flex items-center gap-2">
-                <Badge variant="emerald" dot>Earnings</Badge>
-              </div>
+              <Badge variant="emerald" dot>Earnings</Badge>
             </div>
 
             <div className="h-56 sm:h-64 -ml-2">
@@ -241,61 +219,17 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* ── Targets + Recent transactions ────────────────────── */}
+        {/* ── Recent transactions + Targets ────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <Card className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-bold text-slate-900">Inventory Targets</h2>
-            </div>
-            <div className="space-y-3">
-              {[
-                {
-                  name: 'Monthly Target',
-                  current: monthRevenue,
-                  target: MONTHLY_REVENUE_GOAL,
-                  pct: Math.min(100, Math.round((monthRevenue / MONTHLY_REVENUE_GOAL) * 100)),
-                },
-                {
-                  name: 'Product Listings',
-                  current: s.totalProducts || 0,
-                  target: PRODUCT_LISTING_GOAL,
-                  pct: Math.min(100, Math.round(((s.totalProducts || 0) / PRODUCT_LISTING_GOAL) * 100)),
-                },
-              ].map(g => (
-                <div key={g.name} className="p-3 rounded-xl bg-slate-50/70">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-9 h-9 rounded-lg bg-white border border-slate-200 flex items-center justify-center flex-shrink-0">
-                      <Package size={14} className="text-emerald-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-bold text-slate-900 truncate">{g.name}</div>
-                      <div className="text-xs text-slate-500 truncate">
-                        {typeof g.current === 'number' && g.current > 1000 ? formatCurrency(g.current) : g.current.toLocaleString()}
-                        {' / '}
-                        {typeof g.target === 'number' && g.target > 1000 ? formatCurrency(g.target) : g.target.toLocaleString()}
-                      </div>
-                    </div>
-                    <span className="text-xs font-bold text-emerald-600">{g.pct}%</span>
-                  </div>
-                  <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full transition-all duration-700"
-                      style={{ width: `${Math.min(100, g.pct)}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-
           <Card className="lg:col-span-2 overflow-hidden">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-5 pb-3">
-              <h2 className="font-bold text-slate-900">Recent Transactions</h2>
-              <div className="flex items-center gap-2">
-                <Link href="/orders" className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
-                  View All <ArrowUpRight size={11} />
-                </Link>
+              <div>
+                <h2 className="font-bold text-slate-900">Recent Transactions</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Latest orders across channels</p>
               </div>
+              <Link href="/orders" className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
+                View All <ArrowUpRight size={11} />
+              </Link>
             </div>
 
             {/* Desktop table */}
@@ -328,7 +262,7 @@ export default function DashboardPage() {
                       <td className="px-2 py-3.5 text-xs text-slate-600 whitespace-nowrap">
                         {new Date(o.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
                       </td>
-                      <td className="px-2 py-3.5 text-sm font-bold text-slate-900">{formatCurrency(o.total)}</td>
+                      <td className="px-2 py-3.5 text-sm font-bold text-slate-900 tabular-nums">{formatCurrency(o.total)}</td>
                       <td className="px-2 py-3.5 text-right pr-5">
                         <Badge variant={STATUS_BADGE[o.status] || 'slate'} dot>{o.status || '—'}</Badge>
                       </td>
@@ -360,7 +294,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm font-bold text-slate-900">{formatCurrency(o.total)}</div>
+                    <div className="text-sm font-bold text-slate-900 tabular-nums">{formatCurrency(o.total)}</div>
                     <Badge variant={STATUS_BADGE[o.status] || 'slate'} dot className="mt-1">{o.status || '—'}</Badge>
                   </div>
                 </div>
@@ -381,6 +315,52 @@ export default function DashboardPage() {
                 />
               </div>
             )}
+          </Card>
+
+          <Card className="p-5">
+            <div className="mb-4">
+              <h2 className="font-bold text-slate-900">Inventory Targets</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Progress toward this month&apos;s goals</p>
+            </div>
+            <div className="space-y-3">
+              {[
+                {
+                  name: 'Monthly Target',
+                  current: monthRevenue,
+                  target: MONTHLY_REVENUE_GOAL,
+                  pct: Math.min(100, Math.round((monthRevenue / MONTHLY_REVENUE_GOAL) * 100)),
+                },
+                {
+                  name: 'Product Listings',
+                  current: s.totalProducts || 0,
+                  target: PRODUCT_LISTING_GOAL,
+                  pct: Math.min(100, Math.round(((s.totalProducts || 0) / PRODUCT_LISTING_GOAL) * 100)),
+                },
+              ].map(g => (
+                <div key={g.name} className="p-3 rounded-xl bg-slate-50/70 border border-slate-100">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-9 h-9 rounded-lg bg-white border border-slate-200 flex items-center justify-center flex-shrink-0">
+                      <Package size={14} className="text-emerald-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold text-slate-900 truncate">{g.name}</div>
+                      <div className="text-xs text-slate-500 truncate tabular-nums">
+                        {typeof g.current === 'number' && g.current > 1000 ? formatCurrency(g.current) : g.current.toLocaleString()}
+                        {' / '}
+                        {typeof g.target === 'number' && g.target > 1000 ? formatCurrency(g.target) : g.target.toLocaleString()}
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold text-emerald-600">{g.pct}%</span>
+                  </div>
+                  <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full transition-all duration-700"
+                      style={{ width: `${Math.min(100, g.pct)}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
           </Card>
         </div>
       </div>
