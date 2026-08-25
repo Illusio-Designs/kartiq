@@ -27,7 +27,7 @@ export default function EarningsAreaChart({ data }: EarningsAreaChartProps) {
             <stop offset="100%" stopColor="#06D4B8" stopOpacity={0} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--hairline)" vertical={false} />
         <XAxis
           dataKey="month"
           axisLine={false}
@@ -42,13 +42,14 @@ export default function EarningsAreaChart({ data }: EarningsAreaChartProps) {
         />
         <RechartsTooltip
           contentStyle={{
-            backgroundColor: 'white',
-            border: '1px solid #e2e8f0',
+            backgroundColor: 'var(--surface)',
+            border: '1px solid var(--hairline)',
             borderRadius: '10px',
             boxShadow: '0 4px 20px rgba(15,23,42,0.08)',
             fontSize: 12,
             fontWeight: 600,
           }}
+          labelStyle={{ color: 'hsl(var(--foreground))' }}
           formatter={(v: number) => [`$${v.toLocaleString()}`, 'Earnings']}
         />
         <Area

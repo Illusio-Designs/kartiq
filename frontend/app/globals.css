@@ -485,3 +485,29 @@
   background: linear-gradient(110deg, #172136 8%, #24314d 18%, #172136 33%);
   background-size: 200% 100%;
 }
+
+/* ==========================================================================
+   Dark mode — gradient stops, rings, and stray opacity bands
+   The compat layer can't reach Tailwind gradient stops (from/via/to-*),
+   ring-* colors, or opacity variants outside the /30–/80 set. Remap the
+   light neutral/brand stops used as card & page surfaces so they don't render
+   as light panels on dark.
+   ========================================================================== */
+.dark .from-white { --tw-gradient-from: var(--surface) var(--tw-gradient-from-position); --tw-gradient-to: rgb(19 28 46 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+.dark .via-white  { --tw-gradient-to: rgb(19 28 46 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--surface) var(--tw-gradient-via-position), var(--tw-gradient-to); }
+.dark .to-white   { --tw-gradient-to: var(--surface) var(--tw-gradient-to-position); }
+
+.dark .from-slate-50 { --tw-gradient-from: var(--surface-2) var(--tw-gradient-from-position); --tw-gradient-to: rgb(14 22 38 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+.dark .via-slate-50  { --tw-gradient-to: rgb(14 22 38 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--surface-2) var(--tw-gradient-via-position), var(--tw-gradient-to); }
+.dark .to-slate-50   { --tw-gradient-to: var(--surface-2) var(--tw-gradient-to-position); }
+
+.dark .from-emerald-50 { --tw-gradient-from: var(--surface) var(--tw-gradient-from-position); --tw-gradient-to: rgb(19 28 46 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+.dark .via-emerald-50  { --tw-gradient-to: rgb(19 28 46 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--surface) var(--tw-gradient-via-position), var(--tw-gradient-to); }
+.dark .to-emerald-50   { --tw-gradient-to: var(--surface) var(--tw-gradient-to-position); }
+
+/* Sticky filter bar band on the channels page (/95 opacity, outside the mapped set) */
+.dark .from-slate-50\/95 { --tw-gradient-from: rgba(255,255,255,0.04) var(--tw-gradient-from-position); --tw-gradient-to: rgb(19 28 46 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+.dark .via-slate-50\/95  { --tw-gradient-to: rgb(19 28 46 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), rgba(255,255,255,0.04) var(--tw-gradient-via-position), var(--tw-gradient-to); }
+
+/* White ring halos on notification dots / badges — match the dark surface */
+.dark .ring-white { --tw-ring-color: var(--surface); }

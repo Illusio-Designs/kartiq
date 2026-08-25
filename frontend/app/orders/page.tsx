@@ -9,7 +9,7 @@ import { formatCurrency, formatDateTime } from '@/lib/utils';
 import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import {
   Button, Badge, Card, Modal, Input, Textarea, Select, Pagination, Tooltip, Loader, Tabs, EmptyState, Checkbox,
-  SearchField, DatePicker, Popover, BulkActionBar, DensityToggle, Dropdown, Kbd, useConfirm,
+  SearchField, DateRangePicker, Popover, BulkActionBar, DensityToggle, Dropdown, Kbd, useConfirm,
 } from '@/components/ui';
 import type { Density } from '@/components/ui';
 import { AlertTriangle, CheckCircle2, Plus, Star, Trash2, XCircle, Zap, Hand, Layers, ShoppingBag, Plug, RefreshCw, Download, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Eye, Pencil, Lock, Truck, Info, ListFilter, ArrowUpDown, Bookmark, X } from 'lucide-react';
@@ -147,6 +147,7 @@ export default function OrdersPage() {
   // In-table search (distinct from the global topbar search), row selection for
   // bulk actions, and row density.
   const [search, setSearch] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [density, setDensity] = useState<Density>('comfortable');
   const [bulkPending, setBulkPending] = useState(false);
@@ -252,13 +253,14 @@ export default function OrdersPage() {
   };
 
   // ── Active filters (popover count + removable chips) ──
-  const activeFilterCount = (status ? 1 : 0) + (risk ? 1 : 0) + (dateFrom ? 1 : 0);
+  const activeFilterCount = (status ? 1 : 0) + (risk ? 1 : 0) + ((dateFrom || dateTo) ? 1 : 0);
   const statusLabel = STATUSES.find((s) => s.value === status)?.label;
   const riskLabel = RISK_FILTERS.find((r) => r.value === risk)?.label;
+  const dateLabel = dateFrom && dateTo ? `${dateFrom} → ${dateTo}` : dateFrom ? `From ${dateFrom}` : dateTo ? `Until ${dateTo}` : '';
   const activeChips = [
     status ? { key: 'status', label: `Status: ${statusLabel}`, clear: () => { setStatus(''); setPage(1); } } : null,
     risk ? { key: 'risk', label: `Risk: ${riskLabel}`, clear: () => { setRisk(''); setPage(1); } } : null,
-    dateFrom ? { key: 'date', label: `Since ${dateFrom}`, clear: () => { setDateFrom(''); setPage(1); } } : null,
+    (dateFrom || dateTo) ? { key: 'date', label: dateLabel, clear: () => { setDateFrom(''); setDateTo(''); setPage(1); } } : null,
     search ? { key: 'search', label: `“${search}”`, clear: () => setSearch('') } : null,
   ].filter(Boolean) as { key: string; label: string; clear: () => void }[];
   const clearFilters = () => { setStatus(''); setRisk(''); setDateFrom(''); setDateTo(''); setSearch(''); setPage(1); };
@@ -494,41 +496,12 @@ export default function OrdersPage() {
             ]}
           />
 
-          <Popover
-            align="right"
-            width="w-72"
-            trigger={
-              <Button variant="outline" size="sm" leftIcon={<ListFilter size={14} />}>
-                Filters
-                {activeFilterCount > 0 && (
-                  <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-bold">{activeFilterCount}</span>
-                )}
-              </Button>
-            }
-          >
-            <div className="p-3 w-72 space-y-3">
-              <Select label="Status" fullWidth value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={STATUSES} placeholder="All Statuses" />
-              <Select label="Risk" fullWidth value={risk} onChange={(v) => { setRisk(v); setPage(1); }} options={RISK_FILTERS} placeholder="All Risk" />
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Orders since</label>
-                <DatePicker
-                  value={dateFrom ? new Date(dateFrom) : null}
-                  placeholder="Pick a start date"
-                  className="w-full"
-                  onChange={(d) => {
-                    const m = String(d.getMonth() + 1).padStart(2, '0');
-                    const day = String(d.getDate()).padStart(2, '0');
-                    setDateFrom(`${d.getFullYear()}-${m}-${day}`); setPage(1);
-                  }}
-                />
-              </div>
-              {activeFilterCount > 0 && (
-                <div className="pt-2 border-t border-slate-100">
-                  <button type="button" onClick={clearFilters} className="text-xs font-bold text-slate-500 hover:text-slate-700">Clear all filters</button>
-                </div>
-              )}
-            </div>
-          </Popover>
+          <Button variant="outline" size="sm" leftIcon={<ListFilter size={14} />} onClick={() => setFiltersOpen(true)}>
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-bold">{activeFilterCount}</span>
+            )}
+          </Button>
 
           <Dropdown
             align="right"
@@ -668,7 +641,7 @@ export default function OrdersPage() {
                     {visibleColumns.map((c) => renderCell(o, c.key))}
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end gap-1">
-                        {o.needsApproval && (
+                        {!!o.needsApproval && (
                           <>
                             <Tooltip content="Approve order">
                               <Button variant="outline" size="icon" onClick={() => approveMutation.mutate(o.id)} disabled={approveMutation.isPending}>
@@ -805,6 +778,29 @@ export default function OrdersPage() {
       </div>
 
       <NewOrderModal open={modalOpen} onClose={() => setModalOpen(false)} />
+
+      {/* Filters — opens as a right-side drawer */}
+      <Modal
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        title="Filters"
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => { clearFilters(); }}>Clear all</Button>
+            <Button onClick={() => setFiltersOpen(false)}>Done</Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Select label="Status" fullWidth value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={STATUSES} placeholder="All Statuses" />
+          <Select label="Risk" fullWidth value={risk} onChange={(v) => { setRisk(v); setPage(1); }} options={RISK_FILTERS} placeholder="All Risk" />
+          <div>
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Date range</label>
+            <DateRangePicker from={dateFrom} to={dateTo} onChange={(f, t) => { setDateFrom(f); setDateTo(t); setPage(1); }} />
+          </div>
+        </div>
+      </Modal>
 
       {/* Per-order quick-edit slide-over. MFN / manual orders are editable;
           FBA orders are read-only (Amazon manages fulfillment). */}

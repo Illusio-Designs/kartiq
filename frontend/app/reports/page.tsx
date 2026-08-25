@@ -5,18 +5,9 @@ import { useQuery } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { reportApi } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
-import { DatePicker } from '@/components/ui/DatePicker';
-import { Card, Skeleton, EmptyState } from '@/components/ui';
+import { Card, Skeleton, EmptyState, DateRangePicker } from '@/components/ui';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Boxes } from 'lucide-react';
-
-// Local YYYY-MM-DD — using toISOString() would shift the day for +ve timezones
-// (e.g. IST), sending the wrong date to the report API.
-function toYMD(d: Date): string {
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
-}
 
 const VALUATION_PAGE = 20;
 
@@ -50,26 +41,10 @@ export default function ReportsPage() {
       <div className="space-y-6">
         <PageHeader title="Reports" subtitle="Analytics and business insights" />
 
-        {/* Date Filter */}
-        <div className="flex gap-3 items-end flex-wrap">
-          <div>
-            <label className="block text-xs font-bold text-slate-600 uppercase mb-1.5">From</label>
-            <DatePicker
-              value={from ? new Date(from) : null}
-              onChange={(d) => setFrom(toYMD(d))}
-              maxDate={to ? new Date(to) : undefined}
-              placeholder="From date"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-600 uppercase mb-1.5">To</label>
-            <DatePicker
-              value={to ? new Date(to) : null}
-              onChange={(d) => setTo(toYMD(d))}
-              minDate={from ? new Date(from) : undefined}
-              placeholder="To date"
-            />
-          </div>
+        {/* Date range */}
+        <div className="max-w-xs">
+          <label className="block text-xs font-bold text-slate-600 uppercase mb-1.5">Date range</label>
+          <DateRangePicker from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t); }} placeholder="All time" />
         </div>
 
         {/* Sales Summary */}
