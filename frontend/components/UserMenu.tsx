@@ -21,7 +21,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import {
-  ChevronDown, User, CreditCard, Users, BarChart3, Settings, LogOut,
+  ChevronDown, User, CreditCard, Users, Settings, LogOut,
   ShieldCheck, ArrowLeft, Megaphone, LifeBuoy, Sparkles,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth.store';
@@ -61,7 +61,6 @@ export function UserMenu() {
   //   intentional: they get read-only insight into the wallet/usage
   //   page (no upgrade button server-side gates them out of writes).
   const canSeeBilling = !isFounder && hasPermission('billing.read', 'billing.manage');
-  const canSeeUsage   = !isFounder && hasPermission('billing.read', 'billing.manage');
   // Team — gated on a WRITE permission so we don't surface a "manage
   // teammates" link to roles that land on the page and find every
   // action disabled. Resolves to { ADMIN, MANAGER } per the matrix.
@@ -186,9 +185,6 @@ export function UserMenu() {
             )}
             {canSeeTeam && (
               <MenuItem icon={Users} label="Team" onClick={() => go('/dashboard/team')} />
-            )}
-            {canSeeUsage && (
-              <MenuItem icon={BarChart3} label="Usage" onClick={() => go('/usage')} />
             )}
           </div>
 

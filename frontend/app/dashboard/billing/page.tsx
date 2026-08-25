@@ -2,12 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { billingApi, planApi, paymentApi } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 import { track, upgradeSession } from '@/lib/analytics';
-import { CheckCircle2, AlertCircle, Zap, Crown, Sparkles, X, Wallet, Plus, Settings2 } from 'lucide-react';
+import {
+  CheckCircle2, AlertCircle, Zap, Crown, Sparkles, X, Wallet, Plus, Settings2,
+  Package, Users, Building2, ShoppingBag, Plug, Activity, CreditCard,
+} from 'lucide-react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { Loader } from '@/components/ui/Loader';
 import { Modal } from '@/components/ui/Modal';
@@ -15,6 +21,25 @@ import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { TopupModal, WALLET_CHANGED_EVENT } from '@/components/wallet/TopupModal';
 import { toast } from '@/store/toast.store';
+
+// Usage meters merged in from the old standalone Usage page. Both pages read the
+// same `/billing/usage` payload (billingApi.usage), which already carries the
+// used counts, per-metric limits, PAYG overage rates and the total overage cost.
+const USAGE_METRICS: Array<{
+  key: string;
+  limitKey: string;
+  planKey: string;
+  rateKey: string;
+  overageKey: string;
+  label: string;
+  icon: any;
+}> = [
+  { key: 'skus',             limitKey: 'skus',           planKey: 'maxSkus',           rateKey: 'extraSkus',       overageKey: 'skus',       label: 'Products (SKUs)',    icon: Package },
+  { key: 'ordersThisPeriod', limitKey: 'ordersPerMonth', planKey: 'maxOrdersPerMonth', rateKey: 'extraOrders',     overageKey: 'orders',     label: 'Orders this month',  icon: ShoppingBag },
+  { key: 'users',            limitKey: 'users',          planKey: 'maxUsers',          rateKey: 'extraUsers',      overageKey: 'users',      label: 'Team members',       icon: Users },
+  { key: 'channels',         limitKey: 'channels',       planKey: 'maxChannels',       rateKey: 'extraChannels',   overageKey: 'channels',   label: 'Connected channels', icon: Plug },
+  { key: 'facilities',       limitKey: 'facilities',     planKey: 'maxFacilities',     rateKey: 'extraFacilities', overageKey: 'facilities', label: 'Warehouses',         icon: Building2 },
+];
 
 export default function BillingPage() {
   const { hasPermission } = useAuthStore();
@@ -203,43 +228,57 @@ export default function BillingPage() {
     await load();
   };
 
+  const scrollToPlans = () => {
+    document.getElementById('switch-plan')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   if (!sub || !usage) return <DashboardLayout><Loader fullScreen size="lg" /></DashboardLayout>;
 
   const plan = sub.plan;
+  const periodEnd = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString() : '—';
+  const totalOverage = Number(usage.totalOverageCost || 0);
 
   return (
     <DashboardLayout>
-      <div className="p-6 max-w-6xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-[#06D4B8] to-[#06B6D4] bg-clip-text text-transparent">Billing & Subscription</h1>
-          <p className="text-slate-500 mt-1">Manage your plan, usage and pay-as-you-go.</p>
-        </div>
+      <div className="p-6 max-w-6xl mx-auto space-y-6 animate-slide-up">
+        <PageHeader
+          title="Billing"
+          subtitle="Manage your plan, wallet, usage and pay-as-you-go — all in one place."
+          actions={
+            canManage ? (
+              <Button leftIcon={<Sparkles size={15} />} onClick={scrollToPlans}>
+                Upgrade plan
+              </Button>
+            ) : undefined
+          }
+        />
 
-        {/* Current plan */}
-        <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white p-6 rounded-3xl shadow-xl">
-          <div className="flex items-center justify-between flex-wrap gap-3">
+        {/* ── 1. Current plan hero ─────────────────────────────────────── */}
+        <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white p-6 rounded-3xl shadow-xl relative overflow-hidden">
+          <div className="absolute -top-16 -right-10 w-72 h-72 rounded-full bg-white/10 blur-2xl pointer-events-none" />
+          <div className="relative flex items-start justify-between flex-wrap gap-4">
             <div>
-              <div className="text-xs uppercase tracking-wider text-emerald-300 font-bold">Current plan</div>
+              <div className="text-xs uppercase tracking-wider text-emerald-100/90 font-bold">Current plan</div>
               <div className="text-3xl font-bold mt-1 flex items-center gap-2">
-                {plan.name} <Crown size={20} className="text-amber-400" />
+                {plan.name} <Crown size={20} className="text-amber-300" />
               </div>
-              <div className="text-sm text-white/70 mt-1">
-                Status: <b>{sub.status}</b> · {sub.autoRenew ? 'Auto-renews' : 'Renews'} {new Date(sub.currentPeriodEnd).toLocaleDateString()}
+              <div className="text-sm text-white/75 mt-1.5">
+                Status: <b>{sub.status}</b> · {sub.autoRenew ? 'Auto-renews' : 'Renews'} {periodEnd}
               </div>
               {sub.lastRenewalError ? (
-                <div className="text-xs text-amber-300 mt-1 font-bold flex items-center gap-1">
+                <div className="text-xs text-amber-200 mt-1.5 font-bold flex items-center gap-1">
                   <AlertCircle size={12} /> Last renewal failed: {sub.lastRenewalError}
                 </div>
               ) : null}
             </div>
             <div className="text-right">
               <div className="text-3xl font-bold">₹{Number(plan.monthlyPrice).toLocaleString()}<span className="text-sm font-normal text-white/60">/mo</span></div>
-              <div className="flex flex-col items-end gap-1.5 mt-2">
+              <div className="flex flex-col items-end gap-1.5 mt-3">
                 <button
                   onClick={togglePayg}
                   disabled={!canManage}
                   className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold ${
-                    sub.payAsYouGo ? 'bg-emerald-400 text-slate-900' : 'bg-white/10 text-white'
+                    sub.payAsYouGo ? 'bg-emerald-300 text-emerald-950' : 'bg-white/10 text-white'
                   } disabled:opacity-50`}
                 >
                   <Zap size={12} /> Pay-as-you-go {sub.payAsYouGo ? 'ON' : 'OFF'}
@@ -260,7 +299,7 @@ export default function BillingPage() {
                       }}
                       disabled={!canManage}
                       className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold ${
-                        sub.autoRenew ? 'bg-emerald-400 text-slate-900' : 'bg-white/10 text-white'
+                        sub.autoRenew ? 'bg-emerald-300 text-emerald-950' : 'bg-white/10 text-white'
                       } disabled:opacity-50`}
                     >
                       <Sparkles size={12} /> Auto-renew {sub.autoRenew ? 'ON' : 'OFF'}
@@ -273,7 +312,7 @@ export default function BillingPage() {
                 })()}
               </div>
               {sub.autoRenew && paymentMethods.filter((m: any) => m.isDefault).length === 0 && (
-                <div className="text-[10px] text-amber-300 mt-1 max-w-[200px]">
+                <div className="text-[10px] text-amber-200 mt-1.5 max-w-[200px]">
                   ⚠ No default card — auto-renew will fail until you save one
                 </div>
               )}
@@ -281,80 +320,103 @@ export default function BillingPage() {
           </div>
         </div>
 
-        {/* Wallet */}
-        {wallet && (
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
-            <div className="flex items-start justify-between flex-wrap gap-4">
-              <div className="flex items-start gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center">
-                  <Wallet size={20} className="text-emerald-600" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <div className="text-xs uppercase tracking-wider text-slate-400 font-bold">Wallet balance</div>
-                    {canManage && (
-                      <Tooltip content="Wallet settings">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setShowWalletSettings(true)}
-                          aria-label="Wallet settings"
-                          className="h-7 w-7"
-                        >
-                          <Settings2 size={13} />
-                        </Button>
-                      </Tooltip>
+        {/* ── 2. Wallet + Payment methods ──────────────────────────────── */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          {/* Wallet */}
+          {wallet && (
+            <Card className="lg:col-span-3 p-6">
+              <div className="flex items-start justify-between flex-wrap gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center">
+                    <Wallet size={20} className="text-emerald-600" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-xs uppercase tracking-wider text-slate-400 font-bold">Wallet balance</div>
+                      {canManage && (
+                        <Tooltip content="Wallet settings">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setShowWalletSettings(true)}
+                            aria-label="Wallet settings"
+                            className="h-7 w-7"
+                          >
+                            <Settings2 size={13} />
+                          </Button>
+                        </Tooltip>
+                      )}
+                    </div>
+                    <div className={`text-3xl font-bold mt-1 ${wallet.lowBalance ? 'text-rose-600' : 'text-slate-900'}`}>
+                      ₹{Number(wallet.balance).toLocaleString()}
+                    </div>
+                    {wallet.lowBalance ? (
+                      <div className="text-xs text-rose-600 font-bold mt-1">Low balance — top up soon</div>
+                    ) : (
+                      <div className="text-xs text-slate-500 mt-1">Used for overage charges when plan limits are exceeded</div>
                     )}
                   </div>
-                  <div className={`text-3xl font-bold mt-1 ${wallet.lowBalance ? 'text-rose-600' : 'text-slate-900'}`}>
-                    ₹{Number(wallet.balance).toLocaleString()}
-                  </div>
-                  {wallet.lowBalance ? (
-                    <div className="text-xs text-rose-600 font-bold mt-1">Low balance — top up soon</div>
-                  ) : (
-                    <div className="text-xs text-slate-500 mt-1">Used for overage charges when plan limits are exceeded</div>
-                  )}
                 </div>
+                {canManage && (
+                  <Button
+                    variant="primary"
+                    leftIcon={<Plus size={14} />}
+                    onClick={() => setTopupOpen(true)}
+                  >
+                    Top up
+                  </Button>
+                )}
+              </div>
+            </Card>
+          )}
+
+          {/* Payment methods */}
+          <Card className={`p-0 ${wallet ? 'lg:col-span-2' : 'lg:col-span-5'}`}>
+            <div className="flex items-center justify-between gap-2 px-5 pt-5 pb-3">
+              <div>
+                <h2 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                  <CreditCard size={16} className="text-slate-400" /> Payment methods
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">Used to auto-renew your subscription</p>
               </div>
               {canManage && (
-                <Button
-                  variant="primary"
-                  leftIcon={<Plus size={14} />}
-                  onClick={() => setTopupOpen(true)}
-                >
-                  Top up
-                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setTopupOpen(true)}>Add card</Button>
               )}
             </div>
-
-            {txns.length > 0 && (
-              <div className="mt-5 pt-5 border-t border-slate-100">
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Recent transactions</div>
-                <div className="space-y-1">
-                  {txns.slice(0, 5).map((t: any) => {
-                    const isCredit = ['TOPUP', 'REFUND'].includes(t.type);
-                    const amt = Number(t.amount);
-                    return (
-                      <div key={t.id} className="flex items-center justify-between py-1.5 text-sm">
-                        <div>
-                          <span className={`inline-block w-2 h-2 rounded-full mr-2 ${isCredit ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                          <span className="font-medium text-slate-700">{t.description || t.type}</span>
-                          <span className="text-xs text-slate-400 ml-2">
-                            {new Date(t.createdAt).toLocaleDateString()}
-                          </span>
-                        </div>
-                        <span className={`font-bold ${isCredit ? 'text-emerald-600' : 'text-rose-600'}`}>
-                          {isCredit ? '+' : ''}₹{Math.abs(amt).toLocaleString()}
-                        </span>
-                      </div>
-                    );
-                  })}
+            {paymentMethods.length === 0 ? (
+              <div className="px-5 pb-5">
+                <div className="text-xs text-slate-500 bg-slate-50 rounded-2xl p-3 border border-slate-200">
+                  No saved cards yet. Tick <b>Save card for subscription auto-renewal</b> the next time you top up your wallet to add one.
                 </div>
               </div>
+            ) : (
+              <div className="border-t border-slate-100">
+                {paymentMethods.map((m: any) => (
+                  <div key={m.id} className="flex items-center gap-3 px-5 py-3 border-b border-slate-100 last:border-b-0">
+                    <div className="w-10 h-7 rounded-md bg-slate-50 border border-slate-200 flex items-center justify-center text-[9px] font-bold text-slate-600">
+                      {(m.brand || m.method || 'CARD').slice(0, 4).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-bold text-slate-900 truncate">{m.label || `${m.brand || 'Card'} •••• ${m.last4 || ''}`}</div>
+                      <div className="text-[11px] text-slate-500 truncate">
+                        {m.expiryMonth ? `Expires ${String(m.expiryMonth).padStart(2, '0')}/${m.expiryYear}` : (m.upiVpa || 'Saved at checkout')}
+                        {m.failureCount ? ` · last failed (${m.failureCount}x)` : ''}
+                      </div>
+                    </div>
+                    {m.isDefault ? (
+                      <Badge variant="emerald" dot>Default</Badge>
+                    ) : canManage ? (
+                      <Button variant="ghost" size="sm" onClick={() => setDefaultMethod(m.id)}>Make default</Button>
+                    ) : null}
+                    {canManage && (
+                      <Button variant="ghost" size="sm" onClick={() => removeMethod(m.id)}>Remove</Button>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
-
-          </div>
-        )}
+          </Card>
+        </div>
 
         {/* Wallet settings modal */}
         <Modal
@@ -426,17 +488,107 @@ export default function BillingPage() {
           </div>
         </Modal>
 
-        {/* Usage */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <UsageCard label="Facilities"  used={usage.used.facilities}      limit={plan.maxFacilities} />
-          <UsageCard label="SKUs"        used={usage.used.skus}            limit={plan.maxSkus} />
-          <UsageCard label="Users"       used={usage.used.users}           limit={plan.maxUsers} />
-          <UsageCard label="Roles"       used={usage.used.roles}           limit={plan.maxUserRoles} />
-          <UsageCard label="Orders (mo)" used={usage.used.ordersThisPeriod} limit={plan.maxOrdersPerMonth} />
-        </div>
+        {/* ── 3. Usage this period (merged from the old Usage page) ─────── */}
+        <Card className="p-0">
+          <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-1 flex-wrap">
+            <div>
+              <h2 className="font-bold text-slate-900 text-base">Usage this period</h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {usage.period ? `${usage.period} · ` : ''}Resets {periodEnd} ·{' '}
+                {sub.payAsYouGo ? 'overage draws from your wallet (PAYG on)' : 'PAYG off — usage is capped at plan limits'}
+              </p>
+            </div>
+          </div>
+          <div className="p-5 pt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
+            {USAGE_METRICS.map((m) => {
+              const used = Number(usage.used?.[m.key] || 0);
+              const limitRaw = usage.limits?.[m.limitKey];
+              const limit = (limitRaw ?? plan?.[m.planKey]) ?? null;
+              const rate = Number(usage.rates?.[m.rateKey] || 0);
+              const overageUnits = Number(usage.overage?.[m.overageKey] || 0);
+              return (
+                <UsageMeter
+                  key={m.key}
+                  label={m.label}
+                  icon={m.icon}
+                  used={used}
+                  limit={limit}
+                  rate={rate}
+                  overageUnits={overageUnits}
+                  payAsYouGo={!!sub.payAsYouGo}
+                />
+              );
+            })}
+          </div>
 
-        {/* Plans */}
-        <div>
+          {/* Overage summary */}
+          {totalOverage > 0 && (
+            <div className="mx-5 mb-5 rounded-2xl bg-amber-50 border border-amber-200 p-4 flex items-start gap-3">
+              <Activity className="text-amber-700 flex-shrink-0 mt-0.5" size={18} />
+              <div className="flex-1">
+                <h3 className="font-bold text-amber-900 text-sm">Overage this period</h3>
+                <p className="text-sm text-amber-800 mt-1">
+                  You&apos;ve used more than your plan limit on one or more metrics. Total overage charges so far:{' '}
+                  <strong>₹{totalOverage.toFixed(2)}</strong>.
+                  {sub.payAsYouGo
+                    ? ' These will be deducted from your wallet.'
+                    : ' Enable Pay-As-You-Go above to keep working past your limits.'}
+                </p>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {/* ── 4. Billing history / wallet transactions ─────────────────── */}
+        <Card className="p-0 overflow-hidden">
+          <div className="flex items-center justify-between gap-2 px-5 pt-5 pb-3">
+            <div>
+              <h2 className="font-bold text-slate-900 text-base">Billing history</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Plan charges, wallet top-ups and PAYG overage draws</p>
+            </div>
+          </div>
+          {txns.length === 0 ? (
+            <div className="px-5 pb-6 text-sm text-slate-500 text-center py-8">
+              No transactions yet.
+            </div>
+          ) : (
+            <div className="overflow-x-auto border-t border-slate-100">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50/50 border-b border-slate-100">
+                  <tr className="text-left text-[10px] uppercase tracking-widest text-slate-400">
+                    <th className="px-5 py-2.5 font-bold whitespace-nowrap">Date</th>
+                    <th className="px-3 py-2.5 font-bold w-full">Description</th>
+                    <th className="px-3 py-2.5 font-bold text-right whitespace-nowrap">Amount</th>
+                    <th className="px-5 py-2.5 font-bold text-right whitespace-nowrap">Type</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {txns.map((t: any) => {
+                    const isCredit = ['TOPUP', 'REFUND'].includes(t.type);
+                    const amt = Number(t.amount);
+                    return (
+                      <tr key={t.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="px-5 py-3 text-slate-500 whitespace-nowrap tabular-nums">
+                          {t.createdAt ? new Date(t.createdAt).toLocaleDateString() : '—'}
+                        </td>
+                        <td className="px-3 py-3 text-slate-700 font-medium">{t.description || t.type}</td>
+                        <td className={`px-3 py-3 text-right font-bold whitespace-nowrap tabular-nums ${isCredit ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {isCredit ? '+' : '−'}₹{Math.abs(amt).toLocaleString()}
+                        </td>
+                        <td className="px-5 py-3 text-right whitespace-nowrap">
+                          <Badge variant={isCredit ? 'emerald' : 'slate'} dot>{t.type}</Badge>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+
+        {/* ── Switch plan ──────────────────────────────────────────────── */}
+        <div id="switch-plan" className="scroll-mt-6">
           <h2 className="text-xl font-bold text-slate-900 mb-3 flex items-center gap-2">
             <Sparkles size={18} className="text-emerald-600" /> Switch plan
           </h2>
@@ -445,12 +597,12 @@ export default function BillingPage() {
               const current = p.code === plan.code;
               const features = Object.entries(p.features || {});
               return (
-                <div key={p.code} className={`p-5 rounded-2xl border-2 ${current ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white'}`}>
+                <Card key={p.code} className={`p-5 ${current ? 'border-emerald-500 ring-1 ring-emerald-500 bg-emerald-50/60' : ''}`}>
                   <div className="flex items-center justify-between">
-                    <div className="font-bold text-lg">{p.name}</div>
-                    {current && <span className="text-xs font-bold text-emerald-700">CURRENT</span>}
+                    <div className="font-bold text-lg text-slate-900">{p.name}</div>
+                    {current && <Badge variant="emerald">Current</Badge>}
                   </div>
-                  <div className="text-2xl font-bold mt-2">₹{Number(p.monthlyPrice).toLocaleString()}<span className="text-xs text-slate-500">/mo</span></div>
+                  <div className="text-2xl font-bold mt-2 text-slate-900">₹{Number(p.monthlyPrice).toLocaleString()}<span className="text-xs text-slate-500">/mo</span></div>
                   <div className="text-xs text-slate-500 mt-2 space-y-1">
                     <div>{p.maxFacilities ?? '∞'} facilities · {p.maxSkus ? p.maxSkus.toLocaleString() : '∞'} SKUs</div>
                     <div>{p.maxUserRoles ?? '∞'} roles · {p.maxUsers ?? '∞'} users</div>
@@ -472,7 +624,7 @@ export default function BillingPage() {
                   >
                     {current ? 'Active' : 'Switch'}
                   </Button>
-                </div>
+                </Card>
               );
             })}
           </div>
@@ -490,21 +642,65 @@ export default function BillingPage() {
   );
 }
 
-function UsageCard({ label, used, limit }: { label: string; used: number; limit: number | null }) {
-  const pct = limit ? Math.min(100, (used / limit) * 100) : 0;
-  const danger = limit && pct >= 90;
+// Single usage meter — progress bar turns amber near the limit (>=80%) and rose
+// when over. Unlimited metrics (null limit) render without a bar.
+function UsageMeter({
+  label, icon: Icon, used, limit, rate, overageUnits, payAsYouGo,
+}: {
+  label: string;
+  icon: any;
+  used: number;
+  limit: number | null;
+  rate: number;
+  overageUnits: number;
+  payAsYouGo: boolean;
+}) {
+  const isUnlimited = limit === null || limit === undefined;
+  const pct = isUnlimited ? 0 : Math.min(100, Math.round((used / Math.max(1, limit as number)) * 100));
+  const overLimit = !isUnlimited && used > (limit as number);
+  const nearLimit = !isUnlimited && pct >= 80 && !overLimit;
+  const barClass = overLimit ? 'bg-rose-500' : nearLimit ? 'bg-amber-500' : 'bg-emerald-500';
+
   return (
-    <div className="p-4 rounded-2xl bg-white border border-slate-200">
-      <div className="text-xs font-semibold text-slate-500 uppercase">{label}</div>
-      <div className="text-2xl font-bold mt-1">
-        {used}<span className="text-sm text-slate-400"> / {limit ?? '∞'}</span>
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <Icon size={15} className="text-slate-400 flex-shrink-0" />
+        <span className="text-[13px] font-bold text-slate-800">{label}</span>
+        {overLimit && (
+          <span className="ml-auto text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+            Over limit
+          </span>
+        )}
+        {nearLimit && (
+          <span className="ml-auto text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+            Near limit
+          </span>
+        )}
+        <span className={`text-xs text-slate-500 tabular-nums ${overLimit || nearLimit ? '' : 'ml-auto'}`}>
+          {used.toLocaleString()} / {isUnlimited ? '∞' : (limit as number).toLocaleString()}
+        </span>
       </div>
-      {limit && (
-        <div className="h-1.5 rounded-full bg-slate-100 mt-2 overflow-hidden">
-          <div className={`h-full ${danger ? 'bg-rose-500' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} />
+      {!isUnlimited ? (
+        <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+          <div className={`h-full rounded-full transition-all ${barClass}`} style={{ width: `${overLimit ? 100 : pct}%` }} />
+        </div>
+      ) : (
+        <div className="text-[11px] text-emerald-700 font-bold">Unlimited on this plan</div>
+      )}
+      {overLimit && (
+        <div className="mt-1.5 text-[11px] text-slate-600">
+          {payAsYouGo ? (
+            <>
+              <strong>{(used - (limit as number)).toLocaleString()}</strong> over limit
+              {rate > 0 && (
+                <> · ₹{rate}/unit · <strong>₹{(overageUnits * rate).toFixed(2)}</strong> this period</>
+              )}
+            </>
+          ) : (
+            <span className="text-rose-700">PAYG is OFF — new {label.toLowerCase()} are blocked.</span>
+          )}
         </div>
       )}
-      {danger && <div className="text-[10px] text-rose-600 mt-1 flex items-center gap-1"><AlertCircle size={10} /> Near limit</div>}
     </div>
   );
 }

@@ -461,14 +461,6 @@ export const orderApi = {
     api.patch(`/orders/${id}/fulfillment`, body),
 };
 
-export const vendorApi = {
-  list: () => api.get('/vendors'),
-  get: (id: string) => api.get(`/vendors/${id}`),
-  create: (data: any) => api.post('/vendors', data),
-  update: (id: string, data: any) => api.put(`/vendors/${id}`, data),
-  delete: (id: string) => api.delete(`/vendors/${id}`),
-};
-
 export const warehouseApi = {
   list: () => api.get('/warehouses'),
   get: (id: string) => api.get(`/warehouses/${id}`),

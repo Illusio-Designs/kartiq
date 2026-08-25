@@ -13,10 +13,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { billingApi } from '@/lib/api';
-import { Activity, RefreshCw, Search, ChevronDown } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
-import { Select } from '@/components/ui/Select';
+import { Activity, RefreshCw, ChevronDown } from 'lucide-react';
+import { Button, Badge, Card, Select, SearchField, EmptyState, Loader } from '@/components/ui';
 
 interface AuditRow {
   id: string;
@@ -33,36 +33,47 @@ interface AuditRow {
   createdAt: string;
 }
 
-const VERB_COLORS: Record<string, string> = {
-  create:    'bg-emerald-100 text-emerald-700',
-  update:    'bg-blue-100 text-blue-700',
-  delete:    'bg-rose-100 text-rose-700',
-  suspend:   'bg-amber-100 text-amber-700',
-  activate:  'bg-emerald-100 text-emerald-700',
-  sync:      'bg-violet-100 text-violet-700',
-  connect:   'bg-emerald-100 text-emerald-700',
-  pay:       'bg-emerald-100 text-emerald-700',
-  reply:     'bg-blue-100 text-blue-700',
-  close:     'bg-slate-200 text-slate-600',
-  cancel:    'bg-rose-100 text-rose-700',
-  enable:    'bg-emerald-100 text-emerald-700',
-  disable:   'bg-rose-100 text-rose-700',
-  topup:     'bg-emerald-100 text-emerald-700',
-  reset:     'bg-blue-100 text-blue-700',
-  export:    'bg-violet-100 text-violet-700',
+// Action verb → Badge variant. The verb is the last dotted segment of the
+// action (e.g. `order.create` → `create`).
+type BadgeTint = 'emerald' | 'blue' | 'rose' | 'amber' | 'violet' | 'slate';
+const VERB_VARIANT: Record<string, BadgeTint> = {
+  create:   'emerald',
+  activate: 'emerald',
+  connect:  'emerald',
+  pay:      'emerald',
+  enable:   'emerald',
+  topup:    'emerald',
+  update:   'blue',
+  reply:    'blue',
+  reset:    'blue',
+  delete:   'rose',
+  cancel:   'rose',
+  disable:  'rose',
+  suspend:  'amber',
+  sync:     'violet',
+  export:   'violet',
+  close:    'slate',
 };
 
-const METHOD_COLORS: Record<string, string> = {
-  POST:   'bg-emerald-50 text-emerald-700 border-emerald-200',
-  PUT:    'bg-blue-50 text-blue-700 border-blue-200',
-  PATCH:  'bg-blue-50 text-blue-700 border-blue-200',
-  DELETE: 'bg-rose-50 text-rose-700 border-rose-200',
-  GET:    'bg-slate-50 text-slate-600 border-slate-200',
+// HTTP method chip — semantic tints with explicit dark variants.
+const METHOD_CLASS: Record<string, string> = {
+  POST:   'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/30',
+  PUT:    'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30',
+  PATCH:  'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30',
+  DELETE: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/30',
+  GET:    'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:border-slate-500/30',
 };
 
 function verbFor(action: string): string {
   const parts = action.split('.');
   return parts[parts.length - 1] || action;
+}
+
+function statusColor(code: number): string {
+  if (code >= 500) return 'text-rose-600 dark:text-rose-400';
+  if (code >= 400) return 'text-amber-600 dark:text-amber-400';
+  if (code >= 300) return 'text-blue-600 dark:text-blue-400';
+  return 'text-emerald-600 dark:text-emerald-400';
 }
 
 function relTime(iso: string): string {
@@ -111,168 +122,170 @@ export default function TenantAuditPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-6xl mx-auto">
-        <div className="flex items-start justify-between flex-wrap gap-4 mb-6">
-          <div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-[#06D4B8] to-[#06B6D4] bg-clip-text text-transparent flex items-center gap-2">
-              <Activity size={24} className="text-emerald-600" /> Activity log
-            </h1>
-            <p className="text-slate-500 mt-1">
-              Every change made inside your workspace — useful for security reviews and compliance.
-              Limited to your tenant; older entries are paginated.
-            </p>
-          </div>
-          <Button
-            variant="secondary"
-            leftIcon={<RefreshCw size={14} className={loading ? 'animate-spin' : ''} />}
-            onClick={() => load()}
-          >
-            Refresh
-          </Button>
-        </div>
+      <div className="max-w-6xl mx-auto space-y-4 animate-slide-up">
+        <PageHeader
+          title="Activity Log"
+          subtitle="Every change made inside your workspace — useful for security reviews and compliance. Limited to your tenant."
+          actions={
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={<RefreshCw size={14} className={loading ? 'animate-spin' : ''} />}
+              onClick={() => load()}
+            >
+              Refresh
+            </Button>
+          }
+        />
 
-        {/* Stat strip */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-          <div className="bg-white border border-slate-200 rounded-2xl p-4">
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total events</div>
-            <div className="text-2xl font-bold text-slate-900 mt-1">{total.toLocaleString()}</div>
-          </div>
-          <div className="bg-white border border-slate-200 rounded-2xl p-4">
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Showing</div>
-            <div className="text-2xl font-bold text-slate-900 mt-1">{filtered.length}</div>
-            <div className="text-xs text-slate-500 mt-0.5">most recent {actionFilter ? `· filter: ${actionFilter}` : ''}</div>
-          </div>
-          <div className="bg-white border border-slate-200 rounded-2xl p-4">
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Latest</div>
+        {/* Stat strip — clean Card stat tiles (real values only) */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Card className="p-4">
+            <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" /> Total events
+            </div>
+            <div className="text-2xl font-bold text-slate-900 mt-1 tabular-nums">{total.toLocaleString()}</div>
+          </Card>
+          <Card className="p-4">
+            <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              <span className="w-2 h-2 rounded-full bg-sky-500" /> Showing
+            </div>
+            <div className="text-2xl font-bold text-slate-900 mt-1 tabular-nums">{filtered.length}</div>
+            <div className="text-xs text-slate-500 mt-0.5 truncate">
+              most recent{actionFilter ? ` · filter: ${actionFilter}` : ''}
+            </div>
+          </Card>
+          <Card className="p-4">
+            <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              <span className="w-2 h-2 rounded-full bg-violet-500" /> Latest
+            </div>
             <div className="text-2xl font-bold text-slate-900 mt-1">
               {logs[0] ? relTime(logs[0].createdAt) : '—'}
             </div>
             <div className="text-xs text-slate-500 mt-0.5 truncate">
               {logs[0]?.action || 'No activity yet'}
             </div>
-          </div>
+          </Card>
         </div>
 
-        {/* Filter row */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-3 mb-4 flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search action, user, path, resource id…"
-              className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-white text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 outline-none"
-            />
-          </div>
-          <Select
-            value={actionFilter}
-            onChange={(v) => { setActionFilter(v); load(v); }}
-            options={[
-              { value: '', label: 'All actions' },
-              ...actions.map((a) => ({ value: a.action, label: `${a.action} (${a.count})` })),
-            ]}
-          />
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-          {loading ? (
-            <div className="p-12 text-center text-slate-400 text-sm">Loading…</div>
-          ) : filtered.length === 0 ? (
-            <div className="p-12 text-center text-slate-400 text-sm">
-              <Activity size={28} className="mx-auto mb-3 text-slate-300" />
-              No audit entries match your filter.
+        {/* One card — toolbar header (border-b) · events table */}
+        <Card className="p-0 overflow-hidden">
+          {/* Header: search + action filter */}
+          <div className="p-3 sm:p-4 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-2 flex-wrap">
+              <SearchField
+                value={search}
+                onChange={setSearch}
+                placeholder="Search action, user, path, resource id…"
+                className="flex-1 min-w-[200px] max-w-sm"
+              />
+              <div className="hidden sm:block flex-1" />
+              <Select
+                value={actionFilter}
+                onChange={(v) => { setActionFilter(v); load(v); }}
+                options={[
+                  { value: '', label: 'All actions' },
+                  ...actions.map((a) => ({ value: a.action, label: `${a.action} (${a.count})` })),
+                ]}
+              />
             </div>
-          ) : (
+          </div>
+
+          {/* Events table */}
+          <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="text-left p-3 w-32">When</th>
-                  <th className="text-left p-3">Action</th>
-                  <th className="text-left p-3">User</th>
-                  <th className="text-left p-3">Path</th>
-                  <th className="text-center p-3 w-16">Status</th>
-                  <th className="text-left p-3 w-32">IP</th>
+              <thead className="bg-slate-50/50 border-b border-slate-100">
+                <tr className="text-left text-[10px] uppercase tracking-widest text-slate-400">
+                  <th className="px-4 py-2.5 font-bold w-32">When</th>
+                  <th className="px-4 py-2.5 font-bold">Action</th>
+                  <th className="px-4 py-2.5 font-bold">User</th>
+                  <th className="px-4 py-2.5 font-bold w-full">Target</th>
                 </tr>
               </thead>
-              <tbody>
-                {filtered.map((l) => {
-                  const verb = verbFor(l.action);
-                  const verbColor = VERB_COLORS[verb] || 'bg-slate-100 text-slate-600';
-                  const methodColor = METHOD_COLORS[l.method || ''] || 'bg-slate-50 text-slate-600 border-slate-200';
-                  const isOpen = expanded === l.id;
-                  const meta = l.metadata && typeof l.metadata === 'object'
-                    ? l.metadata
-                    : (typeof l.metadata === 'string' ? safeParse(l.metadata) : null);
-                  return (
-                    <>
-                      <tr
-                        key={l.id}
-                        onClick={() => setExpanded(isOpen ? null : l.id)}
-                        className="border-t border-slate-100 hover:bg-slate-50/40 cursor-pointer"
-                      >
-                        <td className="p-3 text-xs text-slate-500 whitespace-nowrap">
-                          <div className="font-semibold text-slate-700">{relTime(l.createdAt)}</div>
-                          <div className="text-[10px] text-slate-400">{new Date(l.createdAt).toLocaleString()}</div>
-                        </td>
-                        <td className="p-3">
-                          <div className="flex items-center gap-2">
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${verbColor}`}>
-                              {verb}
-                            </span>
-                            <span className="font-mono text-xs text-slate-700">{l.action}</span>
-                            <ChevronDown
-                              size={12}
-                              className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-                            />
-                          </div>
-                          {l.resourceId && (
-                            <div className="text-[10px] font-mono text-slate-400 mt-0.5">#{l.resourceId.slice(0, 8)}</div>
-                          )}
-                        </td>
-                        <td className="p-3 text-xs text-slate-700 truncate max-w-[200px]">{l.userEmail || '—'}</td>
-                        <td className="p-3">
-                          <div className="flex items-start gap-2">
-                            {l.method && (
-                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${methodColor}`}>
-                                {l.method}
-                              </span>
+              <tbody className="divide-y divide-slate-100">
+                {loading ? (
+                  <tr><td colSpan={4}><Loader size="sm" /></td></tr>
+                ) : filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="p-0">
+                      <EmptyState
+                        icon={<Activity size={28} />}
+                        iconBg="bg-emerald-50 text-emerald-600"
+                        title="No activity to show"
+                        description="No audit entries match your current search or filter. Actions across your workspace will appear here as they happen."
+                      />
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((l) => {
+                    const verb = verbFor(l.action);
+                    const isOpen = expanded === l.id;
+                    const meta = l.metadata && typeof l.metadata === 'object'
+                      ? l.metadata
+                      : (typeof l.metadata === 'string' ? safeParse(l.metadata) : null);
+                    return (
+                      <>
+                        <tr
+                          key={l.id}
+                          onClick={() => setExpanded(isOpen ? null : l.id)}
+                          className="hover:bg-slate-50/70 transition-colors cursor-pointer"
+                        >
+                          <td className="px-4 py-3 whitespace-nowrap align-top">
+                            <div className="font-semibold text-slate-700 text-xs">{relTime(l.createdAt)}</div>
+                            <div className="text-[10px] text-slate-400">{new Date(l.createdAt).toLocaleString()}</div>
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            <div className="flex items-center gap-2">
+                              <Badge variant={VERB_VARIANT[verb] || 'slate'} className="font-mono">{l.action}</Badge>
+                              <ChevronDown
+                                size={12}
+                                className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                              />
+                            </div>
+                            {l.resourceId && (
+                              <div className="text-[10px] font-mono text-slate-400 mt-1">#{l.resourceId.slice(0, 8)}</div>
                             )}
-                            <span className="text-xs font-mono text-slate-600 truncate max-w-xs">{l.path}</span>
-                          </div>
-                        </td>
-                        <td className="p-3 text-center">
-                          {l.statusCode != null && (
-                            <span className={`text-xs font-bold ${
-                              l.statusCode >= 500 ? 'text-rose-600' :
-                              l.statusCode >= 400 ? 'text-amber-600' :
-                              l.statusCode >= 300 ? 'text-blue-600' :
-                                                    'text-emerald-600'
-                            }`}>
-                              {l.statusCode}
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-3 text-xs font-mono text-slate-500">{l.ip || '—'}</td>
-                      </tr>
-                      {isOpen && meta && (
-                        <tr key={`${l.id}-meta`} className="bg-slate-50/60 border-t border-slate-100">
-                          <td colSpan={6} className="p-3">
-                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Metadata</div>
-                            <pre className="text-[11px] font-mono text-slate-600 bg-white border border-slate-200 rounded-lg p-3 overflow-x-auto">
-{JSON.stringify(meta, null, 2)}
-                            </pre>
+                          </td>
+                          <td className="px-4 py-3 align-top text-xs text-slate-700 truncate max-w-[200px]">
+                            {l.userEmail || '—'}
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {l.method && (
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${METHOD_CLASS[l.method] || METHOD_CLASS.GET}`}>
+                                  {l.method}
+                                </span>
+                              )}
+                              <span className="text-xs font-mono text-slate-600 truncate max-w-xs">{l.path || '—'}</span>
+                              {l.statusCode != null && (
+                                <span className={`text-xs font-bold ${statusColor(l.statusCode)}`}>{l.statusCode}</span>
+                              )}
+                            </div>
+                            {l.ip && (
+                              <div className="text-[10px] font-mono text-slate-400 mt-1">{l.ip}</div>
+                            )}
                           </td>
                         </tr>
-                      )}
-                    </>
-                  );
-                })}
+                        {isOpen && meta && (
+                          <tr key={`${l.id}-meta`} className="bg-slate-50/60">
+                            <td colSpan={4} className="px-4 py-3">
+                              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Metadata</div>
+                              <pre className="text-[11px] font-mono text-slate-600 bg-white border border-slate-200 rounded-lg p-3 overflow-x-auto">
+{JSON.stringify(meta, null, 2)}
+                              </pre>
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    );
+                  })
+                )}
               </tbody>
             </table>
-          )}
-        </div>
+          </div>
+        </Card>
 
-        <p className="text-[11px] text-slate-400 mt-4">
+        <p className="text-[11px] text-slate-400">
           Showing up to 200 most recent entries for your tenant. Click any row to expand its metadata.
           For longer-range investigations, contact support.
         </p>
