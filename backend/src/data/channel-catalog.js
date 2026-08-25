@@ -296,7 +296,7 @@ const CATALOG = [
     type: 'SWIGGY_INSTAMART',
     category: 'QUICKCOM',
     name: 'Swiggy Instamart',
-    tagline: '10–30 minute grocery delivery by Swiggy',
+    tagline: 'Partner API (approval-gated via Swiggy Builders Club)',
     integrated: true,
     requiresApproval: true,
     features: ['orders', 'inventory'],
@@ -305,7 +305,9 @@ const CATALOG = [
       { key: 'clientSecret', label: 'Client Secret', type: 'password', required: true },
       { key: 'sellerId',     label: 'Seller ID',     type: 'text',     required: true },
     ],
-    applyUrl: 'https://partner.swiggy.com',
+    // Not self-serve: production credentials are issued only after Swiggy
+    // reviews your integration via Builders Club (mcp.swiggy.com/builders).
+    applyUrl: 'https://mcp.swiggy.com/builders',
   },
   {
     type: 'BB_NOW',

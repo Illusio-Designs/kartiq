@@ -397,9 +397,18 @@ export const CHANNEL_SCHEMAS: Record<string, ChannelSchema> = {
   SWIGGY_INSTAMART: {
     type: 'SWIGGY_INSTAMART',
     name: 'Swiggy Instamart',
+    description: 'Partner API — not self-serve. API access is approval-gated through Swiggy Builders Club; credentials are issued only after Swiggy reviews your integration. You must already be a live Instamart seller.',
+    docsUrl: 'https://mcp.swiggy.com/builders',
+    steps: [
+      'Be a live seller on Swiggy Instamart (onboard via the Instamart partner portal first).',
+      'Apply for API access at Swiggy Builders Club (mcp.swiggy.com/builders) — you can prototype for free, but production needs review.',
+      'Submit your integration/use-case + security details; Swiggy reviews and issues production credentials.',
+      'Or ask your Swiggy Instamart category/account manager whether partner (feed/API) access is available for your account.',
+      'Once Swiggy grants credentials, paste your Partner ID + API Key below and click Test & Save.',
+    ],
     fields: [
-      { key: 'partnerId', label: 'Partner ID', kind: 'text',     required: true, help: 'Swiggy Partner Portal → Profile → Brand. Numeric partner ID from onboarding email.' },
-      { key: 'apiKey',    label: 'API Key',    kind: 'password', required: true, secret: true, help: 'Issued by Swiggy Instamart KAM — request via instamart.partners@swiggy.in.' },
+      { key: 'partnerId', label: 'Partner ID', kind: 'text',     required: true, help: 'From your approved Swiggy Builders Club application / partner onboarding.' },
+      { key: 'apiKey',    label: 'API Key',    kind: 'password', required: true, secret: true, help: 'Production credential issued by Swiggy after review — not available self-serve.' },
     ],
   },
 
