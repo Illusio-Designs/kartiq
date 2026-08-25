@@ -375,6 +375,103 @@ class AmazonAdapter {
     return out;
   }
 
+  // Pull the seller's ENTIRE catalog — every active listing, FBA *and*
+  // merchant-fulfilled, with price + quantity — in one shot via the Reports
+  // API. fetchInventorySummaries (above) only sees FBA items that currently
+  // hold stock; this is the "all products at once" path. Flow: request a
+  // GET_MERCHANT_LISTINGS_ALL_DATA report, poll until DONE, download the
+  // (optionally gzipped) flat file, and parse its tab-separated rows.
+  //
+  // Requires the app + seller authorization to include the Amazon "Product
+  // Listing" / Reports role; without it the createReport call 403s.
+  async fetchAllListings() {
+    const zlib = require('zlib');
+    const REPORTS = '/reports/2021-06-30';
+
+    // 1. Ask Amazon to build the listings report.
+    const token = await this._getAccessToken();
+    let reportId;
+    try {
+      const { data } = await axios({
+        method: 'POST',
+        url: `${this.endpoint}${REPORTS}/reports`,
+        headers: { 'x-amz-access-token': token, 'Content-Type': 'application/json' },
+        data: { reportType: 'GET_MERCHANT_LISTINGS_ALL_DATA', marketplaceIds: [this.marketplaceId] },
+      });
+      reportId = data.reportId;
+    } catch (err) {
+      const status = err.response?.status;
+      const apiMsg = err.response?.data?.errors?.[0]?.message || err.message;
+      const hint = status === 403
+        ? ' — the seller/app must be authorized for the Amazon Product Listing (Reports) role.'
+        : '';
+      throw new Error(`Amazon createReport failed (${status || '?'}): ${apiMsg}${hint}`);
+    }
+    if (!reportId) throw new Error('Amazon createReport returned no reportId');
+
+    // 2. Poll until the report finishes (usually seconds; cap ~80s so the
+    //    request can't hang forever — a very large catalog can be moved to a
+    //    background job later).
+    let documentId = null;
+    for (let i = 0; i < 20; i++) {
+      await this._sleep(i === 0 ? 3000 : 4000);
+      const r = await this._request('GET', `${REPORTS}/reports/${reportId}`);
+      const st = r.processingStatus;
+      if (st === 'DONE') { documentId = r.reportDocumentId; break; }
+      if (st === 'CANCELLED') return [];               // nothing to report
+      if (st === 'FATAL') throw new Error('Amazon listings report failed (FATAL) — check the seller authorization/roles.');
+    }
+    if (!documentId) throw new Error('Amazon listings report is still processing — try Pull Catalog again in a moment.');
+
+    // 3. Fetch the document handle (presigned URL + optional gzip) and download.
+    const meta = await this._request('GET', `${REPORTS}/documents/${documentId}`);
+    const resp = await axios.get(meta.url, { responseType: 'arraybuffer' });
+    let buf = Buffer.from(resp.data);
+    if (meta.compressionAlgorithm === 'GZIP') buf = zlib.gunzipSync(buf);
+    // Amazon flat files are Latin-1 unless the handle says otherwise.
+    const enc = /utf-?8/i.test(meta.reportDocumentEncoding || '') ? 'utf-8' : 'latin1';
+    return this._parseListingsReport(buf.toString(enc));
+  }
+
+  // Parse a GET_MERCHANT_LISTINGS_ALL_DATA flat file (tab-separated, header
+  // row) into the shape importCatalogFromChannel expects. Column order varies
+  // by marketplace, so we index by header name (and tolerate the British
+  // "fulfilment-channel" spelling). fulfillment-channel "DEFAULT" = merchant
+  // fulfilled (SELF); anything else (AMAZON_*) = FBA (CHANNEL).
+  _parseListingsReport(text) {
+    const lines = String(text).split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2) return [];
+    const header = lines[0].split('\t').map((h) => h.trim().toLowerCase());
+    const col = (name) => header.indexOf(name);
+    const iSku   = col('seller-sku');
+    const iName  = col('item-name');
+    const iPrice = col('price');
+    const iQty   = col('quantity');
+    const iAsin  = col('asin1') !== -1 ? col('asin1') : col('product-id');
+    const iFulfil = col('fulfillment-channel') !== -1 ? col('fulfillment-channel') : col('fulfilment-channel');
+    const iStatus = col('status');
+    if (iSku === -1) return [];
+
+    const out = [];
+    for (let r = 1; r < lines.length; r++) {
+      const c = lines[r].split('\t');
+      const sku = (c[iSku] || '').trim();
+      if (!sku) continue;
+      if (iStatus !== -1 && /inactive/i.test(c[iStatus] || '')) continue; // skip inactive listings
+      const fulfil = (iFulfil !== -1 ? c[iFulfil] : '').trim().toUpperCase();
+      out.push({
+        channelSku: sku,
+        name: (iName !== -1 && c[iName] ? c[iName] : sku).trim(),
+        quantity: iQty !== -1 ? Number(c[iQty]) || 0 : 0,
+        unitPrice: iPrice !== -1 ? Number(c[iPrice]) || 0 : 0,
+        asin: iAsin !== -1 ? (c[iAsin] || '').trim() : undefined,
+        // DEFAULT / '' = merchant-fulfilled; AMAZON_* = FBA.
+        fulfillmentType: fulfil && fulfil !== 'DEFAULT' ? 'CHANNEL' : 'SELF',
+      });
+    }
+    return out;
+  }
+
   _transformOrder(o) {
     return {
       channelOrderId: o.AmazonOrderId,
