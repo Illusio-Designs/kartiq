@@ -9,7 +9,7 @@ import { formatCurrency, formatDateTime } from '@/lib/utils';
 import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import {
   Button, Badge, Card, Modal, Input, Textarea, Select, Pagination, Tooltip, Loader, Tabs, EmptyState, Checkbox,
-  SearchField, DateRangePicker, Popover, BulkActionBar, DensityToggle, Dropdown, Kbd, useConfirm,
+  SearchField, DatePicker, Popover, BulkActionBar, DensityToggle, Dropdown, Kbd, useConfirm,
 } from '@/components/ui';
 import type { Density } from '@/components/ui';
 import { AlertTriangle, CheckCircle2, Plus, Star, Trash2, XCircle, Zap, Hand, Layers, ShoppingBag, Plug, RefreshCw, Download, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Eye, Pencil, Lock, Truck, Info, ListFilter, ArrowUpDown, Bookmark, X } from 'lucide-react';
@@ -252,14 +252,13 @@ export default function OrdersPage() {
   };
 
   // ── Active filters (popover count + removable chips) ──
-  const activeFilterCount = (status ? 1 : 0) + (risk ? 1 : 0) + (dateFrom || dateTo ? 1 : 0);
+  const activeFilterCount = (status ? 1 : 0) + (risk ? 1 : 0) + (dateFrom ? 1 : 0);
   const statusLabel = STATUSES.find((s) => s.value === status)?.label;
   const riskLabel = RISK_FILTERS.find((r) => r.value === risk)?.label;
-  const dateLabel = dateFrom && dateTo ? `${dateFrom} → ${dateTo}` : dateFrom ? `From ${dateFrom}` : dateTo ? `Until ${dateTo}` : '';
   const activeChips = [
     status ? { key: 'status', label: `Status: ${statusLabel}`, clear: () => { setStatus(''); setPage(1); } } : null,
     risk ? { key: 'risk', label: `Risk: ${riskLabel}`, clear: () => { setRisk(''); setPage(1); } } : null,
-    (dateFrom || dateTo) ? { key: 'date', label: dateLabel, clear: () => { setDateFrom(''); setDateTo(''); setPage(1); } } : null,
+    dateFrom ? { key: 'date', label: `Since ${dateFrom}`, clear: () => { setDateFrom(''); setPage(1); } } : null,
     search ? { key: 'search', label: `“${search}”`, clear: () => setSearch('') } : null,
   ].filter(Boolean) as { key: string; label: string; clear: () => void }[];
   const clearFilters = () => { setStatus(''); setRisk(''); setDateFrom(''); setDateTo(''); setSearch(''); setPage(1); };
@@ -511,8 +510,17 @@ export default function OrdersPage() {
               <Select label="Status" fullWidth value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={STATUSES} placeholder="All Statuses" />
               <Select label="Risk" fullWidth value={risk} onChange={(v) => { setRisk(v); setPage(1); }} options={RISK_FILTERS} placeholder="All Risk" />
               <div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Date range</label>
-                <DateRangePicker from={dateFrom} to={dateTo} onChange={(f, t) => { setDateFrom(f); setDateTo(t); setPage(1); }} />
+                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Orders since</label>
+                <DatePicker
+                  value={dateFrom ? new Date(dateFrom) : null}
+                  placeholder="Pick a start date"
+                  className="w-full"
+                  onChange={(d) => {
+                    const m = String(d.getMonth() + 1).padStart(2, '0');
+                    const day = String(d.getDate()).padStart(2, '0');
+                    setDateFrom(`${d.getFullYear()}-${m}-${day}`); setPage(1);
+                  }}
+                />
               </div>
               {activeFilterCount > 0 && (
                 <div className="pt-2 border-t border-slate-100">

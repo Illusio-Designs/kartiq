@@ -28,7 +28,6 @@ export { MultiSelect } from './MultiSelect';
 export type { MultiSelectOption } from './MultiSelect';
 export { Popover } from './Popover';
 export { SearchField } from './SearchField';
-export { DateRangePicker } from './DateRangePicker';
 export { BulkActionBar } from './BulkActionBar';
 export { DensityToggle } from './DensityToggle';
 export type { Density } from './DensityToggle';
