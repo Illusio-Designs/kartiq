@@ -851,7 +851,7 @@ export default function OrdersPage() {
             </div>
 
             {editOrder.fulfillmentType === 'CHANNEL' ? (
-              <div className="flex items-start gap-2.5 rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm text-violet-800">
+              <div className="flex items-start gap-2.5 rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm text-violet-800 dark:text-violet-200">
                 <Truck size={16} className="text-violet-600 mt-0.5 flex-shrink-0" />
                 <div><span className="font-bold">Fulfilled by Amazon.</span> Stock and shipping are handled by Amazon, so this order is read-only in Kartriq — its status and tracking sync in automatically.</div>
               </div>

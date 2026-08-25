@@ -356,7 +356,7 @@ export function Sidebar({
                   </p>
                   <Link
                     href="/dashboard/billing"
-                    className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-white text-emerald-700 text-xs font-bold rounded-lg hover:bg-emerald-50 transition-colors"
+                    className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-white text-emerald-700 dark:!bg-white dark:!text-emerald-700 dark:hover:!bg-emerald-50 text-xs font-bold rounded-lg hover:bg-emerald-50 transition-colors"
                   >
                     <Sparkles size={12} /> View plans
                   </Link>

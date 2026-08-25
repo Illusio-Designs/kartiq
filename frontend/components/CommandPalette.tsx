@@ -357,7 +357,7 @@ export function CommandPalette() {
                     onMouseEnter={() => setActive(idx)}
                     onClick={() => item.run()}
                     className={`w-full flex items-center gap-3 px-4 py-2 text-left text-sm transition-colors ${
-                      isActive ? 'bg-emerald-50 text-emerald-900' : 'text-slate-700 hover:bg-slate-50'
+                      isActive ? 'bg-emerald-50 text-emerald-900 dark:text-emerald-200' : 'text-slate-700 hover:bg-slate-50'
                     }`}
                   >
                     <Icon size={15} className={isActive ? 'text-emerald-600' : 'text-slate-400'} />
