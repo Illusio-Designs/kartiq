@@ -4,11 +4,11 @@ import { useParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Package, Truck } from 'lucide-react';
-import { orderApi } from '@/lib/api';
+import { ArrowLeft, Package, Truck, PackageCheck, Navigation, XCircle } from 'lucide-react';
+import { orderApi, channelApi } from '@/lib/api';
 import { formatCurrency, formatDateTime, ORDER_STATUS_COLORS } from '@/lib/utils';
 import { DetailPageSkeleton } from '@/components/Shimmer';
-import { Badge, Button, Card, Input, Select } from '@/components/ui';
+import { Badge, Button, Card, Input, Select, useConfirm } from '@/components/ui';
 import { toast } from '@/store/toast.store';
 
 // Statuses a seller can set manually on a self-fulfilled (MFN) / manual order.
@@ -66,6 +66,66 @@ export default function OrderDetailPage() {
     },
     onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Failed to update order'),
   });
+
+  // ── Amazon MCF (multi-channel fulfilment) ──────────────────────────────────
+  // Find the first connected AMAZON_SMARTBIZ / AMAZON_FBA channel — the "MCF
+  // channel" that can fulfil this order via Amazon's warehouses.
+  const [confirmUi, confirm] = useConfirm();
+  const [mcfTracking, setMcfTracking] = useState<string | null>(null);
+  const { data: channelsData } = useQuery({
+    queryKey: ['channels'],
+    queryFn: () => channelApi.list().then((r) => r.data),
+  });
+  const channels: any[] = Array.isArray(channelsData) ? channelsData : (channelsData?.channels || []);
+  const mcfChannel = channels.find((c) => {
+    const t = String(c.type || '').toUpperCase();
+    return t === 'AMAZON_SMARTBIZ' || t === 'AMAZON_FBA';
+  });
+
+  const mcfFulfillMutation = useMutation({
+    mutationFn: () => channelApi.mcfFulfill(mcfChannel.id, id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['order', id] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      toast.success('Fulfilment requested via Amazon MCF');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'MCF fulfilment failed'),
+  });
+  const mcfTrackMutation = useMutation({
+    mutationFn: (orderNumber: string) => channelApi.mcfTrack(mcfChannel.id, orderNumber).then((r) => r.data),
+    onSuccess: (data: any) => {
+      const st = data?.status || data?.trackingStatus || data?.state;
+      setMcfTracking(st ? String(st) : 'No tracking status yet');
+      toast.success(st ? `Amazon status: ${st}` : 'Tracking retrieved');
+    },
+    onError: (e: any) => { setMcfTracking(null); toast.error(e?.response?.data?.error || e.message || 'Could not fetch tracking'); },
+  });
+  const mcfCancelMutation = useMutation({
+    mutationFn: (orderNumber: string) => channelApi.mcfCancel(mcfChannel.id, orderNumber),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['order', id] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      setMcfTracking(null);
+      toast.success('MCF order cancelled');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'MCF cancel failed'),
+  });
+
+  const handleMcfFulfill = async () => {
+    const ok = await confirm({
+      title: 'Fulfil via Amazon?',
+      description: `Amazon will pick, pack, and ship this order from its own warehouses (MCF). This creates a real fulfilment order on ${mcfChannel?.name || 'Amazon'}.`,
+    });
+    if (ok) mcfFulfillMutation.mutate();
+  };
+  const handleMcfCancel = async () => {
+    const ok = await confirm({
+      title: 'Cancel Amazon fulfilment?',
+      description: 'This asks Amazon to cancel the MCF fulfilment order. It may not be possible once the order has shipped.',
+      variant: 'danger',
+    });
+    if (ok) mcfCancelMutation.mutate(order.orderNumber);
+  };
 
   if (isLoading) {
     return <DetailPageSkeleton />;
@@ -192,6 +252,56 @@ export default function OrderDetailPage() {
           </Card>
         ) : null}
 
+        {/* Amazon fulfilment (MCF) — only when an AMAZON_SMARTBIZ / AMAZON_FBA
+            channel is connected. Lets the seller fulfil this order out of
+            Amazon's warehouses, track it, and cancel it. */}
+        {mcfChannel && (
+          <Card className="p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <PackageCheck size={15} className="text-emerald-600" />
+              <span className="text-sm font-bold text-slate-800">Amazon fulfilment (MCF)</span>
+              <Badge variant="violet" dot>{mcfChannel.name}</Badge>
+            </div>
+            <p className="text-xs text-slate-500">
+              Fulfil this order from Amazon&apos;s warehouses via Multi-Channel Fulfilment. Amazon picks, packs, and ships it, then reports tracking back here.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                leftIcon={<PackageCheck size={14} />}
+                loading={mcfFulfillMutation.isPending}
+                onClick={handleMcfFulfill}
+              >
+                Fulfil via Amazon
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={<Navigation size={14} />}
+                loading={mcfTrackMutation.isPending}
+                onClick={() => mcfTrackMutation.mutate(order.orderNumber)}
+              >
+                Track
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                leftIcon={<XCircle size={14} />}
+                loading={mcfCancelMutation.isPending}
+                onClick={handleMcfCancel}
+              >
+                Cancel
+              </Button>
+            </div>
+            {mcfTracking && (
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Amazon status</span>
+                <span className="font-semibold text-slate-700">{mcfTracking}</span>
+              </div>
+            )}
+          </Card>
+        )}
+
         {/* Summary cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <InfoCard label="Total" value={formatCurrency(order.total || 0)} />
@@ -292,6 +402,8 @@ export default function OrderDetailPage() {
             </div>
           </Card>
         )}
+
+        {confirmUi}
     </div>
   );
 }

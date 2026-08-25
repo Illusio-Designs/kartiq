@@ -128,6 +128,7 @@ export default function OrdersPage() {
   const [pageSize, setPageSize] = useState(20);
   const [status, setStatus] = useState('');
   const [risk, setRisk] = useState('');
+  const [channelId, setChannelId] = useState('');
   const [fulfillmentTab, setFulfillmentTab] = useState<FulfillmentTab>('all');
   const [reviewResult, setReviewResult] = useState<{ id: string; type: 'success' | 'error'; message: string } | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -199,18 +200,28 @@ export default function OrdersPage() {
   const visibleColumns = ORDER_COLUMNS.filter((c) => !hiddenCols.has(c.key));
 
   const { data, isLoading } = useQuery({
-    queryKey: ['orders', page, pageSize, status, risk, fulfillmentTab, dateFrom, dateTo],
+    queryKey: ['orders', page, pageSize, status, risk, channelId, fulfillmentTab, dateFrom, dateTo],
     queryFn: () => orderApi.list({
       page,
       limit: pageSize,
       status: status || undefined,
       risk: risk && risk !== 'APPROVAL' ? risk : undefined,
       needsApproval: risk === 'APPROVAL' ? 'true' : undefined,
+      // Server-side channel filter — the orders controller accepts `channelId`.
+      channelId: channelId || undefined,
       fulfillment: FULFILLMENT_PARAM[fulfillmentTab],
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
     }).then(r => r.data),
   });
+
+  // Connected channels — powers the channel filter, per-channel sync menu,
+  // and the all-channels "Sync now" fan-out.
+  const { data: channelsData } = useQuery({
+    queryKey: ['channels'],
+    queryFn: () => channelApi.list().then((r) => r.data),
+  });
+  const channels: any[] = Array.isArray(channelsData) ? channelsData : (channelsData?.channels || []);
 
   // Topbar global search — filters the visible orders by order number,
   // customer name/email/phone, channel order id and status.
@@ -239,7 +250,7 @@ export default function OrdersPage() {
   }, [searchedOrders, sortKey, sortDir]);
 
   // ── Selection (bulk actions) ──
-  useEffect(() => { setSelected(new Set()); }, [page, status, risk, fulfillmentTab, dateFrom, dateTo]);
+  useEffect(() => { setSelected(new Set()); }, [page, status, risk, channelId, fulfillmentTab, dateFrom, dateTo]);
   const allSelected = sortedOrders.length > 0 && sortedOrders.every((o: any) => selected.has(o.id));
   const toggleAll = () => {
     setSelected((prev) => {
@@ -252,17 +263,19 @@ export default function OrdersPage() {
   };
 
   // ── Active filters (popover count + removable chips) ──
-  const activeFilterCount = (status ? 1 : 0) + (risk ? 1 : 0) + ((dateFrom || dateTo) ? 1 : 0);
+  const activeFilterCount = (status ? 1 : 0) + (risk ? 1 : 0) + (channelId ? 1 : 0) + ((dateFrom || dateTo) ? 1 : 0);
   const statusLabel = STATUSES.find((s) => s.value === status)?.label;
   const riskLabel = RISK_FILTERS.find((r) => r.value === risk)?.label;
+  const channelLabel = channels.find((c) => c.id === channelId)?.name;
   const dateLabel = dateFrom && dateTo ? `${dateFrom} → ${dateTo}` : dateFrom ? `From ${dateFrom}` : dateTo ? `Until ${dateTo}` : '';
   const activeChips = [
     status ? { key: 'status', label: `Status: ${statusLabel}`, clear: () => { setStatus(''); setPage(1); } } : null,
     risk ? { key: 'risk', label: `Risk: ${riskLabel}`, clear: () => { setRisk(''); setPage(1); } } : null,
+    channelId ? { key: 'channel', label: `Channel: ${channelLabel || '—'}`, clear: () => { setChannelId(''); setPage(1); } } : null,
     (dateFrom || dateTo) ? { key: 'date', label: dateLabel, clear: () => { setDateFrom(''); setDateTo(''); setPage(1); } } : null,
     search ? { key: 'search', label: `“${search}”`, clear: () => setSearch('') } : null,
   ].filter(Boolean) as { key: string; label: string; clear: () => void }[];
-  const clearFilters = () => { setStatus(''); setRisk(''); setDateFrom(''); setDateTo(''); setSearch(''); setPage(1); };
+  const clearFilters = () => { setStatus(''); setRisk(''); setChannelId(''); setDateFrom(''); setDateTo(''); setSearch(''); setPage(1); };
 
   // Export a set of rows (visible columns) to CSV.
   const exportRows = (rows: any[]) => {
@@ -314,11 +327,6 @@ export default function OrdersPage() {
   });
 
   // Pull the latest orders from every connected channel.
-  const { data: channelsData } = useQuery({
-    queryKey: ['channels'],
-    queryFn: () => channelApi.list().then((r) => r.data),
-  });
-  const channels: any[] = Array.isArray(channelsData) ? channelsData : (channelsData?.channels || []);
   const syncMutation = useMutation({
     mutationFn: async () => {
       if (!channels.length) throw new Error('No channels connected yet');
@@ -331,6 +339,25 @@ export default function OrdersPage() {
       toast.success(`Synced ${ok} channel${ok !== 1 ? 's' : ''}${failed ? `, ${failed} failed` : ''}`);
     },
     onError: (e: any) => toast.error(e?.response?.data?.error || e.message),
+  });
+
+  // Sync a single channel — shows the imported/updated counts it returns.
+  const [syncingChannelId, setSyncingChannelId] = useState<string | null>(null);
+  const syncOneMutation = useMutation({
+    mutationFn: async (ch: any) => {
+      setSyncingChannelId(ch.id);
+      const res = await channelApi.syncOrders(ch.id);
+      return { ch, data: res.data };
+    },
+    onSuccess: ({ ch, data }) => {
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      const imported = data?.imported ?? 0;
+      const updated = data?.updated ?? 0;
+      const parts = [imported ? `${imported} new` : null, updated ? `${updated} updated` : null].filter(Boolean);
+      toast.success(`${ch.name}: ${parts.length ? parts.join(', ') : 'up to date'}`);
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || e?.response?.data?.details || e.message || 'Sync failed'),
+    onSettled: () => setSyncingChannelId(null),
   });
 
   const reviewMutation = useMutation({
@@ -506,9 +533,40 @@ export default function OrdersPage() {
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <p className="text-sm font-medium text-slate-500">{`${data?.total || 0} total orders`}</p>
               <div className="flex items-center gap-2">
-                <Button variant="secondary" size="sm" leftIcon={<RefreshCw size={15} />} loading={syncMutation.isPending} onClick={() => syncMutation.mutate()}>
-                  Sync
-                </Button>
+                {/* Split button — Sync (all channels) + a menu to sync ONE channel */}
+                <div className="flex items-center">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    leftIcon={<RefreshCw size={15} />}
+                    loading={syncMutation.isPending}
+                    onClick={() => syncMutation.mutate()}
+                    className={channels.length ? 'rounded-r-none' : ''}
+                  >
+                    Sync
+                  </Button>
+                  {channels.length > 0 && (
+                    <Dropdown
+                      align="right"
+                      trigger={
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="rounded-l-none border-l border-slate-200 px-1.5"
+                          loading={syncOneMutation.isPending}
+                          aria-label="Sync a single channel"
+                        >
+                          <ChevronsUpDown size={14} />
+                        </Button>
+                      }
+                      items={channels.map((ch) => ({
+                        label: `Sync ${ch.name}${syncingChannelId === ch.id ? '…' : ''}`,
+                        icon: <Plug size={14} />,
+                        onClick: () => syncOneMutation.mutate(ch),
+                      }))}
+                    />
+                  )}
+                </div>
                 <Button size="sm" leftIcon={<Plus size={15} />} onClick={() => setModalOpen(true)}>
                   New Order
                 </Button>
@@ -792,6 +850,14 @@ export default function OrdersPage() {
         <div className="space-y-4">
           <Select label="Status" fullWidth value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={STATUSES} placeholder="All Statuses" />
           <Select label="Risk" fullWidth value={risk} onChange={(v) => { setRisk(v); setPage(1); }} options={RISK_FILTERS} placeholder="All Risk" />
+          <Select
+            label="Channel"
+            fullWidth
+            value={channelId}
+            onChange={(v) => { setChannelId(v); setPage(1); }}
+            options={[{ value: '', label: 'All channels' }, ...channels.map((c) => ({ value: c.id, label: c.name }))]}
+            placeholder="All channels"
+          />
           <div>
             <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Date range</label>
             <DateRangePicker from={dateFrom} to={dateTo} onChange={(f, t) => { setDateFrom(f); setDateTo(t); setPage(1); }} />
