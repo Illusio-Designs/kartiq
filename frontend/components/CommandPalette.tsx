@@ -18,7 +18,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import {
-  LayoutDashboard, Package, ShoppingBag, Users, Plug, Truck, FileText, Building2,
+  LayoutDashboard, Package, ShoppingBag, Users, Plug, FileText, Building2,
   Store, Wallet, Settings, BarChart3, Plus, Search, ArrowRight, CornerDownLeft,
   LifeBuoy, Activity, Cpu, FileEdit, Inbox, Megaphone,
 } from 'lucide-react';
@@ -137,7 +137,6 @@ export function CommandPalette() {
       { id: 'go-products',   group: 'Pages', label: 'Catalog',       icon: Package,         run: go('/products') },
       { id: 'go-warehouses', group: 'Pages', label: 'Warehouses',    icon: Store,           run: go('/warehouses') },
       { id: 'go-channels',   group: 'Pages', label: 'Channels',      icon: Plug,            run: go('/channels') },
-      { id: 'go-shipments',  group: 'Pages', label: 'Shipments',     icon: Truck,           run: go('/shipments') },
       { id: 'go-reports',    group: 'Pages', label: 'Reports',       icon: BarChart3,       run: go('/reports') },
       { id: 'go-help',       group: 'Pages', label: 'Help desk',     icon: LifeBuoy,        run: go('/help') },
 

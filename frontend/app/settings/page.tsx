@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
 import {
   Button, Card, Input, Switch, PasswordInput, Badge, Avatar,
   PhoneField, isPhoneEmpty, validatePhone,
@@ -129,41 +130,41 @@ export default function SettingsPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-5 animate-slide-up max-w-5xl">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-[#06D4B8] to-[#06B6D4] bg-clip-text text-transparent tracking-tight">Settings</h1>
-          <p className="text-sm text-slate-500 mt-1">Manage your account and workspace</p>
-        </div>
+      <div className="animate-slide-up max-w-5xl">
+        <PageHeader
+          title="Settings"
+          subtitle="Manage your profile, company details, security and notifications."
+        />
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
-          {/* Tabs */}
-          <div className="lg:col-span-1">
-            <Card className="p-2">
-              <nav className="space-y-0.5">
-                {TABS.map(t => {
-                  const Icon = t.icon;
-                  const active = tab === t.key;
-                  return (
-                    <button
-                      key={t.key}
-                      onClick={() => setTab(t.key)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
-                        active
-                          ? 'bg-emerald-50 text-emerald-700'
-                          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                      }`}
-                    >
-                      <Icon size={15} className={active ? 'text-emerald-600' : 'text-slate-400'} />
-                      {t.label}
-                    </button>
-                  );
-                })}
-              </nav>
-            </Card>
-          </div>
+        {/* Two-column rail + panel; stacks on narrow screens */}
+        <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-5 items-start">
+          {/* Tab rail */}
+          <Card className="p-2 lg:sticky lg:top-20">
+            <nav className="flex flex-col gap-0.5">
+              {TABS.map(t => {
+                const Icon = t.icon;
+                const active = tab === t.key;
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => setTab(t.key)}
+                    aria-current={active ? 'page' : undefined}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-left transition-colors ${
+                      active
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <Icon size={15} className={active ? 'text-emerald-600' : 'text-slate-400'} />
+                    {t.label}
+                  </button>
+                );
+              })}
+            </nav>
+          </Card>
 
-          {/* Content */}
-          <div className="lg:col-span-3 space-y-4">
+          {/* Active panel */}
+          <div className="space-y-4">
             {tab === 'profile' && (
               <Card className="p-6">
                 <h2 className="font-bold text-lg text-slate-900 mb-1">Profile</h2>
@@ -178,13 +179,23 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="space-y-4">
-                  <Input label="Full Name" value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} />
-                  <Input label="Email" type="email" leftIcon={<Mail size={14} />} value={profile.email} onChange={(e) => setProfile({ ...profile, email: e.target.value })} />
-                  <PhoneField
-                    label="Phone"
-                    value={profile.phone}
-                    onChange={(v) => { setProfile({ ...profile, phone: v }); if (profilePhoneError) setProfilePhoneError(null); }}
-                    error={profilePhoneError || undefined}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Input label="Full Name" value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} />
+                    <PhoneField
+                      label="Phone"
+                      value={profile.phone}
+                      onChange={(v) => { setProfile({ ...profile, phone: v }); if (profilePhoneError) setProfilePhoneError(null); }}
+                      error={profilePhoneError || undefined}
+                    />
+                  </div>
+                  <Input
+                    label="Email"
+                    type="email"
+                    leftIcon={<Mail size={14} />}
+                    value={profile.email}
+                    disabled
+                    hint="Email is used to sign in and can't be changed here."
+                    className="disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
 
@@ -205,7 +216,7 @@ export default function SettingsPage() {
                 <h2 className="font-bold text-lg text-slate-900 mb-1">Company Info</h2>
                 <p className="text-xs text-slate-500 mb-5">Used on invoices, reports, and public pages</p>
 
-                <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Input label="Company Name" leftIcon={<Building2 size={14} />} value={company.name} onChange={(e) => setCompany({ ...company, name: e.target.value })} />
                   <Input label="GSTIN" value={company.gstin} onChange={(e) => setCompany({ ...company, gstin: e.target.value.toUpperCase() })} placeholder="22AAAAA0000A1Z5" />
                 </div>
@@ -227,8 +238,10 @@ export default function SettingsPage() {
 
                   <div className="space-y-4">
                     <PasswordInput label="Current Password" value={password.current} onChange={(e) => setPassword({ ...password, current: e.target.value })} />
-                    <PasswordInput label="New Password" value={password.next} onChange={(e) => setPassword({ ...password, next: e.target.value })} showStrength />
-                    <PasswordInput label="Confirm Password" value={password.confirm} onChange={(e) => setPassword({ ...password, confirm: e.target.value })} />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <PasswordInput label="New Password" value={password.next} onChange={(e) => setPassword({ ...password, next: e.target.value })} showStrength />
+                      <PasswordInput label="Confirm Password" value={password.confirm} onChange={(e) => setPassword({ ...password, confirm: e.target.value })} />
+                    </div>
                   </div>
 
                   {passwordError && <p className="text-xs text-rose-600 font-medium">{passwordError}</p>}
