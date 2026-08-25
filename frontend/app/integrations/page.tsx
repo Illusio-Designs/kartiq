@@ -131,7 +131,7 @@ export default function IntegrationsPage() {
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100 text-xs font-bold text-emerald-700 uppercase tracking-wider mb-5">
               <Sparkles size={12} /> {data?.summary?.total ?? 169} integrations
             </div>
-            <h1 className="text-5xl md:text-6xl font-bold tracking-tight text-slate-900 leading-[1.05]">
+            <h1 className="text-5xl md:text-6xl font-bold tracking-tight text-slate-900 leading-[1.15]">
               Every channel that matters.<br />
               <span className="bg-gradient-to-r from-emerald-600 to-teal-500 bg-clip-text text-transparent">One platform.</span>
             </h1>

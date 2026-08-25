@@ -16,6 +16,20 @@ interface Solution {
   data: any;
 }
 
+// Anchor targets for the header "Solutions" mega menu (/solutions#<id>).
+// The mega-menu links point here, so these ids MUST match the seeded
+// NAV_LINK hrefs (multichannel, inventory, orders, warehouse, shipping,
+// returns, analytics).
+const CAPABILITIES = [
+  { id: 'multichannel', icon: 'Globe',        title: 'Multi-channel Selling', desc: 'Sell on Amazon, Flipkart, Myntra and 56+ more marketplaces from one shared catalog.' },
+  { id: 'inventory',    icon: 'Package',       title: 'Inventory Management',  desc: 'Real-time stock synced across every warehouse and sales channel — no more overselling.' },
+  { id: 'orders',       icon: 'ShoppingCart',  title: 'Order Management',      desc: 'A single unified inbox for every order across every channel, with bulk actions.' },
+  { id: 'warehouse',    icon: 'Warehouse',     title: 'Warehouse Operations',  desc: 'Pick, pack and ship from any location with smart routing and cycle counts.' },
+  { id: 'shipping',     icon: 'Truck',         title: 'Shipping & Logistics',  desc: '16+ courier partners in one API, with automated label generation and tracking.' },
+  { id: 'returns',      icon: 'RotateCcw',     title: 'Returns & Refunds',     desc: 'Automated RMA workflows and faster refunds that keep customers happy.' },
+  { id: 'analytics',    icon: 'BarChart3',     title: 'Reports & Analytics',   desc: 'AI-powered insights on sales, stock health and profitability across channels.' },
+];
+
 const BUSINESS_MODELS = [
   {
     label: 'D2C brands',
@@ -51,7 +65,7 @@ export default function SolutionsPage() {
           <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-slate-200 text-[11px] font-bold uppercase tracking-[0.08em] text-emerald-700">
             <Sparkles size={12} /> Solutions
           </span>
-          <h1 className="mt-5 text-4xl md:text-6xl font-bold tracking-tight text-slate-900 leading-[1.05]">
+          <h1 className="mt-5 text-4xl md:text-6xl font-bold tracking-tight text-slate-900 leading-[1.15]">
             Built for{' '}
             <span className="bg-gradient-to-r from-emerald-500 to-cyan-600 bg-clip-text text-transparent">
               how you sell.
@@ -64,7 +78,37 @@ export default function SolutionsPage() {
         </div>
       </section>
 
-      {/* ── Solutions grid ───────────────────────────────────── */}
+      {/* ── Platform capabilities (mega-menu anchor targets) ─── */}
+      <section className="pb-8">
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="text-center max-w-2xl mx-auto mb-8">
+            <div className="text-xs font-bold uppercase tracking-[0.1em] text-emerald-700">Platform capabilities</div>
+            <h2 className="mt-3 text-3xl md:text-4xl font-bold tracking-tight text-slate-900">Everything you need to run commerce</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {CAPABILITIES.map((c) => {
+              const Icon = getIcon(c.icon);
+              return (
+                <div
+                  key={c.id}
+                  id={c.id}
+                  className="scroll-mt-28 flex items-start gap-4 bg-white rounded-2xl border border-slate-200 p-5 shadow-sm"
+                >
+                  <div className="w-12 h-12 rounded-xl bg-emerald-50 grid place-items-center text-emerald-600 shrink-0">
+                    <Icon size={22} />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-slate-900">{c.title}</h3>
+                    <p className="mt-1 text-sm text-slate-600 leading-relaxed">{c.desc}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Solutions grid (by vertical) ─────────────────────── */}
       <section className="pb-8">
         <div className="max-w-6xl mx-auto px-6">
           {loading ? (
@@ -85,7 +129,9 @@ export default function SolutionsPage() {
                 return (
                   <Link
                     key={s.id}
-                    href={s.href || '#'}
+                    /* Per-vertical detail pages (/solutions/d2c, …) don't exist yet,
+                       so route these to Contact instead of 404-ing. */
+                    href="/contact"
                     className="group bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all"
                   >
                     <div className="h-24 rounded-xl bg-gradient-to-br from-emerald-400 to-cyan-600 grid place-items-center mb-4">

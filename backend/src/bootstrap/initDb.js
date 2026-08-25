@@ -427,6 +427,22 @@ async function initDb() {
     }
   }
 
+  // De-duplicate public_content on boot. The seeder keys rows on a slug built
+  // from a positional sortOrder, so reordering the CONTENT list over time left
+  // stale rows with the same (type, category, title, href) — which render as
+  // duplicate nav/footer/menu entries. The seed only runs on an empty DB, so
+  // existing deployments need this cleanup here. `<=>` is MySQL's null-safe
+  // equals; we keep the lowest id per duplicate group.
+  try {
+    await db.raw(
+      "DELETE p1 FROM public_content p1 INNER JOIN public_content p2 " +
+      "WHERE p1.id > p2.id AND p1.type = p2.type " +
+      "AND p1.title <=> p2.title AND p1.href <=> p2.href AND p1.category <=> p2.category"
+    );
+  } catch (e) {
+    console.warn('[initDb] public_content dedupe skipped:', e.message);
+  }
+
   // 2. Check if seed already ran — if all key tables have data, skip
   const [planRows] = await db.raw("SELECT COUNT(*) as cnt FROM `plans`").catch(() => [{ cnt: 0 }]);
   const [contentRows] = await db.raw("SELECT COUNT(*) as cnt FROM `public_content`").catch(() => [{ cnt: 0 }]);

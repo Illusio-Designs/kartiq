@@ -654,3 +654,10 @@
 .dark .group:hover .group-hover\:bg-emerald-50 { background-color: rgba(6,182,212,.18); }
 .dark .text-emerald-500, .dark .text-emerald-600, .dark .text-emerald-700, .dark .text-emerald-800 { color: #2dd4bf; }
 .dark .border-emerald-100, .dark .border-emerald-200, .dark .border-emerald-300 { border-color: rgba(6,182,212,.34); }
+
+/* Gradient-clipped headings (bg-clip-text + text-transparent): the gradient is
+   sized to the text box, so with tight line-height the descenders (p, g, y, j)
+   fall outside the gradient and render invisible / clipped. A little bottom
+   padding extends the gradient box to cover them. Harmless on inline text —
+   inline padding doesn't change the line box or wrapping. */
+.bg-clip-text { padding-bottom: 0.12em; }

@@ -109,6 +109,27 @@ export default function AboutPage() {
         </section>
       )}
 
+      {/* ── Careers (header "Company → Careers" anchor: /about#careers) ── */}
+      <section id="careers" className="scroll-mt-28 py-16">
+        <div className="max-w-3xl mx-auto px-6">
+          <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-500/10 dark:to-transparent p-8 md:p-12 text-center">
+            <div className="text-xs font-bold uppercase tracking-[0.1em] text-emerald-700">Careers</div>
+            <h2 className="mt-3 text-3xl md:text-4xl font-bold tracking-tight text-slate-900">We&apos;re hiring</h2>
+            <p className="mt-3 text-slate-600 max-w-xl mx-auto leading-relaxed">
+              We&apos;re a small team in Rajkot building the commerce operating system for
+              Indian brands. If you love hard problems and shipping fast, we&apos;d love to hear
+              from you — even if there&apos;s no open role that fits perfectly.
+            </p>
+            <a
+              href="mailto:finverasolutionsllp@gmail.com?subject=Careers%20at%20Kartriq"
+              className="mt-6 inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-full transition-colors"
+            >
+              Send us your CV <ArrowRight size={14} />
+            </a>
+          </div>
+        </div>
+      </section>
+
       <section className="pb-24">
         <div className="max-w-3xl mx-auto px-6 text-center">
           <Link

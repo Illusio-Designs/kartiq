@@ -470,7 +470,7 @@ export default function LandingPage() {
                 <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
                   <Globe size={14} className="text-emerald-600" />
                 </div>
-                info@kartriq.com
+                finverasolutionsllp@gmail.com
               </div>
             </div>
             <Link

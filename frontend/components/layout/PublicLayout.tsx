@@ -2,16 +2,25 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
-  Menu, X, Instagram, Facebook, Heart, ChevronDown, ArrowRight,
-  Mail, Phone,
+  Menu, X, Instagram, Facebook, Heart, ChevronDown, ArrowRight, LogOut,
+  Mail, Phone, LayoutDashboard, Settings,
 } from 'lucide-react';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { publicApi } from '@/lib/api';
 import { getIcon } from '@/lib/icon';
 import { Loader } from '@/components/ui/Loader';
+import { useAuthStore, isTokenExpired } from '@/store/auth.store';
+
+// Initials for the avatar chip, from a display name (falls back to "K").
+function initialsOf(name?: string | null): string {
+  if (!name) return 'K';
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'K';
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+}
 
 interface NavLink {
   id: string;
@@ -37,10 +46,21 @@ interface FooterGroups {
   company: NavLink[];
 }
 
-function groupBy<T extends { category: string | null }>(items: T[]): Record<string, T[]> {
+// Group nav/footer links by category, de-duplicating within each group. The
+// seeded NAV_LINK/FOOTER_LINK rows can end up duplicated in the DB (e.g. the
+// seeder run more than once), which would otherwise render every menu item
+// twice. Keying on href||title collapses those repeats defensively.
+function groupBy<T extends { category: string | null; href?: string | null; title?: string }>(
+  items: T[],
+): Record<string, T[]> {
   const out: Record<string, T[]> = {};
+  const seen: Record<string, Set<string>> = {};
   for (const it of items) {
     const k = it.category || 'default';
+    const key = ((it.href || it.title || '') as string).trim().toLowerCase();
+    seen[k] ||= new Set();
+    if (key && seen[k].has(key)) continue;
+    if (key) seen[k].add(key);
     (out[k] ||= []).push(it);
   }
   return out;
@@ -61,9 +81,19 @@ function fetchFooter() {
 
 export function PublicNav() {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [groups, setGroups] = useState<NavGroups>({ main: [], solutions: [], resources: [], company: [] });
+
+  // Auth-aware CTA. `mounted` gates the swap to after hydration so the server
+  // (which has no localStorage) and the first client render agree — otherwise
+  // React warns about a hydration mismatch and the button flickers.
+  const { token, user, tenant, logout } = useAuthStore();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const authed = mounted && !!token && !isTokenExpired(token);
+  const handleLogout = useCallback(() => { logout(); router.push('/'); }, [logout, router]);
 
   useEffect(() => {
     fetchNav().then((items) => {
@@ -119,10 +149,21 @@ export function PublicNav() {
         </nav>
 
         <div className="hidden md:flex items-center gap-2 shrink-0">
-          <Link href="/login" className="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900 rounded-lg hover:bg-slate-100 whitespace-nowrap transition-colors">Log in</Link>
-          <Link href="/onboarding" className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-full shadow-md shadow-emerald-500/20 whitespace-nowrap transition-colors">
-            Get Started <ArrowRight size={13} />
-          </Link>
+          {authed ? (
+            <>
+              <Link href="/dashboard" className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-full shadow-md shadow-emerald-500/20 whitespace-nowrap transition-colors">
+                Go to Dashboard <ArrowRight size={13} />
+              </Link>
+              <AccountMenu user={user} tenant={tenant} onLogout={handleLogout} />
+            </>
+          ) : (
+            <>
+              <Link href="/login" className="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900 rounded-lg hover:bg-slate-100 whitespace-nowrap transition-colors">Log in</Link>
+              <Link href="/onboarding" className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-full shadow-md shadow-emerald-500/20 whitespace-nowrap transition-colors">
+                Get Started <ArrowRight size={13} />
+              </Link>
+            </>
+          )}
         </div>
 
         <button className="md:hidden p-2 text-slate-600 hover:text-slate-900" onClick={() => setOpen(!open)}>
@@ -140,13 +181,102 @@ export function PublicNav() {
           {groups.solutions.length > 0 && <MobileGroup label="Solutions" items={groups.solutions} onClick={() => setOpen(false)} />}
           {groups.resources.length > 0 && <MobileGroup label="Resources" items={groups.resources} onClick={() => setOpen(false)} />}
           {groups.company.length > 0 && <MobileGroup label="Company" items={groups.company} onClick={() => setOpen(false)} />}
-          <div className="flex gap-2 pt-3 border-t border-slate-200">
-            <Link href="/login" className="flex-1 justify-center inline-flex items-center px-4 py-2.5 text-sm font-semibold text-slate-700 rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors">Log in</Link>
-            <Link href="/onboarding" className="btn-primary flex-1 justify-center">Get Started</Link>
-          </div>
+          {authed ? (
+            <>
+              {user?.name && (
+                <div className="flex items-center gap-2.5 px-1 pt-3 border-t border-slate-200">
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 text-white grid place-items-center text-xs font-bold shrink-0">
+                    {initialsOf(user.name)}
+                  </div>
+                  <div className="flex flex-col leading-tight">
+                    <span className="text-sm font-bold text-slate-900">{user.name}</span>
+                    {tenant?.businessName && <span className="text-[11px] text-slate-500">{tenant.businessName}</span>}
+                  </div>
+                </div>
+              )}
+              <div className={cn('flex gap-2', !user?.name && 'pt-3 border-t border-slate-200')}>
+                <button onClick={() => { setOpen(false); handleLogout(); }} className="flex-1 justify-center inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-rose-600 rounded-xl bg-rose-50 hover:bg-rose-100 transition-colors">
+                  <LogOut size={15} /> Log out
+                </button>
+                <Link href="/dashboard" onClick={() => setOpen(false)} className="btn-primary flex-1 justify-center">Go to Dashboard</Link>
+              </div>
+            </>
+          ) : (
+            <div className="flex gap-2 pt-3 border-t border-slate-200">
+              <Link href="/login" className="flex-1 justify-center inline-flex items-center px-4 py-2.5 text-sm font-semibold text-slate-700 rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors">Log in</Link>
+              <Link href="/onboarding" className="btn-primary flex-1 justify-center">Get Started</Link>
+            </div>
+          )}
         </div>
       )}
     </header>
+  );
+}
+
+// Signed-in account control for the public header: avatar button that opens a
+// small menu (Dashboard · Settings · Log out). Closes on outside click / Escape.
+function AccountMenu({
+  user, tenant, onLogout,
+}: {
+  user: { name?: string | null; email?: string | null } | null;
+  tenant: { businessName?: string | null } | null;
+  onLogout: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Account menu"
+        className="flex items-center gap-1 pl-1 pr-1.5 py-1 rounded-full hover:bg-slate-100 transition-colors"
+      >
+        <span className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 text-white grid place-items-center text-xs font-bold shrink-0">
+          {initialsOf(user?.name)}
+        </span>
+        <ChevronDown size={14} className={cn('text-slate-400 transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full mt-2 w-60 bg-white border border-slate-200 rounded-2xl shadow-2xl shadow-slate-900/10 p-1.5 animate-fade-in"
+        >
+          <div className="px-3 py-2.5 border-b border-slate-100 mb-1">
+            <div className="text-sm font-bold text-slate-900 truncate">{user?.name || 'Your account'}</div>
+            {(tenant?.businessName || user?.email) && (
+              <div className="text-xs text-slate-500 truncate">{tenant?.businessName || user?.email}</div>
+            )}
+          </div>
+          <Link href="/dashboard" onClick={() => setOpen(false)} role="menuitem" className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors">
+            <LayoutDashboard size={16} /> Dashboard
+          </Link>
+          <Link href="/settings" onClick={() => setOpen(false)} role="menuitem" className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors">
+            <Settings size={16} /> Settings
+          </Link>
+          <button onClick={() => { setOpen(false); onLogout(); }} role="menuitem" className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-semibold text-rose-600 hover:bg-rose-50 transition-colors">
+            <LogOut size={16} /> Log out
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

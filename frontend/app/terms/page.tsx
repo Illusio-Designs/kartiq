@@ -96,7 +96,7 @@ export default function TermsPage() {
             <Section title="14. Contact">
               For questions about these Terms, contact us at:
               <div className="mt-3 space-y-1">
-                <p>Email: <a href="mailto:info@kartriq.com" className="text-emerald-600 hover:underline">info@kartriq.com</a></p>
+                <p>Email: <a href="mailto:finverasolutionsllp@gmail.com" className="text-emerald-600 hover:underline">finverasolutionsllp@gmail.com</a></p>
                 <p>Phone: <a href="tel:+918490009684" className="text-emerald-600 hover:underline">+91 84900 09684</a></p>
                 <p>Address: 211-212, Runway Heights, Ayodhya Chowk, 150ft Ring Road, Rajkot 360001, Gujarat, India</p>
               </div>

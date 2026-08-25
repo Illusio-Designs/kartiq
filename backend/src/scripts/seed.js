@@ -295,11 +295,13 @@ const CONTENT = [
 
 async function seedContent() {
   const typeIdx = {};
+  const slugs = [];
   let count = 0;
   for (const entry of CONTENT) {
     typeIdx[entry.type] = (typeIdx[entry.type] || 0) + 1;
     const sortOrder = typeIdx[entry.type];
     const slug = mkSlug(entry.type, sortOrder, entry.title);
+    slugs.push(slug);
     await prisma.publicContent.upsert({
       where: { slug },
       update: { ...entry, slug, sortOrder, data: entry.data || {} },
@@ -307,7 +309,19 @@ async function seedContent() {
     });
     count++;
   }
-  console.log(`  [seed] ${count} public content rows`);
+  // Prune stale rows left over from a previous CONTENT ordering/size. The slug
+  // encodes a positional sortOrder, so reordering CONTENT changes an item's
+  // slug and would otherwise leave the old row behind — surfacing as duplicate
+  // nav/footer entries. Deleting everything not in the current slug set keeps
+  // public_content an exact mirror of CONTENT.
+  let pruned = 0;
+  try {
+    const res = await prisma.publicContent.deleteMany({ where: { slug: { notIn: slugs } } });
+    pruned = res?.count ?? 0;
+  } catch (e) {
+    console.warn('  [seed] public content prune skipped:', e.message);
+  }
+  console.log(`  [seed] ${count} public content rows (${pruned} stale pruned)`);
 }
 
 async function run() {
