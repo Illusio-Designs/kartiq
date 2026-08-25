@@ -10,7 +10,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { productApi } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { DetailPageSkeleton } from '@/components/Shimmer';
-import { Button, Modal, Input, Textarea, Select, FileUpload } from '@/components/ui';
+import { Button, Modal, Input, Textarea, Select, FileUpload, Card, Badge } from '@/components/ui';
 
 // Product images can be stored as plain URL/data-URI strings or as objects
 // ({ url } / { src } / { media_location }) depending on where they were
@@ -41,7 +41,7 @@ export default function ProductDetailPage() {
       <DashboardLayout>
         <div className="max-w-3xl mx-auto text-center py-20">
           <p className="text-slate-500">Product not found.</p>
-          <Link href="/products" className="text-emerald-600 font-semibold hover:underline mt-3 inline-block">← Back to Products</Link>
+          <Link href="/products" className="text-emerald-600 font-semibold hover:underline mt-3 inline-block">← Back to Catalog</Link>
         </div>
       </DashboardLayout>
     );
@@ -65,79 +65,81 @@ export default function ProductDetailPage() {
       <div className="space-y-5 animate-slide-up max-w-4xl">
         <div className="flex items-center justify-between">
           <Link href="/products" className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-800">
-            <ArrowLeft size={15} /> Back to Products
+            <ArrowLeft size={15} /> Back to Catalog
           </Link>
           <Button variant="outline" size="sm" leftIcon={<Pencil size={13} />} onClick={() => setEditOpen(true)}>
             Edit product
           </Button>
         </div>
 
-        {/* Header: image + title */}
-        <div className="flex items-start gap-5 flex-col sm:flex-row">
-          <div className="flex gap-3">
-            {/* Main image */}
-            <div className="w-40 h-40 rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center flex-shrink-0">
-              {activeSrc ? (
-                <Image
-                  src={activeSrc}
-                  alt={product.name}
-                  width={160}
-                  height={160}
-                  className="w-full h-full object-cover"
-                  sizes="160px"
-                  unoptimized={typeof activeSrc === 'string' && activeSrc.startsWith('data:')}
-                />
-              ) : (
-                <div className="flex flex-col items-center gap-1.5 text-slate-300">
-                  <ImageOff size={30} />
-                  <span className="text-[11px] font-medium">No image</span>
+        {/* Header card: gallery + product info */}
+        <Card className="p-5">
+          <div className="flex items-start gap-6 flex-col sm:flex-row">
+            <div className="flex gap-3">
+              {/* Main image */}
+              <div className="w-44 h-44 rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center flex-shrink-0">
+                {activeSrc ? (
+                  <Image
+                    src={activeSrc}
+                    alt={product.name}
+                    width={176}
+                    height={176}
+                    className="w-full h-full object-cover"
+                    sizes="176px"
+                    unoptimized={typeof activeSrc === 'string' && activeSrc.startsWith('data:')}
+                  />
+                ) : (
+                  <div className="flex flex-col items-center gap-1.5 text-slate-300">
+                    <ImageOff size={30} />
+                    <span className="text-[11px] font-medium">No image</span>
+                  </div>
+                )}
+              </div>
+              {/* Thumbnails */}
+              {images.length > 1 && (
+                <div className="flex flex-col gap-2 overflow-y-auto max-h-44">
+                  {images.slice(0, 5).map((src, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setActive(i)}
+                      aria-label={`View ${product.name} ${i + 1}`}
+                      className={`w-12 h-12 rounded-lg overflow-hidden border-2 flex-shrink-0 transition ${i === active ? 'border-emerald-500' : 'border-slate-200 hover:border-slate-300'}`}
+                    >
+                      <Image
+                        src={src}
+                        alt={`${product.name} ${i + 1}`}
+                        width={48}
+                        height={48}
+                        className="w-full h-full object-cover"
+                        sizes="48px"
+                        unoptimized={typeof src === 'string' && src.startsWith('data:')}
+                      />
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
-            {/* Thumbnails */}
-            {images.length > 1 && (
-              <div className="flex flex-col gap-2 overflow-y-auto max-h-40">
-                {images.slice(0, 5).map((src, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => setActive(i)}
-                    aria-label={`View ${product.name} ${i + 1}`}
-                    className={`w-12 h-12 rounded-lg overflow-hidden border-2 flex-shrink-0 transition ${i === active ? 'border-emerald-500' : 'border-slate-200 hover:border-slate-300'}`}
-                  >
-                    <Image
-                      src={src}
-                      alt={`${product.name} ${i + 1}`}
-                      width={48}
-                      height={48}
-                      className="w-full h-full object-cover"
-                      sizes="48px"
-                      unoptimized={typeof src === 'string' && src.startsWith('data:')}
-                    />
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
 
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">{product.name}</h1>
-              <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${product.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                {product.isActive ? 'Active' : 'Inactive'}
-              </span>
-            </div>
-            <p className="text-sm text-slate-500 mt-1 font-mono">SKU: {product.sku}</p>
-            {product.barcode && <p className="text-xs text-slate-400 mt-0.5 font-mono">Barcode: {product.barcode}</p>}
-            {tags.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-3">
-                {tags.map((t, i) => (
-                  <span key={i} className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[11px] font-semibold">{t}</span>
-                ))}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h1 className="text-2xl font-bold text-slate-900 tracking-tight">{product.name}</h1>
+                <Badge variant={product.isActive ? 'emerald' : 'slate'} dot>
+                  {product.isActive ? 'Active' : 'Inactive'}
+                </Badge>
               </div>
-            )}
+              <p className="text-sm text-slate-500 mt-2 font-mono">SKU: {product.sku}</p>
+              {product.barcode && <p className="text-xs text-slate-400 mt-1 font-mono">Barcode: {product.barcode}</p>}
+              {tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-3">
+                  {tags.map((t, i) => (
+                    <span key={i} className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[11px] font-semibold">{t}</span>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </Card>
 
         {/* Summary */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -157,14 +159,14 @@ export default function ProductDetailPage() {
         )}
 
         {product.description && (
-          <div className="rounded-2xl border border-slate-200 bg-white p-5">
+          <Card className="p-5">
             <div className="text-sm font-bold text-slate-800 mb-1.5">Description</div>
             <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{product.description}</p>
-          </div>
+          </Card>
         )}
 
         {/* Variants */}
-        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+        <Card className="overflow-hidden">
           <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2 text-sm font-bold text-slate-800">
             <Package size={15} className="text-emerald-600" /> Variants
             <span className="text-xs text-slate-400 font-normal">{variants.length}</span>
@@ -193,12 +195,12 @@ export default function ProductDetailPage() {
               </tbody>
             </table>
           </div>
-        </div>
+        </Card>
 
         {/* Inventory by warehouse */}
-        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+        <Card className="overflow-hidden">
           <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2 text-sm font-bold text-slate-800">
-            <WarehouseIcon size={15} className="text-emerald-600" /> Inventory
+            <WarehouseIcon size={15} className="text-emerald-600" /> Inventory by warehouse
           </div>
           {inventory.length === 0 ? (
             <div className="px-5 py-6 text-center text-sm text-slate-500">No stock recorded yet.</div>
@@ -226,7 +228,7 @@ export default function ProductDetailPage() {
               </table>
             </div>
           )}
-        </div>
+        </Card>
       </div>
 
       <EditProductModal open={editOpen} onClose={() => setEditOpen(false)} product={product} />
@@ -421,9 +423,9 @@ function EditProductModal({ open, onClose, product }: { open: boolean; onClose: 
 
 function InfoCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+    <Card className="p-4">
       <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{label}</div>
       <div className="text-sm font-bold text-slate-900 mt-1 truncate">{value}</div>
-    </div>
+    </Card>
   );
 }

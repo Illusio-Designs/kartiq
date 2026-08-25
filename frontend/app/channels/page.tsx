@@ -2,16 +2,18 @@
 
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useSearchStore } from '@/store/search.store';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { channelApi, oauthApi } from '@/lib/api';
 import {
-  Plug, CheckCircle2, Circle, Clock, ExternalLink, Inbox, Sparkles, Lock,
+  Plug, CheckCircle2, Circle, Clock, ExternalLink, Inbox, Sparkles, Lock, Plus,
   ShoppingBag, Zap, Truck, Globe, MessageCircle, Building2, Boxes, ChevronRight, HelpCircle, Mail,
   Calculator, ScanLine, CreditCard, Receipt, Users, Undo2, Warehouse,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { SearchField } from '@/components/ui/SearchField';
 import { Modal } from '@/components/ui/Modal';
 import { Input, Textarea } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
@@ -180,23 +182,22 @@ type CatalogEntry = {
 
 export default function ChannelsPage() {
   const [statusFilter, setStatusFilter] = useState<'' | 'connected' | 'available' | 'not_available'>('');
+  const [search, setSearch] = useState('');
   const [connectModal, setConnectModal] = useState<CatalogEntry | null>(null);
   const [requestModal, setRequestModal] = useState<CatalogEntry | null>(null);
   const qc = useQueryClient();
-
-  // Topbar global search — case-insensitive substring match against the
-  // channel name, type and tagline so "amaz" finds Amazon India / Amazon US,
-  // "razor" finds Razorpay, etc.
-  const searchQuery = useSearchStore((s) => s.query);
 
   const { data, isLoading } = useQuery({
     queryKey: ['channels-catalog'],
     queryFn: () => channelApi.catalog().then(r => r.data),
   });
 
-  // Group catalog by category after filtering
+  // Group catalog by category after filtering. The in-page search does a
+  // case-insensitive substring match against the channel name, type, tagline
+  // and category so "amaz" finds Amazon India / Amazon US, "razor" finds
+  // Razorpay, etc. (The old global topbar search bar was removed.)
   const grouped = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const q = search.trim().toLowerCase();
     const all: CatalogEntry[] = (data?.catalog || []).filter((e: CatalogEntry) => {
       if (statusFilter && e.status !== statusFilter) return false;
       if (q) {
@@ -211,122 +212,132 @@ export default function ChannelsPage() {
       map[entry.category].push(entry);
     }
     return map;
-  }, [data, statusFilter, searchQuery]);
+  }, [data, statusFilter, search]);
 
   const summary = data?.summary || { total: 0, connected: 0, available: 0, not_available: 0 };
 
+  const statusFilters: { key: '' | 'connected' | 'available' | 'not_available'; label: string }[] = [
+    { key: '',              label: 'All' },
+    { key: 'connected',     label: 'Connected' },
+    { key: 'available',     label: 'Available' },
+    { key: 'not_available', label: 'Soon' },
+  ];
+
+  const orderedCategories = CATEGORY_ORDER.filter(cat => grouped[cat]);
+
   return (
     <DashboardLayout>
-      <div className="space-y-6 animate-slide-up">
-        {/* Hero */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-500 via-emerald-600 to-emerald-700 p-8 md:p-10 text-white shadow-2xl shadow-emerald-500/25">
-          <div className="absolute top-0 right-0 w-96 h-96 rounded-full bg-emerald-400/20 blur-3xl -translate-y-1/2 translate-x-1/2" />
-          <div className="absolute bottom-0 left-1/3 w-72 h-72 rounded-full bg-cyan-400/15 blur-3xl translate-y-1/2" />
+      <div className="space-y-5 animate-slide-up">
+        <PageHeader title="Channels" />
 
-          <div className="relative flex items-end justify-between flex-wrap gap-6">
-            <div className="max-w-xl">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur text-xs font-semibold tracking-wide mb-4">
-                <Sparkles size={12} /> {summary.total} CHANNELS IN MARKET
-              </div>
-              <h1 className="text-4xl md:text-5xl font-bold tracking-tight leading-tight">
-                Sell everywhere.<br />
-                <span className="bg-gradient-to-r from-white to-emerald-300 bg-clip-text text-transparent">Ship anything.</span>
-              </h1>
-              <p className="text-white/80 text-sm md:text-base mt-3 leading-relaxed">
-                Connect to {summary.total}+ marketplaces, quick-commerce, logistics, social shops and D2C platforms — all from one dashboard.
+        {/* Summary stat strip */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <StatTile label="Connected"   value={summary.connected}     dot="bg-emerald-500" />
+          <StatTile label="Available"   value={summary.available}     dot="bg-sky-500" />
+          <StatTile label="Coming soon" value={summary.not_available} dot="bg-amber-500" />
+          <StatTile label="Total"       value={summary.total}         dot="bg-slate-400" />
+        </div>
+
+        {/* One card — header (summary + actions + toolbar + quick-jump) then content */}
+        <Card className="p-0 overflow-visible">
+          <div className="p-3 sm:p-4 space-y-3 border-b border-slate-100 dark:border-slate-800">
+            {/* Title row — subtitle left, actions right */}
+            <div className="flex justify-between items-center flex-wrap gap-3">
+              <p className="text-sm text-slate-500">
+                {summary.total} channels in market · {summary.connected} connected
               </p>
+              <div className="flex items-center gap-2">
+                <Link href="/channels/requests">
+                  <Button variant="secondary" size="sm" leftIcon={<Inbox size={15} />}>My Requests</Button>
+                </Link>
+                <Link href="/channels/requests">
+                  <Button size="sm" leftIcon={<Plus size={15} />}>Request a channel</Button>
+                </Link>
+              </div>
             </div>
 
-            <Link
-              href="/channels/requests"
-              className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur border border-white/20 text-sm font-semibold rounded-xl transition-all"
-            >
-              <Inbox size={15} /> My Requests
-            </Link>
-          </div>
-
-          <div className="relative mt-8 grid grid-cols-2 md:grid-cols-4 gap-3 max-w-2xl">
-            <StatPill label="Connected"     value={summary.connected}     dot="bg-emerald-400" />
-            <StatPill label="Available"     value={summary.available}     dot="bg-sky-400" />
-            <StatPill label="Not Available" value={summary.not_available} dot="bg-amber-400" />
-            <StatPill label="Total"         value={summary.total}         dot="bg-white" />
-          </div>
-        </div>
-
-        {/* Quick-jump category nav */}
-        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-          {CATEGORY_ORDER.map(key => {
-            const meta = CATEGORY_META[key];
-            const count = grouped[key]?.length || 0;
-            if (count === 0) return null;
-            const Icon = meta.icon;
-            return (
-              <a
-                key={key}
-                href={`#category-${key}`}
-                className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:border-slate-300 rounded-xl text-sm font-semibold whitespace-nowrap transition-all"
-              >
-                <Icon size={14} />
-                {meta.label}
-                <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[10px] font-bold">
-                  {count}
-                </span>
-              </a>
-            );
-          })}
-        </div>
-
-        {/* Status filter */}
-        <div className="flex flex-wrap gap-3 items-center sticky top-16 z-20 py-3 -my-3 bg-gradient-to-b from-slate-50/95 via-slate-50/95 to-transparent backdrop-blur-md">
-          <div className="flex gap-1.5 p-1 bg-white border border-slate-200 rounded-xl">
-            {[
-              { key: '',              label: 'All' },
-              { key: 'connected',     label: 'Connected' },
-              { key: 'available',     label: 'Available' },
-              { key: 'not_available', label: 'Soon' },
-            ].map(f => (
-              <button
-                key={f.key}
-                onClick={() => setStatusFilter(f.key as any)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                  statusFilter === f.key
-                    ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Category sections */}
-        {isLoading ? (
-          <div className="space-y-5">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <CategorySectionSkeleton key={i} />
-            ))}
-          </div>
-        ) : Object.keys(grouped).length === 0 ? (
-          <div className="card-premium p-16 text-center">
-            <div className="inline-flex w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-100 to-teal-100 items-center justify-center mb-4">
-              <Plug size={28} className="text-emerald-600" />
+            {/* Toolbar — search + status segmented control */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <SearchField
+                value={search}
+                onChange={setSearch}
+                placeholder="Search channels — Amazon, Shopify, Delhivery…"
+                shortcut="/"
+                className="flex-1 min-w-[180px] max-w-sm"
+              />
+              <div className="hidden sm:block flex-1" />
+              <div className="flex gap-1 p-1 bg-slate-100 dark:bg-slate-800/60 rounded-xl">
+                {statusFilters.map(f => (
+                  <button
+                    key={f.key}
+                    onClick={() => setStatusFilter(f.key)}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                      statusFilter === f.key
+                        ? 'bg-emerald-500 text-white shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <h3 className="font-bold text-slate-900 text-lg">No channels match your filters</h3>
-            <p className="text-slate-500 text-sm mt-1">Try different filters or search terms.</p>
+
+            {/* Category quick-jump chips */}
+            {orderedCategories.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto pb-0.5">
+                {orderedCategories.map(key => {
+                  const meta = CATEGORY_META[key];
+                  const count = grouped[key]?.length || 0;
+                  const Icon = meta.icon;
+                  return (
+                    <a
+                      key={key}
+                      href={`#category-${key}`}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 text-slate-600 hover:text-slate-900 hover:border-slate-300 rounded-lg text-xs font-semibold whitespace-nowrap transition-all"
+                    >
+                      <Icon size={14} className="text-emerald-600" />
+                      {meta.label}
+                      <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-md text-[10px] font-bold">
+                        {count}
+                      </span>
+                    </a>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        ) : (
-          CATEGORY_ORDER.filter(cat => grouped[cat]).map(category => (
-            <CategorySection
-              key={category}
-              id={`category-${category}`}
-              category={category}
-              entries={grouped[category]}
-              onConnect={setConnectModal}
-              onRequest={setRequestModal}
-            />
-          ))
-        )}
+
+          {/* Content — category blocks in the same card */}
+          {isLoading ? (
+            <div className="p-4 space-y-5">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <CategorySectionSkeleton key={i} />
+              ))}
+            </div>
+          ) : orderedCategories.length === 0 ? (
+            <div className="p-16 text-center">
+              <div className="inline-flex w-16 h-16 rounded-2xl bg-emerald-50 items-center justify-center mb-4">
+                <Plug size={28} className="text-emerald-600" />
+              </div>
+              <h3 className="font-bold text-slate-900 text-lg">No channels match your filters</h3>
+              <p className="text-slate-500 text-sm mt-1">Try a different search term or status filter.</p>
+            </div>
+          ) : (
+            <div>
+              {orderedCategories.map(category => (
+                <CategorySection
+                  key={category}
+                  id={`category-${category}`}
+                  category={category}
+                  entries={grouped[category]}
+                  onConnect={setConnectModal}
+                  onRequest={setRequestModal}
+                />
+              ))}
+            </div>
+          )}
+        </Card>
       </div>
 
       {connectModal && (
@@ -349,15 +360,15 @@ export default function ChannelsPage() {
 
 // ═══════════════════════════════════════════════════════════════════════════
 
-function StatPill({ label, value, dot }: { label: string; value: number; dot: string }) {
+function StatTile({ label, value, dot }: { label: string; value: number; dot: string }) {
   return (
-    <div className="flex items-center gap-2.5 px-4 py-3 bg-white/10 backdrop-blur-sm rounded-xl border border-white/10">
-      <div className={`w-2 h-2 rounded-full ${dot} animate-pulse`} />
-      <div>
-        <div className="text-2xl font-bold leading-none">{value}</div>
-        <div className="text-[10px] font-semibold text-white/70 uppercase tracking-wider mt-0.5">{label}</div>
-      </div>
-    </div>
+    <Card className="p-4 flex flex-col gap-1">
+      <span className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+        <span className={`w-2 h-2 rounded-full ${dot}`} />
+        {label}
+      </span>
+      <span className="text-2xl font-bold text-slate-900 leading-none tabular-nums">{value}</span>
+    </Card>
   );
 }
 
@@ -377,28 +388,23 @@ function CategorySection({
   return (
     <section
       id={id}
-      className={`relative overflow-hidden rounded-3xl bg-gradient-to-br ${meta.bgGradient} border border-slate-200/70 shadow-[0_4px_24px_rgba(15,15,30,0.04)] p-6 md:p-7 ring-1 ${meta.ringColor} scroll-mt-24`}
+      className="border-t border-slate-100 dark:border-slate-800 first:border-t-0 scroll-mt-24"
     >
-      {/* Decorative gradient blob */}
-      <div className={`absolute -top-24 -right-24 w-80 h-80 rounded-full bg-gradient-to-br ${meta.gradient} opacity-10 blur-3xl pointer-events-none`} />
-
-      {/* Section header */}
-      <div className="relative flex items-center justify-between mb-6 flex-wrap gap-3">
-        <div className="flex items-center gap-4">
-          <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${meta.gradient} flex items-center justify-center text-white shadow-xl`}>
-            <Icon size={24} />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold text-slate-900 tracking-tight">{meta.label}</h2>
-            <p className="text-sm text-slate-500 mt-0.5">{meta.tagline}</p>
-          </div>
+      {/* Block header */}
+      <div className="flex items-center gap-3 px-4 pt-4 pb-2 flex-wrap">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20 flex-shrink-0">
+          <Icon size={20} />
         </div>
-        <div className="flex items-center gap-2">
-          <span className="badge bg-white border border-slate-200 text-slate-700">
+        <div className="min-w-0">
+          <h2 className="text-base font-bold text-slate-900 tracking-tight">{meta.label}</h2>
+          <p className="text-xs text-slate-500 mt-0.5">{meta.tagline}</p>
+        </div>
+        <div className="flex items-center gap-2 ml-auto">
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-50 dark:bg-slate-800 border border-slate-200 text-slate-600 tabular-nums">
             {entries.length} channels
           </span>
           {connectedCount > 0 && (
-            <span className="badge bg-emerald-50 border border-emerald-200 text-emerald-700">
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 tabular-nums">
               <CheckCircle2 size={11} /> {connectedCount} connected
             </span>
           )}
@@ -406,7 +412,7 @@ function CategorySection({
       </div>
 
       {/* Channel grid */}
-      <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 px-4 pt-1 pb-4">
         {entries.map(entry => (
           <ChannelCard
             key={entry.type}
