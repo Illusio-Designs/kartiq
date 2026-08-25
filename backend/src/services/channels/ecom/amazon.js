@@ -125,27 +125,56 @@ class AmazonAdapter {
   }
 
   async _request(method, path, params = {}, tokenOverride = null) {
-    const token = tokenOverride || await this._getAccessToken();
-    try {
-      const { data } = await axios({
-        method,
-        url: `${this.endpoint}${path}`,
-        headers: { 'x-amz-access-token': token, 'Content-Type': 'application/json' },
-        params,
-      });
-      return data;
-    } catch (err) {
-      const status = err.response?.status;
-      const body   = err.response?.data;
-      // SP-API errors: { errors: [{ code, message, details }] }
-      const apiMsg = body?.errors?.[0]?.message
-                  || body?.errors?.[0]?.code
-                  || body?.message
-                  || err.message;
-      const hint = status === 403
-        ? ' — common causes: (1) the seller has not authorized this SP-API role, (2) the refresh token is from a different region than the configured endpoint, or (3) the app is in Draft state and not approved for this role on Amazon Developer Console.'
-        : '';
-      throw new Error(`Amazon SP-API ${method} ${path} failed (${status || '?'}): ${apiMsg}${hint}`);
+    const MAX_RETRIES = 4;
+    let attempt = 0;
+    let refreshedOn403 = false;
+    for (;;) {
+      const token = tokenOverride || await this._getAccessToken();
+      try {
+        const { data } = await axios({
+          method,
+          url: `${this.endpoint}${path}`,
+          headers: { 'x-amz-access-token': token, 'Content-Type': 'application/json' },
+          params,
+        });
+        return data;
+      } catch (err) {
+        const status = err.response?.status;
+
+        // 429 — throttled. SP-API publishes a per-operation rate; honour
+        // Retry-After when present, otherwise exponential backoff, and retry
+        // instead of dropping the order/SKU mid-sync.
+        if (status === 429 && attempt < MAX_RETRIES) {
+          const retryAfter = parseFloat(err.response?.headers?.['retry-after']);
+          const waitMs = Number.isFinite(retryAfter)
+            ? Math.min(30000, retryAfter * 1000)
+            : Math.min(8000, 500 * 2 ** attempt);
+          attempt += 1;
+          await this._sleep(waitMs);
+          continue;
+        }
+
+        // 403 with our own (non-RDT) token — the cached access token may be
+        // stale/rotated; force one refresh and retry before giving up. (A
+        // genuine authorization 403 will simply 403 again and fall through.)
+        if (status === 403 && !tokenOverride && !refreshedOn403) {
+          refreshedOn403 = true;
+          this._accessToken = null;
+          this._tokenExpiry = 0;
+          continue;
+        }
+
+        const body  = err.response?.data;
+        // SP-API errors: { errors: [{ code, message, details }] }
+        const apiMsg = body?.errors?.[0]?.message
+                    || body?.errors?.[0]?.code
+                    || body?.message
+                    || err.message;
+        const hint = status === 403
+          ? ' — common causes: (1) the seller has not authorized this SP-API role, (2) the refresh token is from a different region than the configured endpoint, or (3) the app is in Draft state and not approved for this role on Amazon Developer Console.'
+          : '';
+        throw new Error(`Amazon SP-API ${method} ${path} failed (${status || '?'}): ${apiMsg}${hint}`);
+      }
     }
   }
 
@@ -186,8 +215,27 @@ class AmazonAdapter {
         { method: 'GET', path: '/orders/v0/orders', dataElements: ['buyerInfo', 'shippingAddress'] },
       ]);
     } catch (_) { /* no PII role — proceed without buyer data */ }
-    const data = await this._request('GET', '/orders/v0/orders', params, ordersToken);
-    const rawOrders = data.payload?.Orders || [];
+    // Paginate. The Orders API returns at most ~100 orders per page and a
+    // NextToken for the rest — without following it, any sync window with more
+    // than one page SILENTLY DROPS the remaining orders. The first call carries
+    // the LastUpdatedAfter filter; every subsequent call must send NextToken
+    // alone (plus MarketplaceIds) — the filter can't be combined with the token.
+    const rawOrders = [];
+    let nextToken = null;
+    let page = 0;
+    const MAX_PAGES = 100; // safety cap (~10k orders per window) against a runaway loop
+    do {
+      if (page > 0) await this._sleep(700); // stay under the getOrders throttle
+      const reqParams = nextToken
+        ? { MarketplaceIds: this.marketplaceId, NextToken: nextToken }
+        : params;
+      const data = await this._request('GET', '/orders/v0/orders', reqParams, ordersToken);
+      const pageOrders = data.payload?.Orders || [];
+      rawOrders.push(...pageOrders);
+      nextToken = data.payload?.NextToken || null;
+      page += 1;
+    } while (nextToken && page < MAX_PAGES);
+
     const mapped = rawOrders.map(o => this._transformOrder(o));
     // getOrders returns order headers only — pull each order's line items so
     // orders arrive with their real products/SKUs (and the catalog can fill

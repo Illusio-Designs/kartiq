@@ -373,8 +373,14 @@ router.delete('/:id', requirePermission('channels.delete'), async (req, res) => 
   try {
     const existing = await loadTenantChannel(req);
     if (!existing) return res.status(404).json({ error: 'Channel not found' });
-    await prisma.channel.update({ where: { id: req.params.id }, data: { isActive: false } });
-    res.json({ message: 'Channel deactivated' });
+    // Deactivate AND clear the stored (encrypted) credentials — a disconnect
+    // should not leave a usable refresh token at rest. Also clear any stale
+    // sync error so a future reconnect starts clean.
+    await prisma.channel.update({
+      where: { id: req.params.id },
+      data: { isActive: false, credentials: null, syncError: null },
+    });
+    res.json({ message: 'Channel disconnected' });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
