@@ -877,10 +877,20 @@ async function importCatalogFromChannel(channel, { tenantId } = {}) {
     tenantId = ch?.tenantId;
   }
   const adapter = getAdapter(channel);
-  if (typeof adapter.fetchInventorySummaries !== 'function') {
+  // Prefer a full-catalog pull (every active listing, FBA + merchant-fulfilled,
+  // with price) when the adapter supports it; fall back to the FBA-only
+  // on-hand summaries otherwise. `fromReport` tells the loop below to trust the
+  // item's own price/fulfillment instead of the FBA defaults.
+  let items;
+  let fromReport = false;
+  if (typeof adapter.fetchAllListings === 'function') {
+    items = await adapter.fetchAllListings();
+    fromReport = true;
+  } else if (typeof adapter.fetchInventorySummaries === 'function') {
+    items = await adapter.fetchInventorySummaries();
+  } else {
     throw new Error(`${channel.type} does not support catalog import yet`);
   }
-  const items = await adapter.fetchInventorySummaries();
   const results = { total: items.length, products: 0, inventory: 0, failed: 0, error: null };
 
   // A warehouse to hold the pulled stock — reuse the tenant's first active one,
@@ -896,10 +906,14 @@ async function importCatalogFromChannel(channel, { tenantId } = {}) {
     if (!item.channelSku) continue;
     let listing;
     try {
-      // fetchInventorySummaries pulls the FBA (Amazon-managed) catalog, so
-      // these listings are CHANNEL-fulfilled — mark them so we never push
-      // local quantities back to Amazon for them.
-      listing = await ensureListingForItem({ tenantId, channelId: channel.id, item: { ...item, unitPrice: 0, fulfillmentType: 'CHANNEL' } });
+      // From the Reports API we have each listing's real price and fulfillment
+      // model (SELF vs CHANNEL) — pass them through. From the FBA-summaries
+      // fallback there is no price, and every item is Amazon-fulfilled, so keep
+      // the CHANNEL default (never push local quantities back for those).
+      const enriched = fromReport
+        ? item
+        : { ...item, unitPrice: 0, fulfillmentType: 'CHANNEL' };
+      listing = await ensureListingForItem({ tenantId, channelId: channel.id, item: enriched });
       results.products++;
     } catch (e) {
       results.failed++;

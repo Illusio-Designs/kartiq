@@ -173,7 +173,7 @@ export default function ChannelDetailPage() {
           <ActionCard
             icon={PackageSearch}
             title="Pull Catalog"
-            description="Import this channel's products & stock into Kartriq."
+            description="Import all of this channel's listings (with price & stock) into Kartriq."
             onClick={() => pullCatalogMutation.mutate()}
             loading={pullCatalogMutation.isPending}
             disabled={!hasCredentials}
