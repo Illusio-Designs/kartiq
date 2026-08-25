@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { purchaseApi, vendorApi } from '@/lib/api';
+import { purchaseApi, vendorApi, productApi } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import {
@@ -130,6 +130,19 @@ function NewPurchaseModal({ open, onClose }: { open: boolean; onClose: () => voi
     enabled: open,
   });
 
+  // Products (with variants) to pick line items from — the create call needs
+  // the variantId, so we flatten every product's variants into one option list.
+  const { data: productsData } = useQuery({
+    queryKey: ['products-for-po'],
+    queryFn: () => productApi.list({ limit: 200 }).then(r => r.data),
+    enabled: open,
+  });
+  const variantOptions = ((productsData?.products || productsData || []) as any[])
+    .flatMap((p: any) => (p.variants || []).map((v: any) => ({
+      value: v.id,
+      label: `${p.name} · ${v.sku || v.name || 'variant'}`,
+    })));
+
   const vendorOptions = (vendors || []).map((v: any) => ({ value: v.id, label: v.name }));
   const subtotal = items.reduce((s, i) => s + i.orderedQty * i.unitCost, 0);
 
@@ -207,15 +220,18 @@ function NewPurchaseModal({ open, onClose }: { open: boolean; onClose: () => voi
             {items.map(item => (
               <div key={item.id} className="grid grid-cols-12 gap-2 p-3 bg-slate-50 rounded-xl items-center">
                 <div className="col-span-12 md:col-span-6">
-                  <Input
+                  <Select
                     value={item.variantId}
-                    onChange={(e) => setItems(items.map(i => i.id === item.id ? { ...i, variantId: e.target.value } : i))}
-                    placeholder="Variant ID"
+                    onChange={(val) => setItems(items.map(i => i.id === item.id ? { ...i, variantId: val } : i))}
+                    options={variantOptions}
+                    placeholder="Select a product…"
+                    fullWidth
                   />
                 </div>
                 <div className="col-span-4 md:col-span-2">
                   <Input
                     type="number"
+                    min={1}
                     value={item.orderedQty}
                     onChange={(e) => setItems(items.map(i => i.id === item.id ? { ...i, orderedQty: Number(e.target.value) } : i))}
                     placeholder="Qty"
@@ -224,6 +240,7 @@ function NewPurchaseModal({ open, onClose }: { open: boolean; onClose: () => voi
                 <div className="col-span-6 md:col-span-3">
                   <Input
                     type="number"
+                    min={0}
                     value={item.unitCost}
                     onChange={(e) => setItems(items.map(i => i.id === item.id ? { ...i, unitCost: Number(e.target.value) } : i))}
                     placeholder="Unit cost"

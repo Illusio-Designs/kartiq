@@ -4,6 +4,7 @@ import { useParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { ArrowLeft, Package, Warehouse as WarehouseIcon, ImageOff, Pencil, X } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { productApi } from '@/lib/api';
@@ -77,8 +78,15 @@ export default function ProductDetailPage() {
             {/* Main image */}
             <div className="w-40 h-40 rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center flex-shrink-0">
               {activeSrc ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={activeSrc} alt={product.name} className="w-full h-full object-cover" />
+                <Image
+                  src={activeSrc}
+                  alt={product.name}
+                  width={160}
+                  height={160}
+                  className="w-full h-full object-cover"
+                  sizes="160px"
+                  unoptimized={typeof activeSrc === 'string' && activeSrc.startsWith('data:')}
+                />
               ) : (
                 <div className="flex flex-col items-center gap-1.5 text-slate-300">
                   <ImageOff size={30} />
@@ -92,11 +100,20 @@ export default function ProductDetailPage() {
                 {images.slice(0, 5).map((src, i) => (
                   <button
                     key={i}
+                    type="button"
                     onClick={() => setActive(i)}
+                    aria-label={`View ${product.name} ${i + 1}`}
                     className={`w-12 h-12 rounded-lg overflow-hidden border-2 flex-shrink-0 transition ${i === active ? 'border-emerald-500' : 'border-slate-200 hover:border-slate-300'}`}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={src} alt={`${product.name} ${i + 1}`} className="w-full h-full object-cover" />
+                    <Image
+                      src={src}
+                      alt={`${product.name} ${i + 1}`}
+                      width={48}
+                      height={48}
+                      className="w-full h-full object-cover"
+                      sizes="48px"
+                      unoptimized={typeof src === 'string' && src.startsWith('data:')}
+                    />
                   </button>
                 ))}
               </div>
@@ -351,9 +368,9 @@ function EditProductModal({ open, onClose, product }: { open: boolean; onClose: 
         <Input label="Tags (comma separated)" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="cotton, summer, unisex" />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <Input label="Cost Price" type="number" value={form.costPrice} onChange={(e) => setForm({ ...form, costPrice: e.target.value })} placeholder="0.00" />
-          <Input label="MRP" type="number" value={form.mrp} onChange={(e) => setForm({ ...form, mrp: e.target.value })} placeholder="0.00" />
-          <Input label="Selling Price" type="number" value={form.sellingPrice} onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })} placeholder="0.00" />
+          <Input label="Cost Price" type="number" min={0} value={form.costPrice} onChange={(e) => setForm({ ...form, costPrice: e.target.value })} placeholder="0.00" />
+          <Input label="MRP" type="number" min={0} value={form.mrp} onChange={(e) => setForm({ ...form, mrp: e.target.value })} placeholder="0.00" />
+          <Input label="Selling Price" type="number" min={0} value={form.sellingPrice} onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })} placeholder="0.00" />
         </div>
 
         {/* Existing images — removable */}
@@ -363,8 +380,15 @@ function EditProductModal({ open, onClose, product }: { open: boolean; onClose: 
             <div className="flex flex-wrap gap-2">
               {existingImages.map((src, i) => (
                 <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-slate-200 group">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={src} alt={`Product view ${i + 1}`} className="w-full h-full object-cover" />
+                  <Image
+                    src={src}
+                    alt={`${product?.name || 'Product'} view ${i + 1}`}
+                    width={64}
+                    height={64}
+                    className="w-full h-full object-cover"
+                    sizes="64px"
+                    unoptimized={typeof src === 'string' && src.startsWith('data:')}
+                  />
                   <button
                     type="button"
                     onClick={() => setExistingImages(existingImages.filter((_, idx) => idx !== i))}

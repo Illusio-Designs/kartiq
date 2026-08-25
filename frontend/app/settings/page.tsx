@@ -3,18 +3,19 @@
 import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import {
-  Button, Card, Input, Textarea, Select, Switch, PasswordInput, FileUpload, Badge, Avatar,
+  Button, Card, Input, Switch, PasswordInput, Badge, Avatar,
   PhoneField, isPhoneEmpty, validatePhone,
 } from '@/components/ui';
 import {
   User, Building2, Bell, Shield, CreditCard, Mail, Save, Check,
-  Download, Trash2, Smartphone, AlertTriangle, Palette,
+  Download, Trash2, Smartphone, AlertTriangle, Palette, ArrowRight,
 } from 'lucide-react';
 import { ThemeSegmented } from '@/components/theme/ThemeToggle';
 import { useAuthStore } from '@/store/auth.store';
 import { authApi, billingApi } from '@/lib/api';
 import { Modal } from '@/components/ui/Modal';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 const TABS = [
   { key: 'profile',  label: 'Profile',       icon: User },
@@ -23,20 +24,6 @@ const TABS = [
   { key: 'notifications', label: 'Notifications', icon: Bell },
   { key: 'appearance', label: 'Appearance',   icon: Palette },
   { key: 'billing',  label: 'Billing',       icon: CreditCard },
-];
-
-const CURRENCIES = [
-  { value: 'INR', label: '₹ Indian Rupee (INR)' },
-  { value: 'USD', label: '$ US Dollar (USD)' },
-  { value: 'EUR', label: '€ Euro (EUR)' },
-  { value: 'GBP', label: '£ British Pound (GBP)' },
-];
-
-const TIMEZONES = [
-  { value: 'Asia/Kolkata',   label: 'India Standard Time (IST)' },
-  { value: 'America/New_York', label: 'Eastern Time (ET)' },
-  { value: 'Europe/London',  label: 'Greenwich Mean Time (GMT)' },
-  { value: 'Asia/Dubai',     label: 'Gulf Standard Time (GST)' },
 ];
 
 export default function SettingsPage() {
@@ -53,17 +40,15 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [tab, setTab] = useState('profile');
-  const [saved, setSaved] = useState(false);
+  // Per-tab success flag so saving on one tab doesn't flash "Saved" on another
+  const [savedTab, setSavedTab] = useState<string | null>(null);
   const [profile, setProfile] = useState({ name: '', email: '', phone: '' });
   const [profilePhoneError, setProfilePhoneError] = useState<string | null>(null);
-  const [company, setCompany] = useState({
-    name: '', gstin: '', address: '', currency: 'INR', timezone: 'Asia/Kolkata',
-  });
+  const [company, setCompany] = useState({ name: '', gstin: '' });
   const [password, setPassword] = useState({ current: '', next: '', confirm: '' });
   const [notifications, setNotifications] = useState({
     orders: true, lowStock: true, reviews: false, marketing: false, weekly: true,
   });
-  const [logo, setLogo] = useState<File[]>([]);
   const [profileError, setProfileError] = useState('');
   const [companyError, setCompanyError] = useState('');
   const [passwordError, setPasswordError] = useState('');
@@ -101,8 +86,8 @@ export default function SettingsPage() {
         phone: isPhoneEmpty(profile.phone) ? '' : profile.phone,
       });
       await refreshFromServer();
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
+      setSavedTab('profile');
+      setTimeout(() => setSavedTab(null), 2500);
     } catch (err: any) {
       setProfileError(err.response?.data?.error || err.message);
     }
@@ -113,8 +98,8 @@ export default function SettingsPage() {
     try {
       await billingApi.updateTenant({ businessName: company.name, gstin: company.gstin });
       await refreshFromServer();
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
+      setSavedTab('company');
+      setTimeout(() => setSavedTab(null), 2500);
     } catch (err: any) {
       setCompanyError(err.response?.data?.error || err.message);
     }
@@ -129,8 +114,8 @@ export default function SettingsPage() {
     try {
       await authApi.changePassword(password.current, password.next);
       setPassword({ current: '', next: '', confirm: '' });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
+      setSavedTab('security');
+      setTimeout(() => setSavedTab(null), 2500);
     } catch (err: any) {
       setPasswordError(err.response?.data?.error || err.message);
     }
@@ -138,8 +123,8 @@ export default function SettingsPage() {
 
   const saveNotifications = () => {
     localStorage.setItem('notificationPrefs', JSON.stringify(notifications));
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+    setSavedTab('notifications');
+    setTimeout(() => setSavedTab(null), 2500);
   };
 
   return (
@@ -187,8 +172,8 @@ export default function SettingsPage() {
                 <div className="flex items-center gap-4 mb-6">
                   <Avatar name={profile.name || 'U'} size="xl" />
                   <div>
-                    <Button size="sm" variant="secondary">Change Avatar</Button>
-                    <p className="text-xs text-slate-500 mt-1">PNG, JPG up to 2MB</p>
+                    <div className="text-sm font-bold text-slate-900">{profile.name || 'Your name'}</div>
+                    <p className="text-xs text-slate-500 mt-0.5">{profile.email}</p>
                   </div>
                 </div>
 
@@ -208,8 +193,8 @@ export default function SettingsPage() {
                   <Button variant="secondary" onClick={() => {
                     if (user) setProfile({ name: user.name || '', email: user.email || '', phone: (user as any).phone || '' });
                   }}>Reset</Button>
-                  <Button leftIcon={saved ? <Check size={14} /> : <Save size={14} />} onClick={saveProfile}>
-                    {saved ? 'Saved' : 'Save Changes'}
+                  <Button leftIcon={savedTab === 'profile' ? <Check size={14} /> : <Save size={14} />} onClick={saveProfile}>
+                    {savedTab === 'profile' ? 'Saved' : 'Save Changes'}
                   </Button>
                 </div>
               </Card>
@@ -223,25 +208,12 @@ export default function SettingsPage() {
                 <div className="space-y-4">
                   <Input label="Company Name" leftIcon={<Building2 size={14} />} value={company.name} onChange={(e) => setCompany({ ...company, name: e.target.value })} />
                   <Input label="GSTIN" value={company.gstin} onChange={(e) => setCompany({ ...company, gstin: e.target.value.toUpperCase() })} placeholder="22AAAAA0000A1Z5" />
-                  <Textarea label="Registered Address" value={company.address} onChange={(e) => setCompany({ ...company, address: e.target.value })} rows={3} />
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <Select label="Currency" value={company.currency} onChange={(v) => setCompany({ ...company, currency: v })} options={CURRENCIES} fullWidth />
-                    <Select label="Timezone" value={company.timezone} onChange={(v) => setCompany({ ...company, timezone: v })} options={TIMEZONES} fullWidth />
-                  </div>
-                  <FileUpload
-                    label="Company Logo"
-                    accept="image/*"
-                    maxSize={2 * 1024 * 1024}
-                    value={logo}
-                    onChange={setLogo}
-                    hint="Square PNG recommended, min 200×200"
-                  />
                 </div>
 
                 {companyError && <p className="text-xs text-rose-600 font-medium mt-2">{companyError}</p>}
                 <div className="flex items-center justify-end gap-2 mt-6 pt-6 border-t border-slate-100">
-                  <Button leftIcon={saved ? <Check size={14} /> : <Save size={14} />} onClick={saveCompany}>
-                    {saved ? 'Saved' : 'Save Changes'}
+                  <Button leftIcon={savedTab === 'company' ? <Check size={14} /> : <Save size={14} />} onClick={saveCompany}>
+                    {savedTab === 'company' ? 'Saved' : 'Save Changes'}
                   </Button>
                 </div>
               </Card>
@@ -261,7 +233,9 @@ export default function SettingsPage() {
 
                   {passwordError && <p className="text-xs text-rose-600 font-medium">{passwordError}</p>}
                   <div className="flex items-center justify-end gap-2 mt-6 pt-6 border-t border-slate-100">
-                    <Button leftIcon={<Save size={14} />} onClick={savePassword}>Update Password</Button>
+                    <Button leftIcon={savedTab === 'security' ? <Check size={14} /> : <Save size={14} />} onClick={savePassword}>
+                      {savedTab === 'security' ? 'Saved' : 'Update Password'}
+                    </Button>
                   </div>
                 </Card>
 
@@ -291,8 +265,8 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="flex items-center justify-end gap-2 mt-6 pt-6 border-t border-slate-100">
-                  <Button leftIcon={saved ? <Check size={14} /> : <Save size={14} />} onClick={saveNotifications}>
-                    {saved ? 'Saved' : 'Save Preferences'}
+                  <Button leftIcon={savedTab === 'notifications' ? <Check size={14} /> : <Save size={14} />} onClick={saveNotifications}>
+                    {savedTab === 'notifications' ? 'Saved' : 'Save Preferences'}
                   </Button>
                 </div>
               </Card>
@@ -316,38 +290,22 @@ export default function SettingsPage() {
             )}
 
             {tab === 'billing' && (
-              <>
-                <Card className="p-6 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-64 h-64 rounded-full bg-emerald-100 blur-3xl opacity-50" />
-                  <div className="relative">
-                    <Badge variant="emerald">Current Plan</Badge>
-                    <h2 className="text-2xl font-bold text-slate-900 mt-2">Growth</h2>
-                    <p className="text-xs text-slate-500 mt-1">Unlimited channels · 10,000 orders/month</p>
-                    <div className="flex items-baseline gap-1 mt-4">
-                      <span className="text-4xl font-bold gradient-text">₹2,499</span>
-                      <span className="text-sm text-slate-500 font-semibold">/month</span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-5">
-                      <Button>Upgrade Plan</Button>
-                      <Button variant="secondary">Cancel Subscription</Button>
-                    </div>
+              <Card className="p-6 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 rounded-full bg-emerald-100 blur-3xl opacity-50" />
+                <div className="relative">
+                  <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center mb-4">
+                    <CreditCard size={20} className="text-emerald-600" />
                   </div>
-                </Card>
-
-                <Card className="p-6">
-                  <h2 className="font-bold text-lg text-slate-900 mb-4">Payment Method</h2>
-                  <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50/50 border border-slate-100">
-                    <div className="w-12 h-8 rounded-md bg-gradient-to-br from-slate-700 to-slate-900 flex items-center justify-center text-white text-xs font-bold">
-                      VISA
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-sm font-bold text-slate-900">•••• •••• •••• 4242</div>
-                      <div className="text-xs text-slate-500">Expires 12/2027</div>
-                    </div>
-                    <Button size="sm" variant="secondary">Update</Button>
-                  </div>
-                </Card>
-              </>
+                  <h2 className="font-bold text-lg text-slate-900 mb-1">Billing &amp; Subscription</h2>
+                  <p className="text-sm text-slate-500 max-w-md">
+                    Manage your plan, wallet, pay-as-you-go, usage limits, saved cards and invoices
+                    from the dedicated billing page.
+                  </p>
+                  <Link href="/dashboard/billing" className="inline-block mt-5">
+                    <Button rightIcon={<ArrowRight size={14} />}>Go to Billing</Button>
+                  </Link>
+                </div>
+              </Card>
             )}
           </div>
         </div>

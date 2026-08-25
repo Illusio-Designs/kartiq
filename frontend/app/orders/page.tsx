@@ -4,7 +4,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { orderApi, customerApi, channelApi } from '@/lib/api';
+import { orderApi, customerApi, channelApi, productApi } from '@/lib/api';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import {
@@ -160,7 +160,7 @@ export default function OrdersPage() {
   const openEdit = (o: any) => {
     setEditOrder(o);
     setEditStatus(o.status || 'PENDING');
-    setEditTracking(o.trackingNumber || o.awb || '');
+    setEditTracking(o.trackingNumber || '');
     setEditCourier(o.courierName || '');
   };
   const editStatusMutation = useMutation({
@@ -385,7 +385,7 @@ export default function OrdersPage() {
           </td>
         );
       case 'date':
-        return <td key={key} className="px-3 py-2.5 text-slate-400 text-xs whitespace-nowrap">{formatDateTime(o.createdAt)}</td>;
+        return <td key={key} className="px-3 py-2.5 text-slate-500 text-xs whitespace-nowrap">{formatDateTime(o.createdAt)}</td>;
       default:
         return <td key={key} className="px-3 py-2.5 text-slate-400">—</td>;
     }
@@ -635,7 +635,22 @@ export default function OrdersPage() {
 
           {/* Mobile list */}
           <div className="md:hidden divide-y divide-slate-100">
-            {sortedOrders.map((o: any) => {
+            {isLoading ? (
+              <div className="p-6"><Loader size="sm" /></div>
+            ) : !sortedOrders.length ? (
+              <EmptyState
+                icon={<ShoppingBag size={28} />}
+                iconBg="bg-emerald-50 text-emerald-600"
+                title="No orders yet"
+                description="Orders flow in automatically from connected channels. You can also create one manually for offline / B2B sales."
+                action={
+                  <Button size="sm" leftIcon={<Plus size={12} />} onClick={() => setModalOpen(true)}>
+                    Create manually
+                  </Button>
+                }
+                decorative
+              />
+            ) : sortedOrders.map((o: any) => {
               const isAmazon = String(o.channel?.type || '').toUpperCase().includes('AMAZON');
               const fulLabel = o.fulfillmentType === 'CHANNEL' ? (isAmazon ? 'FBA' : 'Channel')
                 : o.fulfillmentType === 'DROPSHIP' ? 'Dropship' : (isAmazon ? 'MFN' : 'Self');
@@ -770,8 +785,7 @@ export default function OrdersPage() {
 // ═══════════════════════════════════════════════════════════════════════════
 interface OrderItem {
   id: string;
-  name: string;
-  sku: string;
+  variantId: string;
   qty: number;
   unitPrice: number;
 }
@@ -782,7 +796,7 @@ function NewOrderModal({ open, onClose }: { open: boolean; onClose: () => void }
   const [channelId, setChannelId] = useState('');
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState<OrderItem[]>([
-    { id: '1', name: '', sku: '', qty: 1, unitPrice: 0 },
+    { id: '1', variantId: '', qty: 1, unitPrice: 0 },
   ]);
   const [error, setError] = useState('');
 
@@ -796,6 +810,13 @@ function NewOrderModal({ open, onClose }: { open: boolean; onClose: () => void }
     queryFn: () => channelApi.list().then(r => r.data),
     enabled: open,
   });
+  // Products (with variants) to pick line items from — the create call resolves
+  // items by variantId, so users choose a real variant instead of typing.
+  const { data: productsData } = useQuery({
+    queryKey: ['products-for-order'],
+    queryFn: () => productApi.list({ limit: 200 }).then(r => r.data),
+    enabled: open,
+  });
 
   const customerOptions = (customers?.customers || customers || []).map((c: any) => ({
     value: c.id, label: c.name,
@@ -803,6 +824,16 @@ function NewOrderModal({ open, onClose }: { open: boolean; onClose: () => void }
   const channelOptions = (channels || []).map((c: any) => ({
     value: c.id, label: c.name,
   }));
+  const variantOptions = ((productsData?.products || productsData || []) as any[])
+    .flatMap((p: any) => (p.variants || []).map((v: any) => ({
+      value: v.id,
+      label: `${p.name} · ${v.sku || v.name || 'variant'}`,
+    })));
+  // variantId → default selling price, used to auto-fill the price field on pick.
+  const variantPrice: Record<string, number> = {};
+  ((productsData?.products || productsData || []) as any[]).forEach((p: any) =>
+    (p.variants || []).forEach((v: any) => { variantPrice[v.id] = Number(v.sellingPrice ?? 0); })
+  );
 
   const subtotal = items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
 
@@ -811,8 +842,8 @@ function NewOrderModal({ open, onClose }: { open: boolean; onClose: () => void }
       customerId,
       channelId,
       notes,
-      items: items.filter(i => i.name && i.qty > 0).map(i => ({
-        name: i.name, sku: i.sku, qty: i.qty, unitPrice: i.unitPrice,
+      items: items.filter(i => i.variantId && i.qty > 0).map(i => ({
+        variantId: i.variantId, qty: i.qty, unitPrice: i.unitPrice,
         total: i.qty * i.unitPrice,
       })),
       subtotal, total: subtotal,
@@ -827,7 +858,7 @@ function NewOrderModal({ open, onClose }: { open: boolean; onClose: () => void }
 
   const reset = () => {
     setCustomerId(''); setChannelId(''); setNotes(''); setError('');
-    setItems([{ id: '1', name: '', sku: '', qty: 1, unitPrice: 0 }]);
+    setItems([{ id: '1', variantId: '', qty: 1, unitPrice: 0 }]);
   };
 
   const updateItem = (id: string, patch: Partial<OrderItem>) => {
@@ -835,7 +866,7 @@ function NewOrderModal({ open, onClose }: { open: boolean; onClose: () => void }
   };
 
   const addItem = () => {
-    setItems([...items, { id: String(Date.now()), name: '', sku: '', qty: 1, unitPrice: 0 }]);
+    setItems([...items, { id: String(Date.now()), variantId: '', qty: 1, unitPrice: 0 }]);
   };
 
   const removeItem = (id: string) => {
@@ -856,7 +887,7 @@ function NewOrderModal({ open, onClose }: { open: boolean; onClose: () => void }
           <Button
             onClick={() => { setError(''); createMutation.mutate(); }}
             loading={createMutation.isPending}
-            disabled={!customerId || !channelId || items.every(i => !i.name)}
+            disabled={!customerId || !channelId || items.every(i => !i.variantId)}
           >
             Create Order
           </Button>
@@ -893,23 +924,23 @@ function NewOrderModal({ open, onClose }: { open: boolean; onClose: () => void }
           <div className="space-y-2">
             {items.map((item, i) => (
               <div key={item.id} className="grid grid-cols-12 gap-2 p-3 bg-slate-50 rounded-xl items-center">
-                <div className="col-span-12 md:col-span-4">
-                  <Input
-                    value={item.name}
-                    onChange={(e) => updateItem(item.id, { name: e.target.value })}
-                    placeholder="Product name"
-                  />
-                </div>
-                <div className="col-span-6 md:col-span-3">
-                  <Input
-                    value={item.sku}
-                    onChange={(e) => updateItem(item.id, { sku: e.target.value })}
-                    placeholder="SKU"
+                <div className="col-span-12 md:col-span-7">
+                  <Select
+                    value={item.variantId}
+                    onChange={(val) => updateItem(item.id, {
+                      variantId: val,
+                      // auto-fill price from the variant when it's still untouched (0)
+                      ...(item.unitPrice ? {} : { unitPrice: variantPrice[val] ?? 0 }),
+                    })}
+                    options={variantOptions}
+                    placeholder="Select a product…"
+                    fullWidth
                   />
                 </div>
                 <div className="col-span-3 md:col-span-2">
                   <Input
                     type="number"
+                    min={1}
                     value={item.qty}
                     onChange={(e) => updateItem(item.id, { qty: Number(e.target.value) })}
                     placeholder="Qty"
@@ -918,6 +949,7 @@ function NewOrderModal({ open, onClose }: { open: boolean; onClose: () => void }
                 <div className="col-span-3 md:col-span-2">
                   <Input
                     type="number"
+                    min={0}
                     value={item.unitPrice}
                     onChange={(e) => updateItem(item.id, { unitPrice: Number(e.target.value) })}
                     placeholder="Price"

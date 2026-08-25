@@ -478,12 +478,11 @@ function ChannelCard({
     }
     if (entry.pendingRequest) {
       return (
-        <div
-          className="w-12 h-12 rounded-full bg-amber-50 text-amber-700 flex items-center justify-center flex-shrink-0"
-          title={`Request ${entry.pendingRequest.status.toLowerCase()}`}
-        >
-          <Clock size={16} />
-        </div>
+        <Tooltip content={`Request ${entry.pendingRequest.status.toLowerCase()}`}>
+          <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-700 flex items-center justify-center flex-shrink-0">
+            <Clock size={16} />
+          </div>
+        </Tooltip>
       );
     }
     return (
@@ -506,13 +505,18 @@ function ChannelCard({
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2 mb-1">
           <h3 className="font-bold text-slate-900 text-base leading-tight truncate">{entry.name}</h3>
-          <span
-            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${pill.className}`}
-            title={entry.status === 'not_available' && entry.note ? entry.note : undefined}
-          >
-            {pill.text}
-            {entry.status === 'connected' && connectedCount > 1 && ` · ${connectedCount}`}
-          </span>
+          {entry.status === 'not_available' && entry.note ? (
+            <Tooltip content={entry.note} side="left" wrap>
+              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${pill.className}`}>
+                {pill.text}
+              </span>
+            </Tooltip>
+          ) : (
+            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${pill.className}`}>
+              {pill.text}
+              {entry.status === 'connected' && connectedCount > 1 && ` · ${connectedCount}`}
+            </span>
+          )}
         </div>
         {entry.tagline && (
           <p className="text-sm text-slate-500 leading-snug line-clamp-2">{entry.tagline}</p>

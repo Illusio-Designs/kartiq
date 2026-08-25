@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -158,6 +158,22 @@ function WarehouseModal({ open, onClose, mode, warehouse }: {
     isActive: warehouse?.isActive ?? true,
   });
   const [error, setError] = useState('');
+
+  // (Re)hydrate the form whenever the modal opens or the warehouse changes.
+  useEffect(() => {
+    if (!open) return;
+    const a = typeof warehouse?.address === 'object' ? warehouse.address : {};
+    setForm({
+      name:    warehouse?.name  || '',
+      code:    warehouse?.code  || '',
+      line1:   a.line1   || '',
+      city:    a.city    || '',
+      state:   a.state   || '',
+      pincode: a.pincode || '',
+      isActive: warehouse?.isActive ?? true,
+    });
+    setError('');
+  }, [open, warehouse]);
 
   const mutation = useMutation({
     mutationFn: () => {

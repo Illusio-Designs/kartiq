@@ -85,7 +85,6 @@ export function Topbar() {
             type="button"
             onClick={() => window.dispatchEvent(new Event('open-command-palette'))}
             aria-label={`Open command palette (${shortcutLabel})`}
-            title="Open command palette"
             // Hidden below `sm:` so the input doesn't have to share its
             // already-tight width with a non-essential keyboard hint on
             // phones — the same shortcut still works regardless.

@@ -28,13 +28,22 @@ export function FileUpload({
 }: FileUploadProps) {
   const [dragging, setDragging] = useState(false);
   const [internalFiles, setInternalFiles] = useState<File[]>(value);
+  const [rejected, setRejected] = useState<string>('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   const files = value.length ? value : internalFiles;
 
   const handleFiles = (incoming: FileList | null) => {
     if (!incoming) return;
-    const accepted = Array.from(incoming).filter(f => f.size <= maxSize);
+    const all = Array.from(incoming);
+    const accepted = all.filter(f => f.size <= maxSize);
+    const tooBig = all.filter(f => f.size > maxSize);
+    // Tell the user why a file didn't attach instead of dropping it silently.
+    setRejected(
+      tooBig.length
+        ? `${tooBig.length === 1 ? `“${tooBig[0].name}” is` : `${tooBig.length} files are`} larger than the ${formatSize(maxSize)} limit and ${tooBig.length === 1 ? 'was' : 'were'} not added.`
+        : ''
+    );
     const next = multiple ? [...files, ...accepted] : accepted.slice(0, 1);
     setInternalFiles(next);
     onChange?.(next);
@@ -54,6 +63,7 @@ export function FileUpload({
   const remove = (index: number) => {
     const next = files.filter((_, i) => i !== index);
     setInternalFiles(next);
+    setRejected('');
     onChange?.(next);
   };
 
@@ -148,6 +158,9 @@ export function FileUpload({
       )}
 
       {error && <p className="text-xs text-rose-600 mt-2 font-medium">{error}</p>}
+      {!error && rejected && (
+        <p className="text-xs text-amber-600 mt-2 font-medium" role="alert">{rejected}</p>
+      )}
     </div>
   );
 }

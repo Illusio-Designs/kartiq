@@ -11,7 +11,7 @@ import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import {
   Button, Badge, Card, Modal, Input, Textarea, Select, Pagination, FileUpload, Tooltip, EmptyState, Tabs, Loader,
 } from '@/components/ui';
-import { Plus, Package, RefreshCw, CheckCircle2, XCircle, Boxes, Layers, AlertTriangle, Ban, Tag } from 'lucide-react';
+import { Plus, Package, RefreshCw, CheckCircle2, XCircle, Boxes, Layers, AlertTriangle, Ban, Tag, SearchX } from 'lucide-react';
 import { ProductCardSkeleton } from '@/components/Shimmer';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -128,6 +128,34 @@ export default function ProductsPage() {
             ))}
           </div>
         ) : data?.products?.length ? (
+          filteredProducts.length === 0 ? (
+            <Card>
+              <EmptyState
+                icon={<SearchX size={28} />}
+                iconBg="bg-slate-100 text-slate-500"
+                title={
+                  tab === 'low' ? 'No low-stock products'
+                  : tab === 'out' ? 'No out-of-stock products'
+                  : tab === 'unpriced' ? 'No products need a price'
+                  : 'No products match your search'
+                }
+                description={
+                  tab === 'low' ? 'Nothing on this page is running low on stock.'
+                  : tab === 'out' ? 'Everything on this page is in stock.'
+                  : tab === 'unpriced' ? 'Every product on this page has a selling price set.'
+                  : 'Try a different search term or clear the current filter.'
+                }
+                action={
+                  tab !== 'all' ? (
+                    <Button variant="outline" size="sm" onClick={() => { setTab('all'); setPage(1); }}>
+                      Show all products
+                    </Button>
+                  ) : undefined
+                }
+                size="md"
+              />
+            </Card>
+          ) : (
           <>
             <Card className="p-0 overflow-hidden">
               {/* Mobile: card list */}
@@ -272,6 +300,7 @@ export default function ProductsPage() {
               </Card>
             )}
           </>
+          )
         ) : (
           <Card>
             <EmptyState
@@ -608,6 +637,7 @@ function NewProductModal({ open, onClose }: { open: boolean; onClose: () => void
           <Input
             label="Cost Price"
             type="number"
+            min={0}
             value={form.costPrice}
             onChange={(e) => setForm({ ...form, costPrice: e.target.value })}
             placeholder="0.00"
@@ -615,6 +645,7 @@ function NewProductModal({ open, onClose }: { open: boolean; onClose: () => void
           <Input
             label="MRP"
             type="number"
+            min={0}
             value={form.mrp}
             onChange={(e) => setForm({ ...form, mrp: e.target.value })}
             placeholder="0.00"
@@ -622,6 +653,7 @@ function NewProductModal({ open, onClose }: { open: boolean; onClose: () => void
           <Input
             label="Selling Price"
             type="number"
+            min={0}
             value={form.sellingPrice}
             onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })}
             placeholder="0.00"

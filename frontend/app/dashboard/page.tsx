@@ -9,8 +9,8 @@ import {
   Button, Tooltip, Badge, Card, DatePicker, Pagination, Dropdown, Avatar,
 } from '@/components/ui';
 import {
-  Wallet, TrendingDown, PiggyBank, Download, MoreHorizontal, ArrowUp, ArrowDown,
-  ArrowUpRight, Filter, Plus, Send, Package, Info, Eye, RefreshCw,
+  Wallet, TrendingDown, PiggyBank, MoreHorizontal, ArrowUp, ArrowDown,
+  ArrowUpRight, Plus, Send, Package, Info, RefreshCw,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
@@ -34,7 +34,7 @@ export default function DashboardPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => dashboardApi.get().then(r => r.data),
   });
@@ -83,11 +83,6 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <DatePicker value={date} onChange={setDate} />
-            <Tooltip content="Export dashboard report">
-              <Button size="md" leftIcon={<Download size={14} />}>
-                <span className="hidden sm:inline">Export</span>
-              </Button>
-            </Tooltip>
           </div>
         </div>
 
@@ -105,12 +100,13 @@ export default function DashboardPage() {
                 </Tooltip>
               </div>
               <Dropdown
-                trigger={<button aria-label="More actions" className="text-slate-400 hover:text-slate-700 p-1"><MoreHorizontal size={16} /></button>}
+                trigger={<button type="button" aria-label="More actions" className="text-slate-400 hover:text-slate-700 p-1"><MoreHorizontal size={16} /></button>}
                 items={[
-                  { label: 'View details', icon: <Eye size={14} /> },
-                  { label: 'Refresh data', icon: <RefreshCw size={14} /> },
-                  { divider: true, label: '' },
-                  { label: 'Export CSV', icon: <Download size={14} /> },
+                  {
+                    label: isFetching ? 'Refreshing…' : 'Refresh data',
+                    icon: <RefreshCw size={14} className={isFetching ? 'animate-spin' : undefined} />,
+                    onClick: () => { refetch(); },
+                  },
                 ]}
               />
             </div>
@@ -133,7 +129,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 mt-5">
               <Link href="/orders" className="flex-1">
                 <Button variant="primary" size="sm" leftIcon={<Send size={12} />} fullWidth>
-                  Sync Now
+                  View orders
                 </Button>
               </Link>
               <Link href="/reports" className="flex-1">
@@ -155,9 +151,6 @@ export default function DashboardPage() {
                   <Info size={12} className="text-slate-400" />
                 </Tooltip>
               </div>
-              <button className="text-slate-400 hover:text-slate-700 p-1">
-                <MoreHorizontal size={16} />
-              </button>
             </div>
             <div className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
               {(s.lowStockCount || 0).toLocaleString()}
@@ -184,9 +177,6 @@ export default function DashboardPage() {
                   <Info size={12} className="text-slate-400" />
                 </Tooltip>
               </div>
-              <button className="text-slate-400 hover:text-slate-700 p-1">
-                <MoreHorizontal size={16} />
-              </button>
             </div>
             <div className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
               {(s.totalOrders || 0).toLocaleString()}
@@ -242,9 +232,6 @@ export default function DashboardPage() {
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="emerald" dot>Earnings</Badge>
-                <button className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50">
-                  This Year <MoreHorizontal size={12} />
-                </button>
               </div>
             </div>
 
@@ -259,9 +246,6 @@ export default function DashboardPage() {
           <Card className="p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-bold text-slate-900">Inventory Targets</h2>
-              <button className="text-slate-400 hover:text-slate-700 p-1">
-                <MoreHorizontal size={16} />
-              </button>
             </div>
             <div className="space-y-3">
               {[
@@ -308,11 +292,6 @@ export default function DashboardPage() {
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-5 pb-3">
               <h2 className="font-bold text-slate-900">Recent Transactions</h2>
               <div className="flex items-center gap-2">
-                <Tooltip content="Filter orders">
-                  <Button variant="secondary" size="sm" leftIcon={<Filter size={12} />}>
-                    Filter
-                  </Button>
-                </Tooltip>
                 <Link href="/orders" className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
                   View All <ArrowUpRight size={11} />
                 </Link>
@@ -357,7 +336,7 @@ export default function DashboardPage() {
                   ))}
                   {paginatedOrders.length === 0 && !isLoading && (
                     <tr>
-                      <td colSpan={5} className="text-center py-10 text-sm text-slate-400">
+                      <td colSpan={5} className="text-center py-10 text-sm text-slate-500">
                         No recent orders yet
                       </td>
                     </tr>
@@ -387,7 +366,7 @@ export default function DashboardPage() {
                 </div>
               ))}
               {paginatedOrders.length === 0 && !isLoading && (
-                <div className="text-center py-10 text-sm text-slate-400">No recent orders yet</div>
+                <div className="text-center py-10 text-sm text-slate-500">No recent orders yet</div>
               )}
             </div>
 

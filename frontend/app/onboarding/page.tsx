@@ -6,7 +6,7 @@ import { authApi, planApi } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 import { track, upgradeSession } from '@/lib/analytics';
 import { ArrowRight, Sparkles, Building2, User, Lock, CheckCircle2 } from 'lucide-react';
-import { PhoneField, isPhoneEmpty } from '@/components/ui';
+import { PhoneField, isPhoneEmpty, Input, Select } from '@/components/ui';
 import {
   collectErrors, validateEmail, validateGstin, validatePassword, validatePhone, validateText,
 } from '@/lib/validators';
@@ -173,8 +173,34 @@ function OnboardingInner() {
                 <Field label="GSTIN (optional)" value={form.gstin} onChange={(v) => update('gstin', v.toUpperCase())} error={step2Errs.gstin} placeholder="22AAAAA0000A1Z5" />
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Industry"     value={form.industry}     onChange={(v) => update('industry', v)} />
-                <Field label="Company size" value={form.companySize}  onChange={(v) => update('companySize', v)} />
+                <Select
+                  label="Industry"
+                  fullWidth
+                  placeholder="Select industry"
+                  value={form.industry}
+                  onChange={(v) => update('industry', v)}
+                  options={[
+                    { value: 'Apparel', label: 'Apparel' },
+                    { value: 'Electronics', label: 'Electronics' },
+                    { value: 'Beauty', label: 'Beauty' },
+                    { value: 'Food', label: 'Food' },
+                    { value: 'Home', label: 'Home' },
+                    { value: 'Other', label: 'Other' },
+                  ]}
+                />
+                <Select
+                  label="Company size"
+                  fullWidth
+                  placeholder="Select size"
+                  value={form.companySize}
+                  onChange={(v) => update('companySize', v)}
+                  options={[
+                    { value: '1-10', label: '1-10' },
+                    { value: '11-50', label: '11-50' },
+                    { value: '51-200', label: '51-200' },
+                    { value: '200+', label: '200+' },
+                  ]}
+                />
               </div>
               <div className="flex gap-2 mt-4">
                 <button onClick={() => setStep(1)} className="btn-secondary flex-1">Back</button>
@@ -241,21 +267,14 @@ function Field({ label, value, onChange, type = 'text', error, placeholder }: {
   placeholder?: string;
 }) {
   return (
-    <div>
-      <label className="block text-xs font-semibold text-slate-600 mb-1.5">{label}</label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className={`w-full px-4 py-2.5 rounded-xl border outline-none focus:ring-2 focus:ring-emerald-100 ${
-          error
-            ? 'border-rose-300 focus:border-rose-400'
-            : 'border-slate-200 focus:border-emerald-500'
-        }`}
-      />
-      {error && <p className="text-xs text-rose-600 mt-1 font-medium">{error}</p>}
-    </div>
+    <Input
+      label={label}
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      error={error || undefined}
+    />
   );
 }
 

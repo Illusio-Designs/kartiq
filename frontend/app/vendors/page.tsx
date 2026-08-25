@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -161,6 +161,22 @@ function VendorModal({ open, onClose, mode, vendor }: {
   });
   const [error, setError] = useState('');
   const [phoneError, setPhoneError] = useState<string | null>(null);
+
+  // (Re)hydrate the form whenever the modal opens or the vendor changes.
+  useEffect(() => {
+    if (!open) return;
+    setForm({
+      name:         vendor?.name         || '',
+      email:        vendor?.email        || '',
+      phone:        vendor?.phone        || '',
+      gstin:        vendor?.gstin        || '',
+      paymentTerms: vendor?.paymentTerms || '',
+      address:      typeof vendor?.address === 'object' ? (vendor?.address?.line1 || '') : (vendor?.address || ''),
+      isActive:     vendor?.isActive ?? true,
+    });
+    setError('');
+    setPhoneError(null);
+  }, [open, vendor]);
 
   const mutation = useMutation({
     mutationFn: () => {

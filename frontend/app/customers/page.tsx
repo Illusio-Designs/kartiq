@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -32,10 +32,17 @@ export default function CustomersPage() {
     `${c.name || ''} ${c.email || ''} ${c.phone || ''} ${c.gstIn || ''} ${c.city || ''}`
   );
   const total = data?.total || customers.length;
-  const b2bCount = customers.filter((c: any) => c.isB2B).length;
+
+  // Stats must reflect the full customer set, not just the current page.
+  const { data: allData } = useQuery({
+    queryKey: ['customers', 'all-for-stats'],
+    queryFn: () => customerApi.list({ limit: 1000 }).then(r => r.data),
+  });
+  const statSet = allData?.customers || allData || [];
+  const b2bCount = statSet.filter((c: any) => c.isB2B).length;
 
   // Customers created in the current calendar month
-  const thisMonth = customers.filter((c: any) => {
+  const thisMonth = statSet.filter((c: any) => {
     if (!c.createdAt) return false;
     const d = new Date(c.createdAt);
     const now = new Date();
@@ -103,7 +110,7 @@ export default function CustomersPage() {
                       <Badge variant={c.isB2B ? 'amber' : 'emerald'}>{c.isB2B ? 'B2B' : 'Retail'}</Badge>
                     </td>
                     <td className="px-4 py-3 text-slate-500 font-mono text-xs">{c.gstIn || '—'}</td>
-                    <td className="px-4 py-3 text-slate-400 text-xs whitespace-nowrap">
+                    <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
                       {c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                     </td>
                     <td className="px-4 py-3">
@@ -147,7 +154,11 @@ export default function CustomersPage() {
 
           {/* Mobile cards */}
           <div className="md:hidden divide-y divide-slate-100">
-            {customers.map((c: any) => (
+            {isLoading ? (
+              <div className="p-8 flex justify-center">
+                <Loader size="sm" />
+              </div>
+            ) : customers.length ? customers.map((c: any) => (
               <div key={c.id} className="p-4 flex items-center gap-3">
                 <Avatar name={c.name} size="md" />
                 <div className="flex-1 min-w-0">
@@ -156,12 +167,25 @@ export default function CustomersPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant={c.isB2B ? 'amber' : 'emerald'}>{c.isB2B ? 'B2B' : 'Retail'}</Badge>
-                  <Button variant="ghost" size="icon" onClick={() => setEditCustomer(c)}>
+                  <Button variant="ghost" size="icon" aria-label="Edit customer" onClick={() => setEditCustomer(c)}>
                     <Pencil size={14} />
                   </Button>
                 </div>
               </div>
-            ))}
+            )) : (
+              <EmptyState
+                icon={<Users size={28} />}
+                iconBg="bg-emerald-50 text-emerald-600"
+                title="No customers yet"
+                description="Add a customer manually for B2B accounts and quotes, or wait — they appear after your first order."
+                action={
+                  <Button leftIcon={<UserPlus size={14} />} onClick={() => setCreateOpen(true)}>
+                    Add customer
+                  </Button>
+                }
+                decorative
+              />
+            )}
           </div>
 
           {total > pageSize && (
@@ -252,11 +276,18 @@ function CustomerModal({
   const [error, setError] = useState('');
   const [phoneError, setPhoneError] = useState<string | null>(null);
 
-  // Reset form when customer changes (switching between rows)
-  const resetToCustomer = (c: any) => setForm({
-    name: c?.name || '', email: c?.email || '', phone: c?.phone || '',
-    gstIn: c?.gstIn || '', isB2B: c?.isB2B || false,
-  });
+  // (Re)hydrate the form whenever the modal opens or the customer changes
+  // (switching between rows). The modal wrapper stays mounted, so the initial
+  // useState value alone would leave stale fields.
+  useEffect(() => {
+    if (!open) return;
+    setForm({
+      name: customer?.name || '', email: customer?.email || '', phone: customer?.phone || '',
+      gstIn: customer?.gstIn || '', isB2B: customer?.isB2B || false,
+    });
+    setError('');
+    setPhoneError(null);
+  }, [open, customer]);
 
   const phoneForApi = isPhoneEmpty(form.phone) ? undefined : form.phone;
 
