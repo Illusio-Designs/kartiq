@@ -23,7 +23,7 @@ export function Breadcrumbs() {
 
   return (
     <nav aria-label="Breadcrumb" className="mb-3">
-      <ol className="flex items-center gap-1.5 text-xs font-semibold leading-none text-slate-400 overflow-x-auto whitespace-nowrap no-scrollbar">
+      <ol className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 overflow-x-auto whitespace-nowrap no-scrollbar">
         <li className="flex items-center flex-shrink-0">
           <Link href="/dashboard" className="inline-flex items-center gap-1.5 hover:text-slate-600 transition-colors">
             <Home size={14} className="shrink-0" />

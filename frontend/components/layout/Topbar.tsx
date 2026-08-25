@@ -36,7 +36,7 @@ export function Topbar() {
       {/* Page title — left-aligned, derived from the current route. Lives here
           (not in the page body) so every dashboard page gains the vertical
           space the big in-page heading used to take. */}
-      <h1 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100 truncate">
+      <h1 className="text-base sm:text-lg font-bold leading-none tracking-tight text-slate-900 dark:text-slate-100 truncate">
         {pageTitle}
       </h1>
 
