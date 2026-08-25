@@ -358,10 +358,21 @@ router.put('/:id', requirePermission('channels.update'), async (req, res) => {
     const existing = await loadTenantChannel(req);
     if (!existing) return res.status(404).json({ error: 'Channel not found' });
 
-    const { name, isActive } = req.body;
+    const { name, isActive, defaultFulfillmentType } = req.body;
+    // Whitelist updatable fields; only include what was actually sent so a
+    // partial PATCH-style body doesn't null out untouched columns.
+    const data = {};
+    if (name !== undefined) data.name = name;
+    if (isActive !== undefined) data.isActive = isActive;
+    if (defaultFulfillmentType !== undefined) {
+      if (!['SELF', 'CHANNEL'].includes(defaultFulfillmentType)) {
+        return res.status(400).json({ error: 'defaultFulfillmentType must be SELF or CHANNEL' });
+      }
+      data.defaultFulfillmentType = defaultFulfillmentType;
+    }
     const ch = await prisma.channel.update({
       where: { id: req.params.id },
-      data: { name, isActive },
+      data,
     });
     res.json(safeChannel(ch));
   } catch (err) {
