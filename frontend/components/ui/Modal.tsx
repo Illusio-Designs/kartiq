@@ -30,6 +30,13 @@ export function Modal({ open, onClose, title, description, children, footer, siz
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
 
+  // Keep the latest onClose in a ref so the focus effect below can depend ONLY
+  // on `open`. If it depended on `onClose` (often an inline arrow that changes
+  // every render), the effect would re-run on each keystroke and re-focus the
+  // first field — stealing focus after every character typed in a modal input.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; });
+
   useEffect(() => {
     if (!open) return;
     // Remember what was focused so we can restore it when the drawer closes.
@@ -45,7 +52,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
     (focusable()[0] || panel)?.focus();
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { onClose(); return; }
+      if (e.key === 'Escape') { onCloseRef.current(); return; }
       if (e.key !== 'Tab') return;
       // Trap Tab focus inside the drawer.
       const items = focusable();
@@ -63,7 +70,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
       document.body.style.overflow = '';
       prevActive?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

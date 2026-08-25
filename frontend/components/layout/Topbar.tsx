@@ -1,6 +1,7 @@
 'use client';
 
 import { Menu } from 'lucide-react';
+import { usePathname } from 'next/navigation';
 import { useAuthStore } from '@/store/auth.store';
 import { useUIStore } from '@/store/ui.store';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -8,10 +9,13 @@ import { InboxTrigger } from '@/components/InboxDrawer';
 import { UserMenu } from '@/components/UserMenu';
 import { WalletPill } from '@/components/wallet/WalletPill';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
+import { pageTitleFor } from './routeLabels';
 
 export function Topbar() {
   const { user, hasPermission } = useAuthStore();
   const { setMobileSidebar } = useUIStore();
+  const pathname = usePathname() || '/';
+  const pageTitle = pageTitleFor(pathname);
   const isPlatformAdmin = !!user?.isPlatformAdmin;
 
   // Wallet pill — only roles that own the wallet numbers (billing.read|manage);
@@ -28,6 +32,13 @@ export function Topbar() {
       >
         <Menu size={18} />
       </button>
+
+      {/* Page title — left-aligned, derived from the current route. Lives here
+          (not in the page body) so every dashboard page gains the vertical
+          space the big in-page heading used to take. */}
+      <h1 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100 truncate">
+        {pageTitle}
+      </h1>
 
       {/* Right cluster — Wallet · Theme · Notifications · Account */}
       <div className="flex items-center gap-1.5 ml-auto">

@@ -463,93 +463,6 @@ export default function OrdersPage() {
           }
         />
 
-        {/* Fulfillment tabs */}
-        <Tabs<FulfillmentTab>
-          value={fulfillmentTab}
-          onChange={(k) => { setFulfillmentTab(k); setPage(1); }}
-          items={[
-            { key: 'all',    label: 'All Orders',    icon: <Layers size={14} /> },
-            { key: 'auto',   label: 'Auto Fulfill',  icon: <Zap size={14} /> },
-            { key: 'manual', label: 'Manual',        icon: <Hand size={14} /> },
-          ]}
-        />
-
-        {/* Toolbar — search · views · filters · sort · columns · export · density */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <SearchField
-            value={search}
-            onChange={setSearch}
-            placeholder="Search orders, customers, channels…"
-            shortcut="/"
-            className="flex-1 min-w-[180px] max-w-sm"
-          />
-          <div className="hidden sm:block flex-1" />
-
-          <Dropdown
-            align="right"
-            trigger={<Button variant="ghost" size="sm" leftIcon={<Bookmark size={14} />}>Views</Button>}
-            items={[
-              { label: 'All orders', icon: <Layers size={14} />, onClick: () => { clearFilters(); setFulfillmentTab('all'); } },
-              { label: 'Needs shipping', icon: <Truck size={14} />, onClick: () => { setStatus('PROCESSING'); setRisk(''); setPage(1); } },
-              { label: 'High risk', icon: <AlertTriangle size={14} />, onClick: () => { setRisk('HIGH'); setPage(1); } },
-              { label: 'Needs review', icon: <Star size={14} />, onClick: () => { setRisk('APPROVAL'); setPage(1); } },
-            ]}
-          />
-
-          <Button variant="outline" size="sm" leftIcon={<ListFilter size={14} />} onClick={() => setFiltersOpen(true)}>
-            Filters
-            {activeFilterCount > 0 && (
-              <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-bold">{activeFilterCount}</span>
-            )}
-          </Button>
-
-          <Dropdown
-            align="right"
-            trigger={<Button variant="ghost" size="sm" leftIcon={<ArrowUpDown size={14} />}>Sort</Button>}
-            items={ORDER_COLUMNS.filter((c) => c.sortable).map((c) => ({
-              label: `${c.label}${sortKey === c.key ? (sortDir === 'asc' ? '  ↑' : '  ↓') : ''}`,
-              onClick: () => toggleSort(c.key),
-            }))}
-          />
-
-          <Popover
-            align="right"
-            width="w-56"
-            trigger={<Button variant="ghost" size="sm" leftIcon={<SlidersHorizontal size={14} />}>Columns</Button>}
-          >
-            <div className="p-2">
-              <div className="px-1.5 pb-1.5 mb-1 border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Show columns</div>
-              <div className="space-y-1 px-1.5 py-1">
-                {ORDER_COLUMNS.map((c) => (
-                  <Checkbox key={c.key} checked={!hiddenCols.has(c.key)} onCheckedChange={() => toggleCol(c.key)} label={c.label} />
-                ))}
-              </div>
-            </div>
-          </Popover>
-
-          <Button variant="ghost" size="sm" leftIcon={<Download size={14} />} onClick={exportCsv}>Export</Button>
-          <DensityToggle value={density} onChange={changeDensity} />
-        </div>
-
-        {/* Active filter chips */}
-        {activeChips.length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Filters</span>
-            {activeChips.map((chip) => (
-              <button
-                key={chip.key}
-                type="button"
-                onClick={chip.clear}
-                className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors"
-              >
-                {chip.label}
-                <span className="w-4 h-4 grid place-items-center rounded-full bg-emerald-100"><X size={10} /></span>
-              </button>
-            ))}
-            <button type="button" onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-slate-600 underline underline-offset-2">Clear all</button>
-          </div>
-        )}
-
         {/* Bulk actions (appears when rows are selected) */}
         <BulkActionBar count={selected.size} onClear={() => setSelected(new Set())}>
           <Button variant="outline" size="sm" leftIcon={<Truck size={13} />} loading={bulkPending} onClick={() => bulkSetStatus('SHIPPED', 'Marked shipped')}>Mark shipped</Button>
@@ -604,8 +517,99 @@ export default function OrdersPage() {
           </div>
         )}
 
-        {/* Table */}
-        <Card className="overflow-hidden">
+        {/* One card — fulfillment tabs · toolbar · filter chips · table · pagination.
+            overflow-visible so the Views/Sort/Columns menus aren't clipped. */}
+        <Card className="p-0 overflow-visible">
+          {/* Header: tabs + toolbar + active filter chips */}
+          <div className="p-3 sm:p-4 space-y-3 border-b border-slate-100 dark:border-slate-800">
+            {/* Fulfillment tabs */}
+            <Tabs<FulfillmentTab>
+              value={fulfillmentTab}
+              onChange={(k) => { setFulfillmentTab(k); setPage(1); }}
+              items={[
+                { key: 'all',    label: 'All Orders',    icon: <Layers size={14} /> },
+                { key: 'auto',   label: 'Auto Fulfill',  icon: <Zap size={14} /> },
+                { key: 'manual', label: 'Manual',        icon: <Hand size={14} /> },
+              ]}
+            />
+
+            {/* Toolbar — search · views · filters · sort · columns · export · density */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <SearchField
+                value={search}
+                onChange={setSearch}
+                placeholder="Search orders, customers, channels…"
+                shortcut="/"
+                className="flex-1 min-w-[180px] max-w-sm"
+              />
+              <div className="hidden sm:block flex-1" />
+
+              <Dropdown
+                align="right"
+                trigger={<Button variant="ghost" size="sm" leftIcon={<Bookmark size={14} />}>Views</Button>}
+                items={[
+                  { label: 'All orders', icon: <Layers size={14} />, onClick: () => { clearFilters(); setFulfillmentTab('all'); } },
+                  { label: 'Needs shipping', icon: <Truck size={14} />, onClick: () => { setStatus('PROCESSING'); setRisk(''); setPage(1); } },
+                  { label: 'High risk', icon: <AlertTriangle size={14} />, onClick: () => { setRisk('HIGH'); setPage(1); } },
+                  { label: 'Needs review', icon: <Star size={14} />, onClick: () => { setRisk('APPROVAL'); setPage(1); } },
+                ]}
+              />
+
+              <Button variant="outline" size="sm" leftIcon={<ListFilter size={14} />} onClick={() => setFiltersOpen(true)}>
+                Filters
+                {activeFilterCount > 0 && (
+                  <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-bold">{activeFilterCount}</span>
+                )}
+              </Button>
+
+              <Dropdown
+                align="right"
+                trigger={<Button variant="ghost" size="sm" leftIcon={<ArrowUpDown size={14} />}>Sort</Button>}
+                items={ORDER_COLUMNS.filter((c) => c.sortable).map((c) => ({
+                  label: `${c.label}${sortKey === c.key ? (sortDir === 'asc' ? '  ↑' : '  ↓') : ''}`,
+                  onClick: () => toggleSort(c.key),
+                }))}
+              />
+
+              <Popover
+                align="right"
+                width="w-56"
+                trigger={<Button variant="ghost" size="sm" leftIcon={<SlidersHorizontal size={14} />}>Columns</Button>}
+              >
+                <div className="p-2">
+                  <div className="px-1.5 pb-1.5 mb-1 border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Show columns</div>
+                  <div className="space-y-1 px-1.5 py-1">
+                    {ORDER_COLUMNS.map((c) => (
+                      <Checkbox key={c.key} checked={!hiddenCols.has(c.key)} onCheckedChange={() => toggleCol(c.key)} label={c.label} />
+                    ))}
+                  </div>
+                </div>
+              </Popover>
+
+              <Button variant="ghost" size="sm" leftIcon={<Download size={14} />} onClick={exportCsv}>Export</Button>
+              <DensityToggle value={density} onChange={changeDensity} />
+            </div>
+
+            {/* Active filter chips */}
+            {activeChips.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Filters</span>
+                {activeChips.map((chip) => (
+                  <button
+                    key={chip.key}
+                    type="button"
+                    onClick={chip.clear}
+                    className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors"
+                  >
+                    {chip.label}
+                    <span className="w-4 h-4 grid place-items-center rounded-full bg-emerald-100"><X size={10} /></span>
+                  </button>
+                ))}
+                <button type="button" onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-slate-600 underline underline-offset-2">Clear all</button>
+              </div>
+            )}
+          </div>
+
           <div className="hidden md:block overflow-x-auto">
             <table className={`w-full text-sm ${density === 'compact' ? 'tbl-compact' : ''}`}>
               <thead className="bg-slate-50/50 border-b border-slate-100">

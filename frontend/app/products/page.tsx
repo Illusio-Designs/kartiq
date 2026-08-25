@@ -320,6 +320,10 @@ export default function ProductsPage() {
           }
         />
 
+        {/* Controls card — tabs · toolbar · filter chips in one surface.
+            overflow-visible so the Views/Sort/Columns menus aren't clipped. */}
+        <Card className="p-0 overflow-visible">
+          <div className="p-3 sm:p-4 space-y-3">
         {/* Catalog tabs */}
         <Tabs<CatalogTab>
           value={tab}
@@ -408,6 +412,8 @@ export default function ProductsPage() {
             <button type="button" onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-slate-600 underline underline-offset-2">Clear all</button>
           </div>
         )}
+          </div>
+        </Card>
 
         {/* Bulk actions */}
         <BulkActionBar count={selected.size} onClear={() => setSelected(new Set())}>
