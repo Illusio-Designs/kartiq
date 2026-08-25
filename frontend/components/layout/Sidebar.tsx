@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -145,9 +146,14 @@ export function Sidebar({
               c && 'lg:justify-center lg:flex-1'
             )}
           >
-            <div className="relative w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 via-emerald-500 to-emerald-600 flex items-center justify-center shadow-md shadow-emerald-500/30 flex-shrink-0">
-              <Sparkles size={16} className="text-white" />
-            </div>
+            <Image
+              src="/brand/kartriq-mark.png"
+              alt="Kartriq"
+              width={36}
+              height={36}
+              priority
+              className="w-9 h-9 object-contain flex-shrink-0"
+            />
             <div className={cn('min-w-0 truncate', c && 'lg:hidden')}>
               <div className="font-bold text-lg tracking-tight text-slate-900 leading-none">
                 {brandName}

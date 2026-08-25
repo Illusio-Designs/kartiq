@@ -83,9 +83,9 @@ const FALLBACK: Metadata = {
   },
   manifest: '/manifest.json',
   icons: {
-    icon: '/favicon.svg',
-    shortcut: '/favicon.svg',
-    apple: '/favicon.svg',
+    icon: '/brand/kartriq-mark.png',
+    shortcut: '/brand/kartriq-mark.png',
+    apple: '/brand/kartriq-mark.png',
   },
   verification: {
     // Add your verification codes here when ready

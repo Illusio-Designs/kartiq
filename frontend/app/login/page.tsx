@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { authApi } from '@/lib/api';
 import { useAuthStore, isTokenExpired } from '@/store/auth.store';
 import { Sparkles, ArrowRight, Mail, AlertCircle, Loader2 } from 'lucide-react';
@@ -117,11 +118,15 @@ export default function LoginPage() {
       {/* Left: form */}
       <div className="flex-1 flex items-center justify-center p-6 sm:p-12 bg-white">
         <div className="w-full max-w-md">
-          <Link href="/" className="inline-flex items-center gap-2.5 mb-10">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 via-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
-              <Sparkles size={17} className="text-white" />
-            </div>
-            <span className="font-bold text-lg text-slate-900">Kartriq</span>
+          <Link href="/" className="inline-flex items-center mb-10">
+            <Image
+              src="/brand/kartriq-logo.png"
+              alt="Kartriq"
+              width={150}
+              height={37}
+              priority
+              className="h-9 w-auto"
+            />
           </Link>
 
           <h1 className="text-3xl font-bold bg-gradient-to-r from-[#06D4B8] to-[#0891b2] bg-clip-text text-transparent tracking-tight">

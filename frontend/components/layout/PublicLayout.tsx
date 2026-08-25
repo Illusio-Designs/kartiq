@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
   Sparkles, Menu, X, Twitter, Linkedin, Instagram, Youtube, Heart, ChevronDown, ArrowRight,
@@ -79,11 +80,8 @@ export function PublicNav() {
   return (
     <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/85 border-b border-slate-200">
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 group">
-          <div className="relative w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 via-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30 group-hover:shadow-emerald-500/50 transition-shadow">
-            <Sparkles size={16} className="text-white" />
-          </div>
-          <span className="font-bold text-lg tracking-tight text-slate-900">Kartriq</span>
+        <Link href="/" className="flex items-center">
+          <Image src="/brand/kartriq-logo.png" alt="Kartriq" width={150} height={37} priority className="h-8 w-auto" />
         </Link>
 
         <nav className="hidden md:flex items-center gap-1">
@@ -290,11 +288,8 @@ export function PublicFooter() {
         <div className="bg-white rounded-3xl border border-slate-200/70 shadow-sm px-6 sm:px-12 py-12">
           <div className="grid grid-cols-2 md:grid-cols-12 gap-10">
             <div className="col-span-2 md:col-span-5">
-              <Link href="/" className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 via-emerald-500 to-emerald-600 flex items-center justify-center shadow-md">
-                  <Sparkles size={18} className="text-white" />
-                </div>
-                <span className="font-bold text-xl tracking-tight text-slate-900">Kartriq</span>
+              <Link href="/" className="flex items-center">
+                <Image src="/brand/kartriq-logo.png" alt="Kartriq" width={160} height={40} className="h-9 w-auto" />
               </Link>
               <p className="text-sm text-slate-500 mt-5 max-w-md leading-relaxed">
                 One platform for all your channels — curated catalogs, automated payouts, and built-in workflows for omnichannel commerce.
