@@ -1,0 +1,47 @@
+name: Deploy frontend to Vercel
+
+# Hook-based frontend deploy. Instead of Vercel's Git auto-deploy, we POST a
+# Vercel Deploy Hook so the build only fires on a push to main that touches the
+# frontend (and on manual dispatch). Vercel does the actual build/deploy; this
+# job just pulls the trigger.
+#
+# Setup (one-time):
+#   1. Vercel → Project → Settings → Git → Deploy Hooks → create a hook for the
+#      `main` branch, copy its URL.
+#   2. GitHub → repo Settings → Secrets and variables → Actions → add secret
+#      VERCEL_DEPLOY_HOOK = that URL.
+#   3. In Vercel, set Root Directory = `frontend` and add NEXT_PUBLIC_API_URL.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      # Include this workflow so adding/editing it triggers a deploy too.
+      - '.github/workflows/frontend-deploy-vercel.yml'
+  workflow_dispatch: {}
+
+# Never run two deploys at once; cancel an in-flight one if a newer push lands.
+concurrency:
+  group: vercel-frontend-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Vercel deploy hook
+        env:
+          HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "::error::VERCEL_DEPLOY_HOOK secret is not set — add it in repo Settings → Secrets → Actions."
+            exit 1
+          fi
+          code=$(curl -sS -o /dev/null -w "%{http_code}" -X POST "$HOOK")
+          echo "Vercel deploy hook responded with HTTP $code"
+          if [ "$code" -ge 400 ]; then
+            echo "::error::Vercel deploy hook failed (HTTP $code)."
+            exit 1
+          fi
+          echo "✅ Vercel frontend build triggered."
