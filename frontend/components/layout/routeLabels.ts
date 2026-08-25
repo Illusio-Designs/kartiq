@@ -8,7 +8,6 @@ export const ROUTE_LABELS: Record<string, string> = {
   products: 'Catalog',
   channels: 'Channels',
   requests: 'Requests',
-  shipments: 'Shipments',
   reports: 'Reports',
   warehouses: 'Warehouses',
   settings: 'Settings',

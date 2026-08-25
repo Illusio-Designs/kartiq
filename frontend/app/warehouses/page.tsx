@@ -1,20 +1,38 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { warehouseApi } from '@/lib/api';
 import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import {
-  Button, Badge, Card, Modal, Input, Checkbox, EmptyState,
+  Button, Badge, Card, Modal, Input, Checkbox, EmptyState, Tooltip, Loader,
 } from '@/components/ui';
-import { Plus, Store, MapPin, Package, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Store, MapPin, Pencil, Trash2, Search } from 'lucide-react';
+
+// Render the address (object or legacy string) as a short "City, State" line.
+function locationLine(address: any): string {
+  if (!address) return '';
+  if (typeof address === 'object') {
+    return [address.city, address.state].filter(Boolean).join(', ');
+  }
+  return String(address);
+}
+// Full address for the tooltip on the location cell.
+function fullAddress(address: any): string {
+  if (!address) return '';
+  if (typeof address === 'object') {
+    return [address.line1, address.city, address.state, address.pincode].filter(Boolean).join(', ');
+  }
+  return String(address);
+}
 
 export default function WarehousesPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editWarehouse, setEditWarehouse] = useState<any>(null);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [search, setSearch] = useState('');
 
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
@@ -23,9 +41,17 @@ export default function WarehousesPage() {
   });
 
   const allWarehouses = data || [];
-  const warehouses = useFilteredBySearch(allWarehouses, (w: any) =>
+  // Global topbar search first, then the in-table search on top of it.
+  const globallyFiltered = useFilteredBySearch(allWarehouses, (w: any) =>
     `${w.name || ''} ${w.code || ''} ${w.address?.line1 || ''} ${w.address?.city || ''} ${w.address?.state || ''} ${w.address?.pincode || ''}`
   );
+  const warehouses = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return globallyFiltered;
+    return globallyFiltered.filter((w: any) =>
+      `${w.name || ''} ${w.code || ''} ${w.address?.city || ''}`.toLowerCase().includes(q)
+    );
+  }, [globallyFiltered, search]);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => warehouseApi.delete(id),
@@ -38,80 +64,124 @@ export default function WarehousesPage() {
   return (
     <DashboardLayout>
       <div className="space-y-5 animate-slide-up">
-        <PageHeader
-          title="Warehouses"
-          subtitle={`${warehouses.length} fulfillment locations`}
-          actions={
-            <Button leftIcon={<Plus size={15} />} onClick={() => setCreateOpen(true)}>
-              New Warehouse
-            </Button>
-          }
-        />
+        <PageHeader title="Warehouses" />
 
-        {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Array.from({ length: 6 }).map((_, i) => <Card key={i} className="p-5 animate-shimmer h-48" />)}
+        {/* One card — header (subtitle + primary action) · toolbar · table.
+            overflow-visible keeps any menus/tooltips from being clipped. */}
+        <Card className="p-0 overflow-visible">
+          {/* Header: subtitle + primary action, then a toolbar row with search */}
+          <div className="p-3 sm:p-4 space-y-3 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-sm font-medium text-slate-500">
+                {`${warehouses.length} fulfillment location${warehouses.length !== 1 ? 's' : ''}`}
+              </p>
+              <Button size="sm" leftIcon={<Plus size={15} />} onClick={() => setCreateOpen(true)}>
+                New warehouse
+              </Button>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex-1 min-w-[180px] max-w-sm">
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search warehouses…"
+                  leftIcon={<Search size={14} />}
+                />
+              </div>
+            </div>
           </div>
-        ) : warehouses.length ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {warehouses.map((w: any) => (
-              <Card key={w.id} className="p-6 hover:shadow-lg transition-shadow relative overflow-hidden">
-                <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-emerald-100 blur-2xl opacity-50" />
-                <div className="relative">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-white shadow-lg">
-                      <Store size={18} />
-                    </div>
-                    <Badge variant={w.isActive ? 'emerald' : 'slate'} dot>
-                      {w.isActive ? 'Active' : 'Inactive'}
-                    </Badge>
-                  </div>
-                  <h3 className="font-bold text-slate-900 text-lg">{w.name}</h3>
-                  <div className="text-[10px] text-slate-400 font-mono font-bold uppercase tracking-wider mt-0.5">{w.code}</div>
-                  {w.address && (
-                    <div className="flex items-start gap-2 mt-3 text-xs text-slate-600">
-                      <MapPin size={12} className="text-slate-400 mt-0.5 flex-shrink-0" />
-                      <span>
-                        {typeof w.address === 'object'
-                          ? [w.address.line1, w.address.city, w.address.state, w.address.pincode].filter(Boolean).join(', ')
-                          : w.address}
-                      </span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-4 mt-4 pt-3 border-t border-slate-100">
-                    <div className="flex items-center gap-1.5 text-xs text-slate-600 flex-1">
-                      <Package size={12} className="text-emerald-500" />
-                      <span className="font-bold">{w.inventoryItems?.length || 0}</span> SKUs
-                    </div>
-                    <Button variant="ghost" size="sm" leftIcon={<Pencil size={11} />} onClick={() => setEditWarehouse(w)}>
-                      Edit
-                    </Button>
-                    <Button variant="danger" size="sm" leftIcon={<Trash2 size={11} />} onClick={() => setDeleteTarget(w)}>
-                      Delete
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            ))}
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50/50 border-b border-slate-100">
+                <tr className="text-left text-[10px] uppercase tracking-widest text-slate-400">
+                  <th className="px-4 py-2.5 font-bold w-full">Warehouse</th>
+                  <th className="px-4 py-2.5 font-bold whitespace-nowrap">Location</th>
+                  <th className="px-4 py-2.5 font-bold whitespace-nowrap">Contact</th>
+                  <th className="px-4 py-2.5 font-bold whitespace-nowrap">Status</th>
+                  <th className="px-4 py-2.5 font-bold text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {isLoading ? (
+                  <tr><td colSpan={5} className="p-6"><Loader size="sm" /></td></tr>
+                ) : warehouses.length ? warehouses.map((w: any) => {
+                  const loc = locationLine(w.address);
+                  const contact = [w.phone, w.email].filter(Boolean).join(' · ');
+                  return (
+                    <tr key={w.id} className="transition-colors hover:bg-slate-50/70">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <span className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 grid place-items-center flex-shrink-0">
+                            <Store size={17} />
+                          </span>
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-900 truncate">{w.name}</div>
+                            <div className="text-[11px] text-slate-400 font-mono font-bold uppercase tracking-wider">{w.code}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
+                        {loc ? (
+                          <Tooltip content={fullAddress(w.address)}>
+                            <span className="inline-flex items-center gap-1.5">
+                              <MapPin size={13} className="text-slate-400 flex-shrink-0" />
+                              {loc}
+                            </span>
+                          </Tooltip>
+                        ) : <span className="text-slate-400">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
+                        {contact || <span className="text-slate-400">—</span>}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <Badge variant={w.isActive ? 'emerald' : 'slate'} dot>
+                          {w.isActive ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          <Tooltip content="Edit warehouse">
+                            <Button variant="outline" size="icon" onClick={() => setEditWarehouse(w)}>
+                              <Pencil size={13} />
+                            </Button>
+                          </Tooltip>
+                          <Tooltip content="Delete warehouse">
+                            <Button variant="danger" size="icon" onClick={() => setDeleteTarget(w)}>
+                              <Trash2 size={13} />
+                            </Button>
+                          </Tooltip>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }) : (
+                  <tr>
+                    <td colSpan={5} className="p-0">
+                      <EmptyState
+                        icon={<Store size={28} />}
+                        iconBg="bg-emerald-50 text-emerald-600"
+                        title={search ? 'No matching warehouses' : 'No warehouses yet'}
+                        description={search
+                          ? 'No warehouses match your search. Try a different name, code, or city.'
+                          : 'Warehouses are physical locations where stock lives — your shop, a 3PL, or a home garage. Add one to start tracking inventory.'}
+                        action={search ? undefined : (
+                          <Button leftIcon={<Plus size={14} />} onClick={() => setCreateOpen(true)}>
+                            New warehouse
+                          </Button>
+                        )}
+                        tip={search ? undefined : "even single-location sellers should add at least one — it's how stock counts get tracked."}
+                        decorative
+                        size="lg"
+                      />
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
-        ) : (
-          <Card>
-            <EmptyState
-              icon={<Store size={28} />}
-              iconBg="bg-emerald-50 text-emerald-600"
-              title="No warehouses yet"
-              description="Warehouses are physical locations where stock lives — your shop, a 3PL, or a home garage. Add one to start tracking inventory."
-              action={
-                <Button leftIcon={<Plus size={14} />} onClick={() => setCreateOpen(true)}>
-                  New warehouse
-                </Button>
-              }
-              tip="even single-location sellers should add at least one — it's how stock counts get tracked."
-              decorative
-              size="lg"
-            />
-          </Card>
-        )}
+        </Card>
       </div>
 
       <WarehouseModal open={createOpen} onClose={() => setCreateOpen(false)} mode="create" />

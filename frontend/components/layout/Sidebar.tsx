@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import {
   LayoutDashboard, Package, ShoppingCart,
-  Store, Truck, BarChart2, Settings, LogOut,
+  Store, BarChart2, Settings, LogOut,
   Plug, HelpCircle, Sparkles, PanelLeftClose, PanelLeftOpen, X,
   Wallet, UserCog, ChevronDown, Activity, Gift,
 } from 'lucide-react';
@@ -41,7 +41,6 @@ const DEFAULT_NAV_GROUPS: SidebarNavGroup[] = [
     label: 'Features',
     items: [
       { label: 'Channels',    href: '/channels',     icon: Plug },
-      { label: 'Shipments',   href: '/shipments',    icon: Truck },
     ],
   },
   {
