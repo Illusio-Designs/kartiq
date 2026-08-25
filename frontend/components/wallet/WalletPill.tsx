@@ -38,11 +38,11 @@ export function WalletPill() {
           onClick={() => setOpen(true)}
           className={`hidden sm:flex items-center gap-2 pl-2 pr-3 h-9 rounded-full border transition-colors ${
             isLow
-              ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'
-              : 'bg-emerald-50 border-emerald-100 text-emerald-700 hover:bg-emerald-100'
+              ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100 dark:bg-rose-500/15 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-500/25'
+              : 'bg-emerald-50 border-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/15 dark:border-emerald-500/30 dark:text-emerald-300 dark:hover:bg-emerald-500/25'
           }`}
         >
-          <span className={`w-6 h-6 rounded-full flex items-center justify-center ${isLow ? 'bg-white' : 'bg-white'}`}>
+          <span className="w-6 h-6 rounded-full flex items-center justify-center bg-white/80 dark:bg-white/10">
             <Wallet size={13} />
           </span>
           <span className="text-sm font-bold">₹{balance.toLocaleString()}</span>

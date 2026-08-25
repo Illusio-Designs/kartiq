@@ -356,7 +356,6 @@ export default function OrdersPage() {
               <Link href={`/orders/${o.id}`} className="font-semibold text-emerald-600 hover:underline whitespace-nowrap">{o.channelOrderId || o.orderNumber}</Link>
               <Badge variant={o.channelOrderId ? 'blue' : 'slate'}>{o.channelOrderId ? 'Auto' : 'Manual'}</Badge>
             </div>
-            {o.channelOrderId && <div className="text-[11px] text-slate-400 font-mono whitespace-nowrap">{o.orderNumber}</div>}
           </td>
         );
       case 'customer':
