@@ -655,6 +655,9 @@
 .dark .text-emerald-500, .dark .text-emerald-600, .dark .text-emerald-700, .dark .text-emerald-800 { color: #2dd4bf; }
 .dark .border-emerald-100, .dark .border-emerald-200, .dark .border-emerald-300 { border-color: rgba(6,182,212,.34); }
 
+/* Toast auto-dismiss progress bar — scales down over the toast's lifetime. */
+@keyframes toast-progress { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
 /* Gradient-clipped headings (bg-clip-text + text-transparent): the gradient is
    sized to the text box, so with tight line-height the descenders (p, g, y, j)
    fall outside the gradient and render invisible / clipped. A little bottom

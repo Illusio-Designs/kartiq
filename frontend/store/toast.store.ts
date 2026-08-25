@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import { playNotificationSound } from '@/lib/notificationSound';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
@@ -24,6 +25,8 @@ export const useToastStore = create<ToastState>((set, get) => ({
   push: (toast) => {
     const id = Math.random().toString(36).slice(2, 9);
     set((s) => ({ toasts: [...s.toasts, { id, durationMs: 4000, ...toast }] }));
+    // Play the arrival chime (respects the user's mute preference internally).
+    playNotificationSound(toast.type);
     if ((toast.durationMs ?? 4000) > 0) {
       setTimeout(() => get().dismiss(id), toast.durationMs ?? 4000);
     }

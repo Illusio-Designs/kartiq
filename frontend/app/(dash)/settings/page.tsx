@@ -13,6 +13,7 @@ import {
 import { ThemeSegmented } from '@/components/theme/ThemeToggle';
 import { useAuthStore } from '@/store/auth.store';
 import { authApi, billingApi } from '@/lib/api';
+import { isSoundEnabled, setSoundEnabled, playNotificationSound } from '@/lib/notificationSound';
 import { Modal } from '@/components/ui/Modal';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -49,6 +50,7 @@ export default function SettingsPage() {
   const [notifications, setNotifications] = useState({
     orders: true, lowStock: true, reviews: false, marketing: false, weekly: true,
   });
+  const [sound, setSound] = useState(true);
   const [profileError, setProfileError] = useState('');
   const [companyError, setCompanyError] = useState('');
   const [passwordError, setPasswordError] = useState('');
@@ -65,6 +67,7 @@ export default function SettingsPage() {
       const saved = localStorage.getItem('notificationPrefs');
       if (saved) setNotifications(JSON.parse(saved));
     } catch {}
+    setSound(isSoundEnabled());
   }, []);
 
   const refreshFromServer = async () => {
@@ -273,6 +276,14 @@ export default function SettingsPage() {
                   <div className="pt-4"><Switch label="Review requests"  description="Alerts when review APIs fail or succeed"   checked={notifications.reviews}   onCheckedChange={(v) => setNotifications({ ...notifications, reviews: v })} /></div>
                   <div className="pt-4"><Switch label="Weekly summary"   description="Monday morning business digest"           checked={notifications.weekly}    onCheckedChange={(v) => setNotifications({ ...notifications, weekly: v })} /></div>
                   <div className="pt-4"><Switch label="Marketing emails" description="Product updates and commerce tips"        checked={notifications.marketing} onCheckedChange={(v) => setNotifications({ ...notifications, marketing: v })} /></div>
+                  <div className="pt-4 border-t border-slate-100 mt-2">
+                    <Switch
+                      label="Notification sound"
+                      description="Play a chime when a toast notification appears"
+                      checked={sound}
+                      onCheckedChange={(v) => { setSound(v); setSoundEnabled(v); if (v) playNotificationSound('success'); }}
+                    />
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-end gap-2 mt-6 pt-6 border-t border-slate-100">
