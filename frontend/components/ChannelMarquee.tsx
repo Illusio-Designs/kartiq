@@ -27,7 +27,6 @@ export const ALL_CHANNELS = [
   { name: 'Tata Neu',         category: 'ECOM',      color: 'from-violet-500 to-indigo-600',    key: 'tataneu',      domain: 'tataneu.com' },
   // QUICKCOM
   { name: 'Blinkit',          category: 'QUICKCOM',  color: 'from-yellow-400 to-amber-500',     key: 'blinkit',      domain: 'blinkit.com' },
-  { name: 'Zepto',            category: 'QUICKCOM',  color: 'from-violet-500 to-purple-600',    key: 'zepto',        domain: 'zeptonow.com' },
   { name: 'Swiggy Instamart', category: 'QUICKCOM',  color: 'from-orange-500 to-red-500',       key: 'swiggy',       domain: 'swiggy.com' },
   { name: 'BB Now',           category: 'QUICKCOM',  color: 'from-green-500 to-emerald-600',    key: 'bigbasket',    domain: 'bigbasket.com' },
   // LOGISTICS
