@@ -3,43 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Home, ChevronRight } from 'lucide-react';
-
-// Human labels for known route segments. Anything not listed is Title-cased,
-// and an id-looking segment (long / has digits) is shown as "Details".
-const LABELS: Record<string, string> = {
-  dashboard: 'Dashboard',
-  orders: 'Orders',
-  products: 'Catalog',
-  channels: 'Channels',
-  requests: 'Requests',
-  customers: 'Customers',
-  invoices: 'Invoices',
-  shipments: 'Shipments',
-  purchases: 'Purchases',
-  reports: 'Reports',
-  vendors: 'Vendors',
-  warehouses: 'Warehouses',
-  settings: 'Settings',
-  usage: 'Usage',
-  billing: 'Billing',
-  referrals: 'Referrals',
-  tickets: 'Support',
-  team: 'Team',
-  integrations: 'Integrations',
-  audit: 'Audit Log',
-  onboarding: 'Onboarding',
-  admin: 'Admin',
-};
-
-function looksLikeId(seg: string): boolean {
-  return seg.length >= 16 || /\d/.test(seg) && seg.length > 8 || seg.includes('-') && seg.length > 12;
-}
-
-function labelFor(seg: string): string {
-  if (LABELS[seg]) return LABELS[seg];
-  if (looksLikeId(seg)) return 'Details';
-  return seg.charAt(0).toUpperCase() + seg.slice(1).replace(/-/g, ' ');
-}
+import { labelForSegment as labelFor } from './routeLabels';
 
 export function Breadcrumbs() {
   const pathname = usePathname() || '/';
@@ -58,16 +22,17 @@ export function Breadcrumbs() {
   }));
 
   return (
-    <nav aria-label="Breadcrumb" className="mb-3 -mt-1">
-      <ol className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 overflow-x-auto whitespace-nowrap no-scrollbar">
-        <li className="flex items-center gap-1.5 flex-shrink-0">
-          <Link href="/dashboard" className="inline-flex items-center gap-1 hover:text-slate-600 transition-colors">
-            <Home size={13} /> <span className="hidden sm:inline">Home</span>
+    <nav aria-label="Breadcrumb" className="mb-3">
+      <ol className="flex items-center gap-1.5 text-xs font-semibold leading-none text-slate-400 overflow-x-auto whitespace-nowrap no-scrollbar">
+        <li className="flex items-center flex-shrink-0">
+          <Link href="/dashboard" className="inline-flex items-center gap-1.5 hover:text-slate-600 transition-colors">
+            <Home size={14} className="shrink-0" />
+            <span className="hidden sm:inline">Home</span>
           </Link>
         </li>
         {crumbs.map((c) => (
           <li key={c.href} className="flex items-center gap-1.5 min-w-0">
-            <ChevronRight size={12} className="text-slate-300 flex-shrink-0" />
+            <ChevronRight size={14} className="text-slate-300 shrink-0" />
             {c.last ? (
               <span className="text-slate-700 truncate max-w-[45vw] sm:max-w-none">{c.label}</span>
             ) : (

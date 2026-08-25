@@ -48,6 +48,7 @@ export function Pagination({
             <span className="hidden sm:inline">Rows:</span>
             <Select
               size="sm"
+              dropUp
               value={String(pageSize)}
               onChange={(v) => onPageSizeChange(Number(v))}
               options={pageSizeOptions.map((s) => ({ value: String(s), label: String(s) }))}
