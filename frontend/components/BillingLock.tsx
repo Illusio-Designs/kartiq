@@ -162,7 +162,7 @@ export function BillingLock({ children }: { children: ReactNode }) {
             <div className="flex items-start gap-2.5">
               <CreditCard size={16} className="text-rose-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0 text-sm">
-                <p className="font-bold text-rose-900">
+                <p className="font-bold text-rose-900 dark:text-rose-200">
                   Last attempt on your {cardLabel}
                 </p>
                 <p className="text-rose-800 mt-0.5 break-words">{failureReason}</p>

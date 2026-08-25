@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 const STYLES: Record<ToastType, { bg: string; border: string; text: string; icon: any; iconColor: string }> = {
   success: { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-800', icon: CheckCircle2,  iconColor: 'text-emerald-600' },
   error:   { bg: 'bg-rose-50',    border: 'border-rose-200',    text: 'text-rose-800',    icon: XCircle,       iconColor: 'text-rose-600' },
-  info:    { bg: 'bg-sky-50',     border: 'border-sky-200',     text: 'text-sky-800',     icon: Info,          iconColor: 'text-sky-600' },
+  info:    { bg: 'bg-sky-50',     border: 'border-sky-200',     text: 'text-sky-800 dark:text-sky-300',     icon: Info,          iconColor: 'text-sky-600' },
   warning: { bg: 'bg-amber-50',   border: 'border-amber-200',   text: 'text-amber-800',   icon: AlertTriangle, iconColor: 'text-amber-600' },
 };
 

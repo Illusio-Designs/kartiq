@@ -601,7 +601,7 @@ function DataPrivacyCard() {
               </p>
             </div>
           </div>
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900 space-y-1.5">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900 dark:text-emerald-200 space-y-1.5">
             <p className="font-semibold">Changed your mind? You have 30 days.</p>
             <p>
               Email{' '}

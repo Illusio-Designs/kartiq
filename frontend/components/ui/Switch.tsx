@@ -36,7 +36,7 @@ export function Switch({
     >
       <span
         className={cn(
-          'absolute left-1 rounded-full bg-white shadow-sm transition-transform',
+          'absolute left-1 rounded-full bg-white dark:!bg-white shadow-sm transition-transform',
           sizes.thumb,
           checked && sizes.translate
         )}

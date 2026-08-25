@@ -654,7 +654,7 @@ function ConnectModal({
         )}
 
         {entry.manualOnly && (
-          <div className="bg-sky-50 border border-sky-200 text-sky-800 text-xs rounded-xl p-3">
+          <div className="bg-sky-50 border border-sky-200 text-sky-800 dark:text-sky-300 text-xs rounded-xl p-3">
             ℹ️ This is a <span className="font-semibold">manual channel</span>. No external API to connect — once added, enter orders against it via the New Order form.
           </div>
         )}
