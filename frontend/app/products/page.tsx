@@ -286,7 +286,7 @@ export default function ProductsPage() {
       }
       case 'status': {
         const st = stockStatus(p);
-        return <td key={key} className="px-3 py-2.5"><Badge variant={STATUS_META[st].variant} dot>{STATUS_META[st].label}</Badge></td>;
+        return <td key={key} className="px-3 py-2.5 whitespace-nowrap"><Badge variant={STATUS_META[st].variant} dot className="whitespace-nowrap">{STATUS_META[st].label}</Badge></td>;
       }
       case 'channels':
         return (
@@ -307,23 +307,23 @@ export default function ProductsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-5 animate-slide-up">
-        <PageHeader
-          title="Catalog"
-          subtitle={<>{data?.total || 0} products · stock &amp; listings in one place</>}
-          actions={
-            <>
-              <Link href="/channels">
-                <Button variant="secondary" leftIcon={<Upload size={15} />}>Import from channel</Button>
-              </Link>
-              <Button leftIcon={<Plus size={15} />} onClick={() => setModalOpen(true)}>Add Product</Button>
-            </>
-          }
-        />
+        <PageHeader title="Catalog" />
 
         {/* Controls card — tabs · toolbar · filter chips in one surface.
             overflow-visible so the Views/Sort/Columns menus aren't clipped. */}
         <Card className="p-0 overflow-visible">
           <div className="p-3 sm:p-4 space-y-3">
+        {/* Title row — subtitle + primary actions, inside the card */}
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-sm font-medium text-slate-500">{data?.total || 0} products · stock &amp; listings in one place</p>
+          <div className="flex items-center gap-2">
+            <Link href="/channels">
+              <Button variant="secondary" size="sm" leftIcon={<Upload size={15} />}>Import from channel</Button>
+            </Link>
+            <Button size="sm" leftIcon={<Plus size={15} />} onClick={() => setModalOpen(true)}>Add Product</Button>
+          </div>
+        </div>
+
         {/* Catalog tabs */}
         <Tabs<CatalogTab>
           value={tab}
