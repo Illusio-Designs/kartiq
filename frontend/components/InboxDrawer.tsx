@@ -420,10 +420,10 @@ export function InboxTrigger({ className = '' }: { className?: string }) {
     <button
       type="button"
       onClick={() => window.dispatchEvent(new Event('open-inbox'))}
-      aria-label={count > 0 ? `Inbox — ${count} unread` : 'Inbox'}
+      aria-label={count > 0 ? `Notifications — ${count} unread` : 'Notifications'}
       className={`relative w-10 h-10 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 transition-colors ${className}`}
     >
-      <Mail size={17} aria-hidden="true" />
+      <Bell size={17} aria-hidden="true" />
       {count > 0 && (
         <span
           aria-hidden

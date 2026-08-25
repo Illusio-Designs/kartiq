@@ -58,16 +58,17 @@ export function Breadcrumbs() {
   }));
 
   return (
-    <nav aria-label="Breadcrumb" className="mb-3 -mt-1">
-      <ol className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 overflow-x-auto whitespace-nowrap no-scrollbar">
-        <li className="flex items-center gap-1.5 flex-shrink-0">
-          <Link href="/dashboard" className="inline-flex items-center gap-1 hover:text-slate-600 transition-colors">
-            <Home size={13} /> <span className="hidden sm:inline">Home</span>
+    <nav aria-label="Breadcrumb" className="mb-3">
+      <ol className="flex items-center gap-1.5 text-xs font-semibold leading-none text-slate-400 overflow-x-auto whitespace-nowrap no-scrollbar">
+        <li className="flex items-center flex-shrink-0">
+          <Link href="/dashboard" className="inline-flex items-center gap-1.5 hover:text-slate-600 transition-colors">
+            <Home size={14} className="shrink-0" />
+            <span className="hidden sm:inline">Home</span>
           </Link>
         </li>
         {crumbs.map((c) => (
           <li key={c.href} className="flex items-center gap-1.5 min-w-0">
-            <ChevronRight size={12} className="text-slate-300 flex-shrink-0" />
+            <ChevronRight size={14} className="text-slate-300 shrink-0" />
             {c.last ? (
               <span className="text-slate-700 truncate max-w-[45vw] sm:max-w-none">{c.label}</span>
             ) : (

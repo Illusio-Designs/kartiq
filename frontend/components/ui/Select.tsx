@@ -19,6 +19,8 @@ interface SelectProps {
   className?: string;
   fullWidth?: boolean;
   size?: 'sm' | 'md';
+  /** Open the menu upward — for selects near the bottom of a clipped container (e.g. pagination). */
+  dropUp?: boolean;
 }
 
 const SIZE_CLASSES = {
@@ -27,7 +29,7 @@ const SIZE_CLASSES = {
 };
 
 export function Select({
-  value, onChange, options, placeholder = 'Select…', label, className, fullWidth, size = 'md',
+  value, onChange, options, placeholder = 'Select…', label, className, fullWidth, size = 'md', dropUp,
 }: SelectProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -66,7 +68,10 @@ export function Select({
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl shadow-slate-900/10 p-1 z-50 max-h-64 overflow-y-auto animate-slide-up">
+        <div className={cn(
+          'absolute left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-xl shadow-slate-900/10 p-1 z-50 max-h-64 overflow-y-auto animate-slide-up',
+          dropUp ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+        )}>
           {options.map(opt => (
             <button
               key={opt.value}
