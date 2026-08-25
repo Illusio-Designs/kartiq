@@ -8,6 +8,7 @@ import { CookieConsent } from '@/components/CookieConsent';
 import { WebVitalsReporter } from '@/components/WebVitalsReporter';
 import { loadSeo } from '@/lib/seo';
 import { THEME_INIT_SCRIPT } from '@/lib/theme';
+import { ThemeRouter } from '@/components/theme/ThemeRouter';
 
 // Brand display font — Agency, served from /public/font/agency.otf.
 // Wrapped in next/font/local so Next handles preloading + size-adjust to
@@ -146,6 +147,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <a href="#main-content" className="skip-link">Skip to content</a>
         <Analytics />
         <WebVitalsReporter />
+        <ThemeRouter />
         <Providers>
           <PageLoader />
           <div id="main-content">{children}</div>
