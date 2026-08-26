@@ -589,6 +589,9 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
 
   for (const raw of rawOrders) {
     try {
+      // Set when we replace an existing empty stub — used to avoid re-counting
+      // the PAYG orders meter (the stub already counted once).
+      let isReimport = false;
       const existing = await prisma.order.findFirst({
         where: { tenantId, channelId, channelOrderId: raw.channelOrderId },
       });
@@ -606,7 +609,18 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
           else results.skipped++;
           continue;
         }
-        await prisma.order.delete({ where: { id: existing.id } }).catch(() => {});
+        // Replace the empty stub with a fully-populated import. Do NOT swallow
+        // a delete failure: if the delete throws (e.g. a returns FK row blocks
+        // it), skipping is correct — falling through would insert a SECOND order
+        // with the same channelOrderId (there is no DB unique guard).
+        try {
+          await prisma.order.delete({ where: { id: existing.id } });
+        } catch (delErr) {
+          console.warn(`[import] could not replace stub for ${raw.channelOrderId}, skipping to avoid a duplicate: ${delErr.message}`);
+          results.skipped++;
+          continue;
+        }
+        isReimport = true;
         // fall through to a full re-import with line items
       }
 
@@ -779,13 +793,17 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
           },
         });
 
-        // Bump PAYG usage meter for this tenant
-        const period = new Date().toISOString().slice(0, 7);
-        await tx.usageMeter.upsert({
-          where: { tenantId_metric_period: { tenantId, metric: 'orders', period } },
-          update: { count: { increment: 1 } },
-          create: { tenantId, metric: 'orders', period, count: 1 },
-        });
+        // Bump PAYG usage meter for this tenant — but NOT on a re-import of an
+        // existing order (the empty stub already counted once; re-counting would
+        // double-bill the tenant).
+        if (!isReimport) {
+          const period = new Date().toISOString().slice(0, 7);
+          await tx.usageMeter.upsert({
+            where: { tenantId_metric_period: { tenantId, metric: 'orders', period } },
+            update: { count: { increment: 1 } },
+            create: { tenantId, metric: 'orders', period, count: 1 },
+          });
+        }
       });
 
       results.imported++;
@@ -823,6 +841,27 @@ async function purgeEmptyPendingChannelOrders(tenantId, channelId) {
 
 // ── Inventory push ───────────────────────────────────────────────────────────
 
+// Set of the tenant's REAL, sellable warehouse ids (active + non-virtual).
+// Stock pushed to a sales channel as merchant-fulfilled availability must be
+// summed over these ONLY — never the pooled virtual "Amazon FBA" facility or a
+// soft-deleted (isActive=false) warehouse, both of which still carry inventory
+// rows and would otherwise inflate available-to-sell → overselling.
+async function realWarehouseIds(tenantId) {
+  const rows = await prisma.warehouse.findMany({
+    where: { tenantId, isActive: true, isVirtual: false },
+    select: { id: true },
+  });
+  return new Set(rows.map((w) => w.id));
+}
+
+// Sum only the inventory that lives in real, sellable warehouses.
+function sellableQty(inventoryItems, realIds) {
+  return (inventoryItems || []).reduce(
+    (s, inv) => (realIds.has(inv.warehouseId) ? s + (inv.quantityAvailable || 0) : s),
+    0,
+  );
+}
+
 async function pushInventoryToChannel(channel, { tenantId } = {}) {
   const adapter = getAdapter(channel);
   const scopedTenantId = tenantId || channel.tenantId;
@@ -838,6 +877,7 @@ async function pushInventoryToChannel(channel, { tenantId } = {}) {
     where: { tenantId: scopedTenantId, channelId: channel.id, isActive: true },
     include: { variant: { include: { inventoryItems: true } } },
   });
+  const realIds = await realWarehouseIds(scopedTenantId);
 
   const results = { updated: 0, skipped: 0, failed: 0, errors: [] };
   for (const listing of listings) {
@@ -847,7 +887,7 @@ async function pushInventoryToChannel(channel, { tenantId } = {}) {
     // (SELF, or not-yet-classified) stock is ours to push.
     if (listing.fulfillmentType === 'CHANNEL') { results.skipped++; continue; }
     try {
-      const totalQty = listing.variant.inventoryItems.reduce((s, inv) => s + inv.quantityAvailable, 0);
+      const totalQty = sellableQty(listing.variant.inventoryItems, realIds);
       await adapter.updateInventoryLevel(listing.channelSku, totalQty);
       results.updated++;
     } catch (err) {
@@ -877,6 +917,7 @@ async function pushProductToChannels(productId, { channelIds = null, tenantId = 
 
   const results = { updated: 0, skipped: 0, failed: 0, perChannel: [] };
   const images = Array.isArray(product.images) ? product.images : [];
+  const realIds = await realWarehouseIds(product.tenantId);
 
   for (const listing of product.channelListings) {
     // Allow caller to scope the push to specific channels
@@ -884,11 +925,10 @@ async function pushProductToChannels(productId, { channelIds = null, tenantId = 
     if (!listing.channel.isActive) { results.skipped++; continue; }
     if (!listing.variant) { results.skipped++; continue; }
 
-    // Aggregate stock across all warehouses for this variant
+    // Aggregate stock across the tenant's REAL, sellable warehouses only
+    // (never the virtual FBA facility or soft-deleted warehouses).
     const variant = product.variants.find(v => v.id === listing.variantId);
-    const totalQty = variant
-      ? variant.inventoryItems.reduce((s, inv) => s + inv.quantityAvailable, 0)
-      : 0;
+    const totalQty = variant ? sellableQty(variant.inventoryItems, realIds) : 0;
 
     const fields = {
       title: product.name,

@@ -232,6 +232,40 @@ const requirePlatformAdmin = (req, res, next) => {
   next();
 };
 
+// Register a one-shot hook that, when the create request finishes with a 2xx,
+// charges the tenant's wallet for the one overage unit (if any) and increments
+// the usage meter for that metric. This is what makes PAYG overage actually
+// bill for SKUs/users/channels/facilities — previously only orders were charged
+// (in their controller), so every other metric leaked. Orders are skipped here
+// because order.controller already debits + meters them.
+function chargeOverageOnFinish(req, res, tenantId) {
+  res.once('finish', () => {
+    if (res.statusCode < 200 || res.statusCode >= 300) return; // create failed → no charge
+    const ov = req.overage;
+    if (!ov || ov.metric === 'orders' || req._overageCharged) return;
+    req._overageCharged = true;
+    const wallet = require('../services/wallet.service');
+    const period = new Date().toISOString().slice(0, 7);
+    // Best-effort, off the response path — never delay the client.
+    Promise.resolve().then(async () => {
+      try {
+        if (ov.unitRate > 0) {
+          await wallet.debit(tenantId, ov.unitRate, {
+            description: `Overage: 1 extra ${ov.metric}`,
+            type: 'OVERAGE',
+            reference: ov.metric,
+          });
+        }
+        await prisma.usageMeter.upsert({
+          where: { tenantId_metric_period: { tenantId, metric: ov.metric, period } },
+          update: { count: { increment: 1 } },
+          create: { tenantId, metric: ov.metric, period, count: 1 },
+        });
+      } catch (e) { console.warn('[enforceLimit] overage charge failed:', e.message); }
+    });
+  });
+}
+
 // ── Plan-limit enforcer for create operations
 // Usage: enforceLimit('warehouses' | 'skus' | 'users' | 'roles' | 'orders' | 'channels')
 const enforceLimit = (resource) => async (req, res, next) => {
@@ -345,12 +379,17 @@ const enforceLimit = (resource) => async (req, res, next) => {
               topupUrl: '/dashboard/billing',
             });
           }
-          // Enough balance — stash the debit intent for the controller to execute after create
+          // Enough balance — stash the debit intent.
           req.overage = { metric, used, limit, unitRate, walletBalance: balance };
-          return next();
+        } else {
+          // Free overage (rate = 0) — meter it, no charge.
+          req.overage = { metric, used, limit, unitRate: 0 };
         }
-        // Free overage (rate = 0) — just log and let it through
-        req.overage = { metric, used, limit, unitRate: 0 };
+        // Charge + meter the overage centrally AFTER a successful (2xx) create,
+        // so EVERY metric is billed — not just orders. Orders keep their own
+        // controller-side debit (which also handles order-specific bookkeeping),
+        // so skip 'orders' here to avoid double-charging.
+        chargeOverageOnFinish(req, res, tenantId);
         return next();
       }
       return res.status(402).json({

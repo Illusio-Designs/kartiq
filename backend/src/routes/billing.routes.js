@@ -84,7 +84,11 @@ router.post('/wallet/topup', requirePermission('billing.manage'), idempotent(), 
           if (payment.notes?.tenantId && payment.notes.tenantId !== req.tenant.id) {
             return res.status(403).json({ error: 'Payment belongs to a different tenant' });
           }
-        } else if (process.env.NODE_ENV === 'production') {
+        } else if (process.env.ALLOW_UNVERIFIED_WALLET_TOPUP !== 'true') {
+          // Fail CLOSED whenever the gateway can't verify — in every environment,
+          // not just production. The unverified path (for e2e tests) must be
+          // opted into explicitly via ALLOW_UNVERIFIED_WALLET_TOPUP=true, so a
+          // misconfigured/non-live deploy can never let a tenant self-credit.
           return res.status(503).json({ error: 'Payment gateway not configured; cannot verify topup' });
         }
       } catch (err) {
@@ -351,6 +355,17 @@ router.post('/subscription/change', requirePermission('billing.manage'), async (
         type: 'PLAN_PRORATION',
         reference: sub.id,
       });
+      // wallet.debit does NOT throw on insufficient funds — it returns
+      // { ok:false }. The pre-check above is non-atomic (balance can drop under
+      // concurrency), so this is the authoritative guard: if the debit didn't
+      // succeed, do NOT apply the (paid) upgrade.
+      if (!walletTxn?.ok) {
+        return res.status(402).json({
+          error: 'Insufficient wallet balance for prorated upgrade',
+          required: walletTxn?.required ?? proration,
+          balance: walletTxn?.balance,
+        });
+      }
     } else if (isDowngrade) {
       walletTxn = await wallet.topup(req.tenant.id, Math.abs(proration), {
         description: `Plan downgrade refund (${sub.plan.code} → ${newPlan.code})`,

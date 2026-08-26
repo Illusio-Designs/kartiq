@@ -11,10 +11,21 @@ async function getOrCreateWallet(tenantId) {
   let wallet = await prisma.tenantWallet.findFirst({ where: { tenantId } });
   if (wallet) return wallet;
 
-  wallet = await prisma.tenantWallet.create({
-    data: { tenantId, balance: 0, currency: 'INR', lowBalanceThreshold: 100 },
-  });
-  return wallet;
+  try {
+    wallet = await prisma.tenantWallet.create({
+      data: { tenantId, balance: 0, currency: 'INR', lowBalanceThreshold: 100 },
+    });
+    return wallet;
+  } catch (e) {
+    // Concurrent first-touch: another request created the row between our
+    // findFirst and create (tenant_wallets has UNIQUE(tenantId)). Re-read
+    // instead of surfacing a 500.
+    if (e && (e.code === 'ER_DUP_ENTRY' || e.errno === 1062)) {
+      const existing = await prisma.tenantWallet.findFirst({ where: { tenantId } });
+      if (existing) return existing;
+    }
+    throw e;
+  }
 }
 
 async function getBalance(tenantId) {

@@ -89,7 +89,15 @@ async function snapshotInvoiceForSubscription(sub, period) {
   }
 
   const totalAmount = base + overageAmount;
-  const invoiceNumber = `INV-${tenantId.slice(0, 6)}-${period}-${Date.now()}`;
+  // Deterministic per (tenant, subscription, period) — NO Date.now(). This is
+  // what lets the unique invoiceNumber actually prevent a second invoice (and a
+  // second card charge) when two billing runs overlap.
+  const invoiceNumber = `INV-${tenantId.slice(0, 6)}-${sub.id.slice(0, 6)}-${period}`;
+
+  // Idempotency guard: if this period was already invoiced, return the existing
+  // invoice tagged `_existed` so the caller skips charging again.
+  const existing = await prisma.billingInvoice.findFirst({ where: { invoiceNumber } });
+  if (existing) return { ...existing, _existed: true };
 
   return prisma.billingInvoice.create({
     data: {
@@ -230,9 +238,11 @@ async function rollForwardSubscriptions() {
         invoiced++;
       }
 
-      // Auto-renew path — try to charge the saved token before extending the period.
+      // Auto-renew path — try to charge the saved token before extending the
+      // period. Skip if this period's invoice already existed (a prior/overlapping
+      // run already processed it) so the card is never charged twice.
       let charge = null;
-      if (sub.autoRenew && !isFree) {
+      if (sub.autoRenew && !isFree && !(inv && inv._existed)) {
         charge = await autoRenewSubscription(sub);
 
         // Mark the invoice we just snapshotted as paid on success. If this
@@ -387,7 +397,10 @@ async function suspendOverdueTenants() {
   const overdue = await prisma.subscription.findMany({
     where: {
       status: 'PAST_DUE',
-      updatedAt: { lte: cutoff },
+      // Anchor the grace window to WHEN the tenant became past-due, not
+      // updatedAt — dunning/retry writes bump updatedAt and would otherwise keep
+      // resetting the clock so a tenant is never suspended.
+      pastDueSince: { lte: cutoff },
     },
   });
   let suspended = 0;
@@ -503,9 +516,13 @@ async function runBillingJob() {
   return { ...roll, ...retry, ...dunning, ...suspend, ...reminders, ...purge };
 }
 
-// Allow direct CLI invocation
+// Allow direct CLI invocation (npm run billing:run). Run initDb first so the
+// migration-only columns this job reads (pastDueSince, lastDunningStage,
+// renewalFailureCount, …) exist even if the server never bootstrapped this DB.
 if (require.main === module) {
-  runBillingJob()
+  const { initDb } = require('../bootstrap/initDb');
+  initDb()
+    .then(() => runBillingJob())
     .catch((e) => { logger.error(e); process.exit(1); })
     .finally(() => prisma.$disconnect());
 }

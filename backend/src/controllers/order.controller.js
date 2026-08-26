@@ -368,6 +368,12 @@ const cancelOrder = async (req, res) => {
       where: { id: req.params.id, tenantId: tid(req) },
     });
     if (!existing) return res.status(404).json({ error: 'Order not found' });
+    // Guard invalid transitions: a delivered/returned order can't be cancelled,
+    // and re-cancelling an already-cancelled order is a no-op (return it as-is).
+    if (existing.status === 'CANCELLED') return res.json(existing);
+    if (existing.status === 'DELIVERED' || existing.status === 'RETURNED') {
+      return res.status(400).json({ error: `Cannot cancel a ${existing.status.toLowerCase()} order` });
+    }
     const order = await prisma.order.update({ where: { id: req.params.id }, data: { status: 'CANCELLED' } });
     res.json(order);
   } catch {

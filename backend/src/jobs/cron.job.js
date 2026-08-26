@@ -333,7 +333,11 @@ function stop() {
 }
 
 if (require.main === module) {
-  runAllJobs()
+  // Run migrations first (npm run cron:run) so migration-only columns exist even
+  // if the server never bootstrapped this DB.
+  const { initDb } = require('../bootstrap/initDb');
+  initDb()
+    .then(() => runAllJobs())
     .catch((e) => { logger.error(e); process.exit(1); })
     .finally(() => prisma.$disconnect());
 }

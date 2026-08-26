@@ -308,7 +308,7 @@ router.post('/checkout', requirePermission('billing.manage'), idempotent(), asyn
 
 // ── Verify a successful plan checkout ──────────────────────────────────────
 router.post('/verify', requirePermission('billing.manage'), idempotent(), async (req, res) => {
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature, planCode, billingCycle = 'MONTHLY', autoRenew } = req.body;
+  let { razorpay_order_id, razorpay_payment_id, razorpay_signature, planCode, billingCycle = 'MONTHLY', autoRenew } = req.body; // eslint-disable-line prefer-const
 
   const ok = await verifySignature({
     orderId: razorpay_order_id,
@@ -317,9 +317,45 @@ router.post('/verify', requirePermission('billing.manage'), idempotent(), async 
   });
   if (!ok) return res.status(400).json({ error: 'Signature mismatch' });
 
-  const plan = await prisma.plan.findUnique({ where: { code: planCode } });
+  // Derive the plan, cycle, and expected amount from the Razorpay ORDER notes
+  // (server truth, set at checkout) — NEVER from the request body. Otherwise a
+  // valid signature on a ₹1,499 order could be replayed with planCode:ENTERPRISE
+  // to activate an expensive plan for a cheap payment.
+  let effectivePlanCode = planCode;
+  let effectiveCycle = billingCycle;
+  try {
+    const { getClient } = require('../services/payment.service');
+    const client = await getClient();
+    if (client) {
+      const payment = await client.payments.fetch(razorpay_payment_id);
+      if (!payment || payment.status !== 'captured') {
+        return res.status(400).json({ error: 'Payment not captured at gateway' });
+      }
+      const order = await client.orders.fetch(razorpay_order_id).catch(() => null);
+      const notes = order?.notes || payment?.notes || {};
+      if (notes.tenantId && notes.tenantId !== req.tenant.id) {
+        return res.status(403).json({ error: 'Payment belongs to a different tenant' });
+      }
+      if (notes.planCode) effectivePlanCode = notes.planCode;
+      if (notes.billingCycle) effectiveCycle = notes.billingCycle;
+      const notesPlan = await prisma.plan.findUnique({ where: { code: effectivePlanCode } });
+      if (!notesPlan) return res.status(404).json({ error: 'Plan not found' });
+      const expectedPaise = Math.round(Number(effectiveCycle === 'YEARLY' ? notesPlan.yearlyPrice : notesPlan.monthlyPrice) * 100);
+      if (Number(payment.amount) !== expectedPaise) {
+        return res.status(400).json({ error: 'Payment amount does not match the plan price' });
+      }
+    } else if (process.env.ALLOW_UNVERIFIED_PAYMENTS !== 'true') {
+      // Fail closed unless a gateway is live (or an explicit test flag is set).
+      return res.status(503).json({ error: 'Payment gateway not configured; cannot verify payment' });
+    }
+  } catch (err) {
+    return res.status(400).json({ error: 'Failed to verify payment with gateway: ' + (err?.error?.description || err.message) });
+  }
+
+  const plan = await prisma.plan.findUnique({ where: { code: effectivePlanCode } });
   if (!plan) return res.status(404).json({ error: 'Plan not found' });
 
+  billingCycle = effectiveCycle;
   const periodEnd = new Date();
   if (billingCycle === 'YEARLY') periodEnd.setFullYear(periodEnd.getFullYear() + 1);
   else periodEnd.setMonth(periodEnd.getMonth() + 1);
@@ -407,7 +443,7 @@ router.post('/wallet-checkout', requirePermission('billing.manage'), idempotent(
 
 // ── Verify wallet top-up + credit the wallet ───────────────────────────────
 router.post('/wallet-verify', requirePermission('billing.manage'), idempotent(), async (req, res) => {
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature, amount } = req.body;
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
   const ok = await verifySignature({
     orderId: razorpay_order_id,
@@ -415,7 +451,6 @@ router.post('/wallet-verify', requirePermission('billing.manage'), idempotent(),
     signature: razorpay_signature,
   });
   if (!ok) return res.status(400).json({ error: 'Signature mismatch' });
-  if (!amount || Number(amount) <= 0) return res.status(400).json({ error: 'amount required' });
 
   // Idempotent — if the webhook already credited this payment, skip the double credit
   const existing = await db('wallet_transactions')
@@ -424,13 +459,41 @@ router.post('/wallet-verify', requirePermission('billing.manage'), idempotent(),
     return res.json({ ok: true, alreadyCredited: true });
   }
 
-  const result = await wallet.topup(req.tenant.id, Number(amount), {
+  // Credit the amount the gateway actually CAPTURED — never a body-supplied
+  // amount (the signature only covers order|payment id, so a body amount could
+  // be inflated). Fetch the payment, require captured, and use payment.amount.
+  let creditAmount;
+  try {
+    const { getClient } = require('../services/payment.service');
+    const client = await getClient();
+    if (client) {
+      const payment = await client.payments.fetch(razorpay_payment_id);
+      if (!payment || payment.status !== 'captured') {
+        return res.status(400).json({ error: 'Payment not captured at gateway' });
+      }
+      const order = await client.orders.fetch(razorpay_order_id).catch(() => null);
+      const notes = order?.notes || payment?.notes || {};
+      if (notes.tenantId && notes.tenantId !== req.tenant.id) {
+        return res.status(403).json({ error: 'Payment belongs to a different tenant' });
+      }
+      creditAmount = Number(payment.amount) / 100; // paise → rupees
+    } else if (process.env.ALLOW_UNVERIFIED_PAYMENTS === 'true') {
+      creditAmount = Number(req.body.amount); // test/stub mode only
+    } else {
+      return res.status(503).json({ error: 'Payment gateway not configured; cannot verify payment' });
+    }
+  } catch (err) {
+    return res.status(400).json({ error: 'Failed to verify payment with gateway: ' + (err?.error?.description || err.message) });
+  }
+  if (!creditAmount || creditAmount <= 0) return res.status(400).json({ error: 'Invalid captured payment amount' });
+
+  const result = await wallet.topup(req.tenant.id, creditAmount, {
     paymentRef: razorpay_payment_id,
     description: 'Top-up (Razorpay)',
     createdById: req.user.id,
     type: 'TOPUP',
   });
-  audit({ req, action: 'wallet.topup.razorpay', resource: 'wallet', resourceId: result.transactionId, metadata: { amount, paymentId: razorpay_payment_id } });
+  audit({ req, action: 'wallet.topup.razorpay', resource: 'wallet', resourceId: result.transactionId, metadata: { amount: creditAmount, paymentId: razorpay_payment_id } });
   res.json({ ok: true, ...result });
 });
 
