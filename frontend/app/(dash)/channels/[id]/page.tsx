@@ -226,7 +226,7 @@ export default function ChannelDetailPage() {
   return (
     <>
       {confirmUi}
-      <div className="space-y-5 animate-slide-up max-w-5xl">
+      <div className="space-y-5 animate-slide-up">
         <Link href="/channels" className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-800">
           <ArrowLeft size={15} /> Back to Channels
         </Link>

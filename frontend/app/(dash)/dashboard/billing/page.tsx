@@ -239,7 +239,7 @@ export default function BillingPage() {
 
   return (
     <>
-      <div className="p-6 max-w-6xl mx-auto space-y-6 animate-slide-up">
+      <div className="space-y-6 animate-slide-up">
         <PageHeader
           title="Billing"
           subtitle="Manage your plan, wallet, usage and pay-as-you-go — all in one place."
