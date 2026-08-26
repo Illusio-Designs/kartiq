@@ -3,16 +3,16 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { orderApi, customerApi, channelApi, productApi } from '@/lib/api';
+import { orderApi, channelApi } from '@/lib/api';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import { TableRowsSkeleton, ShimmerTheme, Skeleton } from '@/components/Shimmer';
 import {
-  Button, Badge, Card, Modal, Input, Textarea, Select, Pagination, Tooltip, Tabs, EmptyState, Checkbox,
-  SearchField, DateRangePicker, Popover, BulkActionBar, DensityToggle, Dropdown, Kbd, useConfirm,
+  Button, Badge, Card, Modal, Input, Select, Pagination, Tooltip, Tabs, EmptyState, Checkbox,
+  SearchField, DateRangePicker, Popover, BulkActionBar, DensityToggle, Dropdown, useConfirm,
 } from '@/components/ui';
 import type { Density } from '@/components/ui';
-import { AlertTriangle, CheckCircle2, Plus, Star, Trash2, XCircle, Zap, Hand, Layers, ShoppingBag, Plug, RefreshCw, Download, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Eye, Pencil, Lock, Truck, Info, ListFilter, ArrowUpDown, Bookmark, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Star, Trash2, XCircle, Zap, Hand, Layers, ShoppingBag, Plug, RefreshCw, Download, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Eye, Pencil, Lock, Truck, Info, ListFilter, ArrowUpDown, Bookmark, X } from 'lucide-react';
 import { toast } from '@/store/toast.store';
 import Link from 'next/link';
 
@@ -170,7 +170,6 @@ export default function OrdersPage() {
   const [channelId, setChannelId] = useState('');
   const [tab, setTab] = useState<OrderTab>('all');
   const [reviewResult, setReviewResult] = useState<{ id: string; type: 'success' | 'error'; message: string } | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   // Sorting (client-side, over the loaded page) + column visibility.
@@ -334,8 +333,7 @@ export default function OrdersPage() {
       icon={<Hand size={26} />}
       iconBg="bg-emerald-50 text-emerald-600"
       title="Nothing to fulfill right now"
-      description="Orders you ship yourself land here — Amazon MFN (self-fulfilled) orders and anything you create for offline, phone, or B2B sales."
-      action={<Button leftIcon={<Plus size={14} />} onClick={() => setModalOpen(true)}>New order</Button>}
+      description="Orders you ship yourself land here — your Amazon MFN (self-fulfilled) orders. They appear automatically as they sync from the channel."
       decorative
       size="lg"
     />
@@ -354,9 +352,8 @@ export default function OrdersPage() {
       icon={<ShoppingBag size={28} />}
       iconBg="bg-emerald-50 text-emerald-600"
       title="No orders yet"
-      description="Orders flow in automatically from connected channels (Amazon, Shopify, Flipkart…). You can also create one manually for offline / B2B sales."
+      description="Orders flow in automatically from your connected channels (Amazon, Shopify, Flipkart…). Connect a channel or run a sync to pull them in."
       action={<Link href="/channels"><Button leftIcon={<Plug size={14} />}>Connect a channel</Button></Link>}
-      secondaryAction={<Button variant="ghost" size="sm" leftIcon={<Plus size={12} />} onClick={() => setModalOpen(true)}>Create manually</Button>}
       decorative
       size="lg"
     />
@@ -652,9 +649,6 @@ export default function OrdersPage() {
                     />
                   )}
                 </div>
-                <Button size="sm" leftIcon={<Plus size={15} />} onClick={() => setModalOpen(true)}>
-                  New Order
-                </Button>
               </div>
             </div>
 
@@ -899,8 +893,6 @@ export default function OrdersPage() {
         </Card>
       </div>
 
-      <NewOrderModal open={modalOpen} onClose={() => setModalOpen(false)} />
-
       {/* Filters — opens as a right-side drawer */}
       <Modal
         open={filtersOpen}
@@ -1010,214 +1002,5 @@ export default function OrdersPage() {
 
       {confirmUi}
     </>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// New Order Modal
-// ═══════════════════════════════════════════════════════════════════════════
-interface OrderItem {
-  id: string;
-  variantId: string;
-  qty: number;
-  unitPrice: number;
-}
-
-function NewOrderModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const qc = useQueryClient();
-  const [customerId, setCustomerId] = useState('');
-  const [channelId, setChannelId] = useState('');
-  const [notes, setNotes] = useState('');
-  const [items, setItems] = useState<OrderItem[]>([
-    { id: '1', variantId: '', qty: 1, unitPrice: 0 },
-  ]);
-  const [error, setError] = useState('');
-
-  const { data: customers } = useQuery({
-    queryKey: ['customers-list'],
-    queryFn: () => customerApi.list().then(r => r.data),
-    enabled: open,
-  });
-  const { data: channels } = useQuery({
-    queryKey: ['channels-list'],
-    queryFn: () => channelApi.list().then(r => r.data),
-    enabled: open,
-  });
-  // Products (with variants) to pick line items from — the create call resolves
-  // items by variantId, so users choose a real variant instead of typing.
-  const { data: productsData } = useQuery({
-    queryKey: ['products-for-order'],
-    queryFn: () => productApi.list({ limit: 200 }).then(r => r.data),
-    enabled: open,
-  });
-
-  const customerOptions = (customers?.customers || customers || []).map((c: any) => ({
-    value: c.id, label: c.name,
-  }));
-  const channelOptions = (channels || []).map((c: any) => ({
-    value: c.id, label: c.name,
-  }));
-  const variantOptions = ((productsData?.products || productsData || []) as any[])
-    .flatMap((p: any) => (p.variants || []).map((v: any) => ({
-      value: v.id,
-      label: `${p.name} · ${v.sku || v.name || 'variant'}`,
-    })));
-  // variantId → default selling price, used to auto-fill the price field on pick.
-  const variantPrice: Record<string, number> = {};
-  ((productsData?.products || productsData || []) as any[]).forEach((p: any) =>
-    (p.variants || []).forEach((v: any) => { variantPrice[v.id] = Number(v.sellingPrice ?? 0); })
-  );
-
-  const subtotal = items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
-
-  const createMutation = useMutation({
-    mutationFn: () => orderApi.create({
-      customerId,
-      channelId,
-      notes,
-      items: items.filter(i => i.variantId && i.qty > 0).map(i => ({
-        variantId: i.variantId, qty: i.qty, unitPrice: i.unitPrice,
-        total: i.qty * i.unitPrice,
-      })),
-      subtotal, total: subtotal,
-    }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['orders'] });
-      reset();
-      onClose();
-    },
-    onError: (err: any) => setError(err.response?.data?.error || err.message),
-  });
-
-  const reset = () => {
-    setCustomerId(''); setChannelId(''); setNotes(''); setError('');
-    setItems([{ id: '1', variantId: '', qty: 1, unitPrice: 0 }]);
-  };
-
-  const updateItem = (id: string, patch: Partial<OrderItem>) => {
-    setItems(items.map(i => i.id === id ? { ...i, ...patch } : i));
-  };
-
-  const addItem = () => {
-    setItems([...items, { id: String(Date.now()), variantId: '', qty: 1, unitPrice: 0 }]);
-  };
-
-  const removeItem = (id: string) => {
-    if (items.length === 1) return;
-    setItems(items.filter(i => i.id !== id));
-  };
-
-  return (
-    <Modal
-      open={open}
-      onClose={() => { onClose(); reset(); }}
-      title="Create New Order"
-      description="Manually enter a new order — items, customer, and channel"
-      size="xl"
-      footer={
-        <>
-          <Button variant="secondary" onClick={() => { onClose(); reset(); }}>Cancel</Button>
-          <Button
-            onClick={() => { setError(''); createMutation.mutate(); }}
-            loading={createMutation.isPending}
-            disabled={!customerId || !channelId || items.every(i => !i.variantId)}
-          >
-            Create Order
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Select
-            label="Customer"
-            value={customerId}
-            onChange={setCustomerId}
-            options={customerOptions}
-            placeholder="Select customer…"
-            fullWidth
-          />
-          <Select
-            label="Channel"
-            value={channelId}
-            onChange={setChannelId}
-            options={channelOptions}
-            placeholder="Select channel…"
-            fullWidth
-          />
-        </div>
-
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Items</label>
-            <Button variant="ghost" size="sm" leftIcon={<Plus size={12} />} onClick={addItem}>
-              Add item
-            </Button>
-          </div>
-          <div className="space-y-2">
-            {items.map((item, i) => (
-              <div key={item.id} className="grid grid-cols-12 gap-2 p-3 bg-slate-50 rounded-xl items-center">
-                <div className="col-span-12 md:col-span-7">
-                  <Select
-                    value={item.variantId}
-                    onChange={(val) => updateItem(item.id, {
-                      variantId: val,
-                      // auto-fill price from the variant when it's still untouched (0)
-                      ...(item.unitPrice ? {} : { unitPrice: variantPrice[val] ?? 0 }),
-                    })}
-                    options={variantOptions}
-                    placeholder="Select a product…"
-                    fullWidth
-                  />
-                </div>
-                <div className="col-span-3 md:col-span-2">
-                  <Input
-                    type="number"
-                    min={1}
-                    value={item.qty}
-                    onChange={(e) => updateItem(item.id, { qty: Number(e.target.value) })}
-                    placeholder="Qty"
-                  />
-                </div>
-                <div className="col-span-3 md:col-span-2">
-                  <Input
-                    type="number"
-                    min={0}
-                    value={item.unitPrice}
-                    onChange={(e) => updateItem(item.id, { unitPrice: Number(e.target.value) })}
-                    placeholder="Price"
-                  />
-                </div>
-                <div className="col-span-12 md:col-span-1 flex items-center justify-center">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => removeItem(item.id)}
-                    disabled={items.length === 1}
-                  >
-                    <Trash2 size={14} />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <Textarea
-          label="Notes (optional)"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="Special instructions, internal notes…"
-          rows={3}
-        />
-
-        <div className="flex items-center justify-between p-4 bg-emerald-50 rounded-xl">
-          <span className="text-sm font-bold text-slate-700">Subtotal</span>
-          <span className="text-xl font-bold text-emerald-700">{formatCurrency(subtotal)}</span>
-        </div>
-
-        {error && <p className="text-xs text-rose-600 font-medium">{error}</p>}
-      </div>
-    </Modal>
   );
 }
