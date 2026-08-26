@@ -664,3 +664,64 @@
    padding extends the gradient box to cover them. Harmless on inline text —
    inline padding doesn't change the line box or wrapping. */
 .bg-clip-text { padding-bottom: 0.12em; }
+
+/* ── Premium loader — aurora rings ────────────────────────────────────────────
+   Two counter-rotating conic-gradient rings around a pulsing brand mark, over a
+   soft radial glow. Brand hues (cyan → teal → emerald) read in both themes.
+   Ring thickness is set per size via the --kq-thick variable. */
+.kq-aurora-ring {
+  --kq-thick: 4px;
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: conic-gradient(from 90deg,
+    rgba(6, 182, 212, 0) 0deg,
+    #06b6d4 90deg,
+    #06d4b8 180deg,
+    #34d399 260deg,
+    rgba(6, 182, 212, 0) 360deg);
+  -webkit-mask: radial-gradient(farthest-side, #0000 calc(100% - var(--kq-thick)), #000 calc(100% - var(--kq-thick)));
+          mask: radial-gradient(farthest-side, #0000 calc(100% - var(--kq-thick)), #000 calc(100% - var(--kq-thick)));
+  animation: kq-spin 0.9s linear infinite;
+}
+.kq-aurora-ring--inner {
+  background: conic-gradient(from 0deg,
+    rgba(8, 145, 178, 0) 0deg,
+    #0891b2 120deg,
+    #06d4b8 240deg,
+    rgba(8, 145, 178, 0) 360deg);
+  animation-direction: reverse;
+  animation-duration: 1.5s;
+}
+.kq-aurora-glow {
+  position: absolute;
+  inset: -30%;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(6, 212, 184, 0.35), rgba(6, 182, 212, 0) 70%);
+  filter: blur(10px);
+  animation: kq-breathe 2.4s ease-in-out infinite;
+}
+.kq-track {
+  position: relative;
+  overflow: hidden;
+  border-radius: 9999px;
+}
+.kq-track::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, rgba(6, 212, 184, 0), #06d4b8, #06b6d4, rgba(6, 182, 212, 0));
+  animation: kq-sweep 1.1s ease-in-out infinite;
+}
+@keyframes kq-spin   { to { transform: rotate(360deg); } }
+@keyframes kq-breathe { 0%, 100% { opacity: 0.55; transform: scale(0.92); } 50% { opacity: 1; transform: scale(1.06); } }
+@keyframes kq-sweep  { 0% { transform: translateX(-120%); } 100% { transform: translateX(320%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .kq-aurora-ring, .kq-aurora-glow, .kq-track::after { animation-duration: 3s; }
+  .kq-aurora-glow { animation: none; opacity: 0.8; }
+}
