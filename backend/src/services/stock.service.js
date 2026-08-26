@@ -46,6 +46,32 @@ async function recordMovement(tenantId, warehouseId, variantId, type, quantity, 
   });
 }
 
+// Make sure a (warehouse, variant) inventory row exists, creating a zero row if
+// not. This is what makes merchant-fulfilled (MFN) products actually show up in
+// Inventory: an order syncs → we guarantee its SKUs have a row in the seller's
+// warehouse (qty 0) → the seller sets the real quantity from Kartriq. Without
+// this, adjustInventory (an UPDATE) silently no-ops for a SKU that was never
+// seeded by a catalog pull, and the product never appears.
+async function ensureInventoryRow(tenantId, warehouseId, variantId) {
+  const existing = await db('inventory_items').where({ tenantId, warehouseId, variantId }).first();
+  if (existing) return;
+  const variant = await db('product_variants').where({ id: variantId }).first();
+  if (!variant || !variant.productId) return;
+  try {
+    await db('inventory_items').insert({
+      id: randomUUID(),
+      tenantId, warehouseId,
+      productId: variant.productId,
+      variantId,
+      quantityOnHand: 0, quantityReserved: 0, quantityAvailable: 0,
+      reorderPoint: 0, reorderQty: 0,
+      updatedAt: new Date(),
+    });
+  } catch {
+    // UNIQUE(warehouseId, variantId) race — another path created it. Ignore.
+  }
+}
+
 // Drive the order's stock to the correct state for its current status.
 // `items` = [{ variantId, qty }]. Best-effort: never throws into the caller.
 async function applyOrderStock(order, items) {
@@ -55,6 +81,12 @@ async function applyOrderStock(order, items) {
 
     const tid = order.tenantId;
     const wh = order.warehouseId;
+
+    // Guarantee every SKU on this order has an inventory row in the warehouse,
+    // so merchant-fulfilled products appear in Inventory (seller then sets qty).
+    for (const it of items) {
+      if (it.variantId) await ensureInventoryRow(tid, wh, it.variantId);
+    }
     const ss = order.stockStatus || null;
     const st = String(order.status || '').toUpperCase();
     const isShipped = SHIPPED_STATES.includes(st);
@@ -129,4 +161,4 @@ async function applyOrderStock(order, items) {
   }
 }
 
-module.exports = { applyOrderStock };
+module.exports = { applyOrderStock, ensureInventoryRow };

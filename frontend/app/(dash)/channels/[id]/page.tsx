@@ -70,6 +70,9 @@ export default function ChannelDetailPage() {
       qc.invalidateQueries({ queryKey: ['channel-listings', id] });
       const d = res.data || {};
       toast.success(`Catalog pulled: ${d.products ?? 0} products, ${d.inventory ?? 0} stock rows${d.failed ? `, ${d.failed} failed` : ''}`);
+      // Surface the MFN-role fallback note so the seller knows why merchant-
+      // fulfilled products may still be missing and how to fix it.
+      if (d.note) toast.error(d.note, 'Heads up');
     },
     onError: (err: any) => toast.error(err.response?.data?.details || err.response?.data?.error || err.message),
   });

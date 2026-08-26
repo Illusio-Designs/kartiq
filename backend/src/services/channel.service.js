@@ -1093,15 +1093,29 @@ async function importCatalogFromChannel(channel, { tenantId } = {}) {
   // item's own price/fulfillment instead of the FBA defaults.
   let items;
   let fromReport = false;
+  let note = null;
   if (typeof adapter.fetchAllListings === 'function') {
-    items = await adapter.fetchAllListings();
-    fromReport = true;
+    try {
+      items = await adapter.fetchAllListings();
+      fromReport = true;
+    } catch (e) {
+      // The full-listings report (which is what carries merchant-fulfilled / MFN
+      // SKUs) needs the Amazon Reports role. If it's not granted, don't fail the
+      // whole pull — fall back to the FBA on-hand summaries and tell the seller
+      // why their MFN products are missing.
+      if (typeof adapter.fetchInventorySummaries === 'function') {
+        items = await adapter.fetchInventorySummaries();
+        note = `Merchant-fulfilled (MFN) listings were skipped: ${e.message}. Authorize the Amazon "Product Listing / Reports" role, then Pull Catalog again to import MFN SKUs into your warehouse.`;
+      } else {
+        throw e;
+      }
+    }
   } else if (typeof adapter.fetchInventorySummaries === 'function') {
     items = await adapter.fetchInventorySummaries();
   } else {
     throw new Error(`${channel.type} does not support catalog import yet`);
   }
-  const results = { total: items.length, products: 0, inventory: 0, failed: 0, error: null };
+  const results = { total: items.length, products: 0, inventory: 0, failed: 0, error: null, note };
 
   // Where the pulled stock lands. Amazon FBA (CHANNEL) stock is pooled in
   // Amazon's network, so it goes to the virtual "Amazon FBA" facility.
