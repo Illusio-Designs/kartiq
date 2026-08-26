@@ -3,6 +3,7 @@ const {
   authenticate, requireTenant, requirePermission,
 } = require('../middleware/auth.middleware');
 const prisma = require('../utils/prisma');
+const db = require('../utils/db');
 
 const router = Router();
 router.use(authenticate, requireTenant);
@@ -47,22 +48,40 @@ router.get('/inventory-valuation', requirePermission('reports.read'), async (req
 });
 
 router.get('/top-products', requirePermission('reports.read'), async (req, res) => {
-  const { from, to } = req.query;
-  const where = { tenantId: req.tenant.id };
-  if (from || to) {
-    where.order = { createdAt: {} };
-    if (from) where.order.createdAt.gte = new Date(String(from));
-    if (to)   where.order.createdAt.lte = new Date(String(to));
+  try {
+    const { from, to } = req.query;
+    // Raw join so we can (a) filter by the ORDER's date and (b) return real
+    // product names/SKUs — the shim's groupBy can't do either cleanly.
+    const rows = await db('order_items as oi')
+      .join('orders as o', 'o.id', 'oi.orderId')
+      .leftJoin('product_variants as v', 'v.id', 'oi.variantId')
+      .leftJoin('products as p', 'p.id', 'v.productId')
+      .where('oi.tenantId', req.tenant.id)
+      .modify((q) => {
+        if (from) q.where('o.createdAt', '>=', new Date(String(from)));
+        if (to)   q.where('o.createdAt', '<=', new Date(String(to)));
+      })
+      .groupBy('oi.variantId', 'v.sku', 'p.name', 'v.name')
+      .select('oi.variantId as variantId', 'v.sku as sku')
+      .select(db.raw('COALESCE(p.name, v.name) as name'))
+      .sum({ qty: 'oi.qty' })
+      .sum({ revenue: 'oi.total' })
+      .orderBy('qty', 'desc')
+      .limit(10)
+      .catch(() => []);
+    res.json({
+      products: rows.map((r) => ({
+        variantId: r.variantId,
+        name: r.name || '—',
+        sku: r.sku || '—',
+        qty: Number(r.qty || 0),
+        revenue: Number(r.revenue || 0),
+      })),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Failed to fetch top products' });
   }
-
-  const top = await prisma.orderItem.groupBy({
-    by: ['variantId'],
-    where,
-    _sum: { qty: true, total: true },
-    orderBy: { _sum: { qty: 'desc' } },
-    take: 10,
-  });
-  res.json(top);
 });
 
 module.exports = router;

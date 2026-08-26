@@ -123,9 +123,13 @@ const getOrderStats = async (req, res) => {
     const where = { tenantId: tid(req) };
     if (req.query.channelId) where.channelId = String(req.query.channelId);
 
-    const [byStatus, byFulfillment, total] = await Promise.all([
+    const [byStatus, byFulfillment, byRisk, needsReview, total] = await Promise.all([
       prisma.order.groupBy({ by: ['status'], where, _count: { status: true } }),
       prisma.order.groupBy({ by: ['fulfillmentType'], where, _count: { fulfillmentType: true } }),
+      // RTO risk breakdown (High / Medium / Low) across the same scope.
+      prisma.order.groupBy({ by: ['rtoRiskLevel'], where, _count: { rtoRiskLevel: true } }),
+      // Orders held for a human decision before fulfilment (pre-ship only).
+      prisma.order.count({ where: { ...where, needsApproval: true, status: { in: ['PENDING', 'CONFIRMED', 'PROCESSING'] } } }),
       prisma.order.count({ where }),
     ]);
 
@@ -137,8 +141,15 @@ const getOrderStats = async (req, res) => {
     for (const row of byFulfillment) {
       fulfillmentCounts[String(row.fulfillmentType || 'UNKNOWN')] = row._count?.fulfillmentType || 0;
     }
+    const riskCounts = { HIGH: 0, MEDIUM: 0, LOW: 0 };
+    for (const row of byRisk) {
+      const k = String(row.rtoRiskLevel || '').toUpperCase();
+      if (k in riskCounts) riskCounts[k] = row._count?.rtoRiskLevel || 0;
+    }
+    const returned = statusCounts.RETURNED || 0;
+    const returnRate = total > 0 ? Math.round((returned / total) * 1000) / 10 : 0; // one decimal %
 
-    res.json({ total, statusCounts, fulfillmentCounts });
+    res.json({ total, statusCounts, fulfillmentCounts, rto: { needsReview, ...riskCounts, returnRate } });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Failed to fetch order stats' });

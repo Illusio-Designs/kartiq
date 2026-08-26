@@ -277,6 +277,7 @@ export default function OrdersPage() {
     const sum = (...k: string[]) => k.reduce((n, x) => n + (sc[x] || 0), 0);
     return {
       total: orderStats?.total ?? 0,
+      needsReview: orderStats?.rto?.needsReview ?? 0,
       open: sum('PENDING', 'CONFIRMED', 'PROCESSING'),
       shipped: sum('SHIPPED'),
       delivered: sum('DELIVERED'),
@@ -577,11 +578,15 @@ export default function OrdersPage() {
 
         <StatRow items={[
           { label: 'Total orders', value: oStat.total.toLocaleString(), tone: 'slate', icon: <ShoppingBag size={16} /> },
+          { label: 'Needs review', value: oStat.needsReview.toLocaleString(), tone: 'rose', icon: <AlertTriangle size={16} />,
+            hint: 'High RTO-risk orders held before fulfilment — click to filter',
+            active: risk === 'APPROVAL',
+            onClick: () => { setRisk(risk === 'APPROVAL' ? '' : 'APPROVAL'); setPage(1); } },
           { label: 'Open', value: oStat.open.toLocaleString(), tone: 'amber', icon: <Layers size={16} />, hint: 'Pending · Confirmed · Processing' },
           { label: 'Shipped', value: oStat.shipped.toLocaleString(), tone: 'blue', icon: <Truck size={16} /> },
           { label: 'Delivered', value: oStat.delivered.toLocaleString(), tone: 'emerald', icon: <CheckCircle2 size={16} /> },
           { label: 'Cancelled', value: oStat.closed.toLocaleString(), tone: 'rose', icon: <XCircle size={16} />, hint: 'Cancelled · Returned' },
-        ]} cols={5} />
+        ]} cols={6} />
 
         {/* Bulk actions (appears when rows are selected) */}
         <BulkActionBar count={selected.size} onClear={() => setSelected(new Set())}>

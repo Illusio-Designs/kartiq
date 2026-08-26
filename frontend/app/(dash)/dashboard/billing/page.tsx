@@ -530,6 +530,8 @@ export default function BillingPage() {
                   rate={rate}
                   overageUnits={overageUnits}
                   payAsYouGo={!!sub.payAsYouGo}
+                  onTopUp={() => setTopupOpen(true)}
+                  onUpgrade={canManage ? scrollToPlans : undefined}
                 />
               );
             })}
@@ -659,7 +661,7 @@ export default function BillingPage() {
 // Single usage meter — progress bar turns amber near the limit (>=80%) and rose
 // when over. Unlimited metrics (null limit) render without a bar.
 function UsageMeter({
-  label, icon: Icon, used, limit, rate, overageUnits, payAsYouGo,
+  label, icon: Icon, used, limit, rate, overageUnits, payAsYouGo, onTopUp, onUpgrade,
 }: {
   label: string;
   icon: any;
@@ -668,6 +670,8 @@ function UsageMeter({
   rate: number;
   overageUnits: number;
   payAsYouGo: boolean;
+  onTopUp?: () => void;
+  onUpgrade?: () => void;
 }) {
   const isUnlimited = limit === null || limit === undefined;
   const pct = isUnlimited ? 0 : Math.min(100, Math.round((used / Math.max(1, limit as number)) * 100));
@@ -701,18 +705,30 @@ function UsageMeter({
       ) : (
         <div className="text-[11px] text-emerald-700 font-bold">Unlimited on this plan</div>
       )}
-      {overLimit && (
-        <div className="mt-1.5 text-[11px] text-slate-600">
-          {payAsYouGo ? (
-            <>
-              <strong>{(used - (limit as number)).toLocaleString()}</strong> over limit
-              {rate > 0 && (
-                <> · ₹{rate}/unit · <strong>₹{(overageUnits * rate).toFixed(2)}</strong> this period</>
-              )}
-            </>
-          ) : (
-            <span className="text-rose-700">PAYG is OFF — new {label.toLowerCase()} are blocked.</span>
-          )}
+      {(overLimit || nearLimit) && (
+        <div className="mt-1.5 flex items-start justify-between gap-3 text-[11px]">
+          <span className="text-slate-600">
+            {overLimit ? (
+              payAsYouGo ? (
+                <>
+                  <strong>{(used - (limit as number)).toLocaleString()}</strong> over limit
+                  {rate > 0 && (
+                    <> · ₹{rate}/unit · <strong>₹{(overageUnits * rate).toFixed(2)}</strong> this period</>
+                  )}
+                </>
+              ) : (
+                <span className="text-rose-700 font-semibold">PAYG is OFF — new {label.toLowerCase()} are blocked.</span>
+              )
+            ) : (
+              <span className="text-amber-700">{pct}% used — getting close to your limit.</span>
+            )}
+          </span>
+          {/* Inline action: over-limit without PAYG → upgrade; otherwise top up. */}
+          {overLimit && !payAsYouGo && onUpgrade ? (
+            <button type="button" onClick={onUpgrade} className="shrink-0 font-bold text-emerald-600 hover:text-emerald-700 whitespace-nowrap">Upgrade →</button>
+          ) : onTopUp ? (
+            <button type="button" onClick={onTopUp} className="shrink-0 font-bold text-emerald-600 hover:text-emerald-700 whitespace-nowrap">Top up →</button>
+          ) : null}
         </div>
       )}
     </div>

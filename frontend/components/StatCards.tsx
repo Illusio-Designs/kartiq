@@ -25,8 +25,10 @@ export interface StatItem {
   value: React.ReactNode;
   tone?: StatTone;
   icon?: React.ReactNode;
-  hint?: string;      // tooltip
-  href?: string;      // makes the whole card a link (deep-link into a filtered view)
+  hint?: string;         // tooltip
+  href?: string;         // makes the whole card a link (deep-link into a filtered view)
+  onClick?: () => void;  // makes the card an in-place action (e.g. apply a filter)
+  active?: boolean;      // highlight when its filter is currently applied
   loading?: boolean;
 }
 
@@ -51,13 +53,21 @@ function StatCardInner({ label, value, tone = 'slate', icon, loading }: StatItem
 }
 
 export function StatCard(item: StatItem) {
-  const base = 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm transition-shadow';
+  const base = 'bg-white dark:bg-slate-900 border rounded-2xl shadow-sm transition-shadow';
+  const border = item.active ? 'border-emerald-400 ring-2 ring-emerald-500/15' : 'border-slate-200 dark:border-slate-800';
+  const hoverable = 'hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700';
   const inner = <StatCardInner {...item} />;
   let card: React.ReactNode;
   if (item.href) {
-    card = <Link href={item.href} className={cn(base, 'block hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700')}>{inner}</Link>;
+    card = <Link href={item.href} className={cn(base, border, 'block', hoverable)}>{inner}</Link>;
+  } else if (item.onClick) {
+    card = (
+      <button type="button" onClick={item.onClick} className={cn(base, border, 'w-full text-left', hoverable, 'focus:outline-none focus:ring-2 focus:ring-emerald-500/30')}>
+        {inner}
+      </button>
+    );
   } else {
-    card = <div className={base}>{inner}</div>;
+    card = <div className={cn(base, border)}>{inner}</div>;
   }
   return item.hint ? <Tooltip content={item.hint}><div className="h-full">{card}</div></Tooltip> : card;
 }

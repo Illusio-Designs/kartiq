@@ -15,8 +15,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { billingApi } from '@/lib/api';
 import { TableRowsSkeleton } from '@/components/Shimmer';
-import { Activity, RefreshCw, ChevronDown } from 'lucide-react';
+import { Activity, RefreshCw, ChevronDown, ListFilter, Layers, Clock } from 'lucide-react';
 import { Button, Badge, Card, Select, SearchField, EmptyState, Pagination } from '@/components/ui';
+import { StatRow } from '@/components/StatCards';
 
 interface AuditRow {
   id: string;
@@ -141,35 +142,13 @@ export default function TenantAuditPage() {
           }
         />
 
-        {/* Stat strip — clean Card stat tiles (real values only) */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Card className="p-4">
-            <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" /> Total events
-            </div>
-            <div className="text-2xl font-bold text-slate-900 mt-1 tabular-nums">{total.toLocaleString()}</div>
-          </Card>
-          <Card className="p-4">
-            <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-              <span className="w-2 h-2 rounded-full bg-sky-500" /> Showing
-            </div>
-            <div className="text-2xl font-bold text-slate-900 mt-1 tabular-nums">{filtered.length}</div>
-            <div className="text-xs text-slate-500 mt-0.5 truncate">
-              most recent{actionFilter ? ` · filter: ${actionFilter}` : ''}
-            </div>
-          </Card>
-          <Card className="p-4">
-            <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-              <span className="w-2 h-2 rounded-full bg-violet-500" /> Latest
-            </div>
-            <div className="text-2xl font-bold text-slate-900 mt-1">
-              {logs[0] ? relTime(logs[0].createdAt) : '—'}
-            </div>
-            <div className="text-xs text-slate-500 mt-0.5 truncate">
-              {logs[0]?.action || 'No activity yet'}
-            </div>
-          </Card>
-        </div>
+        {/* Stat strip — shared stat cards (real values only) */}
+        <StatRow items={[
+          { label: 'Total events', value: total.toLocaleString(), tone: 'emerald', icon: <Activity size={16} /> },
+          { label: 'On this page', value: filtered.length, tone: 'blue', icon: <ListFilter size={16} />, hint: actionFilter ? `Filter: ${actionFilter}` : 'Most recent' },
+          { label: 'Action types', value: actions.length, tone: 'violet', icon: <Layers size={16} /> },
+          { label: 'Latest', value: logs[0] ? relTime(logs[0].createdAt) : '—', tone: 'slate', icon: <Clock size={16} />, hint: logs[0]?.action || 'No activity yet' },
+        ]} cols={4} />
 
         {/* One card — toolbar header (border-b) · events table */}
         <Card className="p-0 overflow-hidden">

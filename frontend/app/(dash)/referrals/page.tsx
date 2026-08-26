@@ -17,6 +17,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { referralApi } from '@/lib/api';
 import { Button, Badge, Card } from '@/components/ui';
 import { TableRowsSkeleton } from '@/components/Shimmer';
+import { StatRow } from '@/components/StatCards';
 import { Gift, Copy, Share2, CheckCircle2, Clock, XCircle, Sparkles } from 'lucide-react';
 import { toast } from '@/store/toast.store';
 
@@ -153,12 +154,12 @@ export default function ReferralsPage() {
         </Card>
 
         {/* Stat strip */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatTile label="Signups"   value={loading ? '—' : (data?.totals.signups ?? 0).toLocaleString()} dotClass="bg-slate-400" />
-          <StatTile label="Pending"   value={loading ? '—' : (data?.totals.pending ?? 0).toLocaleString()} dotClass="bg-amber-500" />
-          <StatTile label="Converted" value={loading ? '—' : (data?.totals.converted ?? 0).toLocaleString()} dotClass="bg-emerald-500" />
-          <StatTile label="Earned"    value={loading || !data ? '—' : fmt(data.totals.earned, data.currency)} dotClass="bg-emerald-500" highlight />
-        </div>
+        <StatRow items={[
+          { label: 'Signups',   value: loading ? '—' : (data?.totals.signups ?? 0).toLocaleString(), tone: 'slate', icon: <Share2 size={16} /> },
+          { label: 'Pending',   value: loading ? '—' : (data?.totals.pending ?? 0).toLocaleString(), tone: 'amber', icon: <Clock size={16} /> },
+          { label: 'Converted', value: loading ? '—' : (data?.totals.converted ?? 0).toLocaleString(), tone: 'emerald', icon: <CheckCircle2 size={16} /> },
+          { label: 'Earned',    value: loading || !data ? '—' : fmt(data.totals.earned, data.currency), tone: 'emerald', icon: <Gift size={16} /> },
+        ]} cols={4} />
 
         {/* Referrals table */}
         <Card className="p-0 overflow-hidden">
@@ -251,23 +252,3 @@ export default function ReferralsPage() {
   );
 }
 
-function StatTile({
-  label, value, dotClass, highlight,
-}: {
-  label: string;
-  value: string;
-  dotClass: string;
-  highlight?: boolean;
-}) {
-  return (
-    <Card className={`p-4 ${highlight ? 'border-emerald-200' : ''}`}>
-      <div className="flex items-center gap-2 text-[10.5px] font-extrabold uppercase tracking-wider text-slate-400">
-        <span className={`w-2 h-2 rounded-full ${dotClass}`} />
-        {label}
-      </div>
-      <div className={`text-2xl font-extrabold mt-1.5 tabular-nums ${highlight ? 'text-emerald-600' : 'text-slate-900'}`}>
-        {value}
-      </div>
-    </Card>
-  );
-}
