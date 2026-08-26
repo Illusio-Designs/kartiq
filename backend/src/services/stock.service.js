@@ -72,6 +72,18 @@ async function ensureInventoryRow(tenantId, warehouseId, variantId) {
   }
 }
 
+// Ensure inventory rows exist for every SKU on a self-fulfilled order, without
+// moving any stock. Called on every order sync (new AND existing) so an MFN
+// order's products always surface in Inventory — even ones imported before the
+// row-seeding existed, and even when the order's status hasn't changed.
+async function ensureInventoryForOrder(order, items) {
+  if (!order || order.fulfillmentType !== 'SELF' || !order.warehouseId) return;
+  if (!Array.isArray(items) || !items.length) return;
+  for (const it of items) {
+    if (it.variantId) await ensureInventoryRow(order.tenantId, order.warehouseId, it.variantId);
+  }
+}
+
 // Drive the order's stock to the correct state for its current status.
 // `items` = [{ variantId, qty }]. Best-effort: never throws into the caller.
 async function applyOrderStock(order, items) {
@@ -161,4 +173,29 @@ async function applyOrderStock(order, items) {
   }
 }
 
-module.exports = { applyOrderStock, ensureInventoryRow };
+// One-shot backfill: seed inventory rows for existing self-fulfilled orders so
+// their (MFN) products appear in Inventory without waiting for another sync.
+// Bounded + idempotent — safe to run on boot. Returns a small summary.
+async function backfillSelfOrderInventory({ limit = 2000 } = {}) {
+  const orders = await db('orders')
+    .where({ fulfillmentType: 'SELF' })
+    .whereNotNull('warehouseId')
+    .orderBy('createdAt', 'desc')
+    .limit(limit)
+    .select('id', 'tenantId', 'warehouseId', 'fulfillmentType');
+  let seeded = 0;
+  for (const o of orders) {
+    const items = await db('order_items').where({ orderId: o.id }).select('variantId');
+    for (const it of items) {
+      if (!it.variantId) continue;
+      const before = await db('inventory_items')
+        .where({ tenantId: o.tenantId, warehouseId: o.warehouseId, variantId: it.variantId }).first();
+      if (before) continue;
+      await ensureInventoryRow(o.tenantId, o.warehouseId, it.variantId);
+      seeded++;
+    }
+  }
+  return { orders: orders.length, seeded };
+}
+
+module.exports = { applyOrderStock, ensureInventoryRow, ensureInventoryForOrder, backfillSelfOrderInventory };

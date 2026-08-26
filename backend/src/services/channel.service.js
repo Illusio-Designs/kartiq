@@ -3,7 +3,7 @@ const { decryptCredentials } = require('../utils/crypto');
 const { pickBestWarehouse } = require('./routing.service');
 const { scoreOrder } = require('./rto.service');
 const { resolveFulfillmentType, assessCompleteness } = require('./fulfillment.service');
-const { applyOrderStock } = require('./stock.service');
+const { applyOrderStock, ensureInventoryForOrder } = require('./stock.service');
 
 // ── Adapters grouped by category ────────────────────────────────────────────
 
@@ -618,6 +618,13 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
           // re-poll as an inert duplicate.
           if (await applyOrderProgress(existing, raw)) results.updated++;
           else results.skipped++;
+          // Heal inventory: make sure this self-fulfilled order's SKUs have rows
+          // in its warehouse, so MFN products appear in Inventory even when the
+          // status didn't change (and for orders imported before row-seeding).
+          if (existing.fulfillmentType === 'SELF' && existing.warehouseId) {
+            const its = await prisma.orderItem.findMany({ where: { orderId: existing.id } });
+            await ensureInventoryForOrder(existing, its);
+          }
           continue;
         }
         // Replace the empty stub with a fully-populated import. Do NOT swallow

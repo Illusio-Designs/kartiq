@@ -307,6 +307,16 @@ process.on('uncaughtException', (err) => {
     console.error('[cron] failed to start:', err.message);
   }
 
+  // One-time, non-blocking backfill: make sure existing self-fulfilled (MFN)
+  // orders have inventory rows so their products show up in Inventory even if
+  // they were imported before row-seeding existed.
+  setTimeout(() => {
+    require('./services/stock.service')
+      .backfillSelfOrderInventory({ limit: 2000 })
+      .then((r) => { if (r.seeded) console.log(`[backfill] seeded ${r.seeded} inventory rows across ${r.orders} self-fulfilled orders`); })
+      .catch((e) => console.warn('[backfill] self-order inventory failed:', e.message));
+  }, 5000);
+
   // Register job-queue handlers + start the polling worker. The queue is a
   // MySQL-backed BullMQ-style runner with retry + dead-letter; see
   // services/jobs.service.js. Disable on this node by setting
