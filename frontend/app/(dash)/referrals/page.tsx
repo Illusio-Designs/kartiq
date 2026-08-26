@@ -86,7 +86,7 @@ export default function ReferralsPage() {
       .format(amount || 0);
 
   return (
-    <div className="max-w-5xl mx-auto space-y-4 animate-slide-up">
+    <div className="space-y-4 animate-slide-up">
         <PageHeader
           title="Referrals"
           subtitle={

@@ -120,7 +120,7 @@ export default function TenantAuditPage() {
   }, [logs, search]);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-4 animate-slide-up">
+    <div className="space-y-4 animate-slide-up">
         <PageHeader
           title="Activity Log"
           subtitle="Every change made inside your workspace — useful for security reviews and compliance. Limited to your tenant."

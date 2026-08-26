@@ -131,7 +131,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="animate-slide-up max-w-5xl">
+    <div className="animate-slide-up">
         <PageHeader
           title="Settings"
           subtitle="Manage your profile, company details, security and notifications."
