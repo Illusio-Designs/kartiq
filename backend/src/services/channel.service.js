@@ -3,6 +3,7 @@ const { decryptCredentials } = require('../utils/crypto');
 const { pickBestWarehouse } = require('./routing.service');
 const { scoreOrder } = require('./rto.service');
 const { resolveFulfillmentType, assessCompleteness } = require('./fulfillment.service');
+const { applyOrderStock } = require('./stock.service');
 
 // ── Adapters grouped by category ────────────────────────────────────────────
 
@@ -574,6 +575,16 @@ async function applyOrderProgress(existing, raw) {
 
   if (!Object.keys(upd).length) return false;
   await prisma.order.update({ where: { id: existing.id }, data: upd }).catch(() => {});
+
+  // Status advanced (ship / cancel / return) — move stock for self-fulfilled
+  // orders: deduct on ship, release on cancel, add back on return. Idempotent.
+  if (upd.status && existing.fulfillmentType === 'SELF' && existing.warehouseId) {
+    const items = await prisma.orderItem.findMany({ where: { orderId: existing.id } });
+    await applyOrderStock(
+      { id: existing.id, tenantId: existing.tenantId, warehouseId: existing.warehouseId, fulfillmentType: 'SELF', status: upd.status, stockStatus: existing.stockStatus },
+      items,
+    );
+  }
   return true;
 }
 
@@ -753,8 +764,9 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
         catch (e) { console.warn(`[import] default warehouse resolve failed: ${e.message}`); }
       }
 
+      let createdOrderId = null;
       await prisma.$transaction(async (tx) => {
-        await tx.order.create({
+        const createdOrder = await tx.order.create({
           data: {
             tenantId,
             orderNumber,
@@ -799,6 +811,7 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
             }),
           },
         });
+        createdOrderId = createdOrder.id;
 
         // Bump the PAYG "orders" meter — but ONLY for orders the seller actually
         // fulfils themselves (fulfillmentType SELF): Amazon MFN, Shopify, custom,
@@ -815,6 +828,15 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
           });
         }
       });
+
+      // Reserve (or, if already shipped at import, deduct) stock for a
+      // self-fulfilled order — idempotent, so re-syncs won't double-apply.
+      if (createdOrderId && fulfillmentType === 'SELF' && resolvedWarehouseId && resolvedItems.length) {
+        await applyOrderStock(
+          { id: createdOrderId, tenantId, warehouseId: resolvedWarehouseId, fulfillmentType, status: initialStatus, stockStatus: null },
+          resolvedItems,
+        );
+      }
 
       results.imported++;
     } catch (err) {

@@ -113,6 +113,11 @@ async function initDb() {
     { table: 'warehouses', column: 'phone',           ddl: 'VARCHAR(30) DEFAULT NULL' },
     { table: 'warehouses', column: 'email',           ddl: 'VARCHAR(200) DEFAULT NULL' },
 
+    // Tracks what stock action we've applied for a self-fulfilled order so the
+    // reserve → deduct → release/return transitions stay idempotent across syncs.
+    // null | RESERVED | DEDUCTED | RELEASED | RETURNED.
+    { table: 'orders', column: 'stockStatus', ddl: 'VARCHAR(16) DEFAULT NULL' },
+
     // Customer location — accepted on customer create; mobile reads c.city.
     { table: 'customers', column: 'city',    ddl: 'VARCHAR(120) DEFAULT NULL' },
     { table: 'customers', column: 'state',   ddl: 'VARCHAR(120) DEFAULT NULL' },

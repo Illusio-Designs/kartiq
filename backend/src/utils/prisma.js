@@ -431,7 +431,10 @@ function deserializeRows(rows, table) {
 const JSON_FIELDS = {
   users: [], channels: ['credentials'], products: ['dimensions', 'images', 'tags'],
   product_variants: ['attributes'], warehouses: ['address'], vendors: ['address', 'bankDetails'],
-  customers: ['address'], orders: ['shippingAddress', 'billingAddress'],
+  customers: ['address'],
+  // rtoFactors + missingFields are JSON stored in LONGTEXT columns added via
+  // migration (no json_valid CHECK), so they must be listed explicitly here.
+  orders: ['shippingAddress', 'billingAddress', 'rtoFactors', 'missingFields'],
   plans: ['features', 'meteredRates'], billing_invoices: ['lineItems'],
   audit_logs: ['metadata'], public_content: ['data'], blog_posts: ['tags'],
 };

@@ -496,7 +496,7 @@ export default function OrdersPage() {
                 })()}
               </Badge>
               {o.dataCompleteness && o.dataCompleteness !== 'COMPLETE' && !isAwaitingTotal(o) ? (
-                <Tooltip content={`Missing: ${(o.missingFields || []).join(', ') || 'data'}`}>
+                <Tooltip content={`Missing: ${(Array.isArray(o.missingFields) ? o.missingFields : []).join(', ') || 'data'}`}>
                   <span>
                     <Badge variant={o.dataCompleteness === 'MINIMAL' ? 'rose' : 'amber'}>{o.dataCompleteness}</Badge>
                   </span>

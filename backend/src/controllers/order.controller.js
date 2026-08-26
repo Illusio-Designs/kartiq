@@ -2,6 +2,15 @@ const { z } = require('zod');
 const prisma = require('../utils/prisma');
 const { notifyTenant } = require('../services/notifications.service');
 const { confirmChannelShipment } = require('../services/channel.service');
+const { applyOrderStock } = require('../services/stock.service');
+
+// Move stock for a self-fulfilled order after its status changed (deduct on
+// ship, release on cancel, add back on return). Best-effort, idempotent.
+async function moveOrderStock(order) {
+  if (!order || order.fulfillmentType !== 'SELF' || !order.warehouseId) return;
+  const items = await prisma.orderItem.findMany({ where: { orderId: order.id } });
+  await applyOrderStock(order, items);
+}
 
 // Accept either full variant reference (variantId) or a lightweight one (sku / productName).
 // If sku is provided, we look up the variant server-side. If neither works, a placeholder
@@ -355,6 +364,8 @@ const updateOrderStatus = async (req, res) => {
         .catch(() => {});
     }
 
+    await moveOrderStock(order); // deduct on ship / add back on return, etc.
+
     res.json(order);
   } catch (err) {
     if (err instanceof z.ZodError) return res.status(400).json({ error: 'Invalid status value' });
@@ -375,6 +386,7 @@ const cancelOrder = async (req, res) => {
       return res.status(400).json({ error: `Cannot cancel a ${existing.status.toLowerCase()} order` });
     }
     const order = await prisma.order.update({ where: { id: req.params.id }, data: { status: 'CANCELLED' } });
+    await moveOrderStock(order); // release a reservation / add back deducted stock
     res.json(order);
   } catch {
     res.status(500).json({ error: 'Failed to cancel order' });
