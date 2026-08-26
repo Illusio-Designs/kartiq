@@ -148,24 +148,18 @@ const SHIPPED_OR_TERMINAL = new Set([
 const showsNeedsReview = (o: any): boolean =>
   !!o.needsApproval && !SHIPPED_OR_TERMINAL.has(String(o.status || '').toUpperCase());
 
-// Order SOURCE — where the order came from. Auto-synced orders were pulled
-// from a marketplace (they carry a channelOrderId); manual orders were created
-// by hand in Kartriq. This is a different axis from fulfillment (who ships it):
-// e.g. an Amazon MFN order is auto-synced but self-fulfilled.
-type SourceTab = 'all' | 'auto' | 'manual';
-const SOURCE_PARAM: Record<SourceTab, string | undefined> = {
+// Order tabs split by WHO FULFILS the order — the work you do vs the work the
+// channel does:
+//   Auto   = channel-fulfilled (Amazon FBA / dropship) — hands-off, no action.
+//   Manual = self-fulfilled (Amazon MFN) + orders you create here — you ship
+//            them, so they live where you manage fulfilment.
+// This maps to the backend `fulfillment` filter (CHANNEL/SELF/DROPSHIP).
+type OrderTab = 'all' | 'auto' | 'manual';
+const TAB_FULFILLMENT: Record<OrderTab, string | undefined> = {
   all: undefined,
-  auto: 'auto',
-  manual: 'manual',
+  auto: 'CHANNEL,DROPSHIP',
+  manual: 'SELF',
 };
-
-// Fulfillment-type filter (who ships the order) — lives in the Filters drawer.
-const FULFILLMENT_OPTIONS = [
-  { value: '', label: 'All fulfillment' },
-  { value: 'CHANNEL', label: 'Channel-fulfilled (FBA)' },
-  { value: 'SELF', label: 'Self-fulfilled (MFN)' },
-  { value: 'DROPSHIP', label: 'Dropship' },
-];
 
 export default function OrdersPage() {
   const qc = useQueryClient();
@@ -174,8 +168,7 @@ export default function OrdersPage() {
   const [status, setStatus] = useState('');
   const [risk, setRisk] = useState('');
   const [channelId, setChannelId] = useState('');
-  const [source, setSource] = useState<SourceTab>('all');
-  const [fulfillment, setFulfillment] = useState('');
+  const [tab, setTab] = useState<OrderTab>('all');
   const [reviewResult, setReviewResult] = useState<{ id: string; type: 'success' | 'error'; message: string } | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
@@ -246,7 +239,7 @@ export default function OrdersPage() {
   const visibleColumns = ORDER_COLUMNS.filter((c) => !hiddenCols.has(c.key));
 
   const { data, isLoading } = useQuery({
-    queryKey: ['orders', page, pageSize, status, risk, channelId, source, fulfillment, dateFrom, dateTo],
+    queryKey: ['orders', page, pageSize, status, risk, channelId, tab, dateFrom, dateTo],
     queryFn: () => orderApi.list({
       page,
       limit: pageSize,
@@ -255,8 +248,7 @@ export default function OrdersPage() {
       needsApproval: risk === 'APPROVAL' ? 'true' : undefined,
       // Server-side channel filter — the orders controller accepts `channelId`.
       channelId: channelId || undefined,
-      fulfillment: fulfillment || undefined,
-      source: SOURCE_PARAM[source],
+      fulfillment: TAB_FULFILLMENT[tab],
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
     }).then(r => r.data),
@@ -297,7 +289,7 @@ export default function OrdersPage() {
   }, [searchedOrders, sortKey, sortDir]);
 
   // ── Selection (bulk actions) ──
-  useEffect(() => { setSelected(new Set()); }, [page, status, risk, channelId, source, fulfillment, dateFrom, dateTo]);
+  useEffect(() => { setSelected(new Set()); }, [page, status, risk, channelId, tab, dateFrom, dateTo]);
   const allSelected = sortedOrders.length > 0 && sortedOrders.every((o: any) => selected.has(o.id));
   const toggleAll = () => {
     setSelected((prev) => {
@@ -310,8 +302,7 @@ export default function OrdersPage() {
   };
 
   // ── Active filters (popover count + removable chips) ──
-  const activeFilterCount = (status ? 1 : 0) + (risk ? 1 : 0) + (channelId ? 1 : 0) + (fulfillment ? 1 : 0) + ((dateFrom || dateTo) ? 1 : 0);
-  const fulfillmentLabel = FULFILLMENT_OPTIONS.find((f) => f.value === fulfillment)?.label;
+  const activeFilterCount = (status ? 1 : 0) + (risk ? 1 : 0) + (channelId ? 1 : 0) + ((dateFrom || dateTo) ? 1 : 0);
   const statusLabel = STATUSES.find((s) => s.value === status)?.label;
   const riskLabel = RISK_FILTERS.find((r) => r.value === risk)?.label;
   const channelLabel = channels.find((c) => c.id === channelId)?.name;
@@ -320,16 +311,15 @@ export default function OrdersPage() {
     status ? { key: 'status', label: `Status: ${statusLabel}`, clear: () => { setStatus(''); setPage(1); } } : null,
     risk ? { key: 'risk', label: `Risk: ${riskLabel}`, clear: () => { setRisk(''); setPage(1); } } : null,
     channelId ? { key: 'channel', label: `Channel: ${channelLabel || '—'}`, clear: () => { setChannelId(''); setPage(1); } } : null,
-    fulfillment ? { key: 'fulfillment', label: `Fulfillment: ${fulfillmentLabel}`, clear: () => { setFulfillment(''); setPage(1); } } : null,
     (dateFrom || dateTo) ? { key: 'date', label: dateLabel, clear: () => { setDateFrom(''); setDateTo(''); setPage(1); } } : null,
     search ? { key: 'search', label: `“${search}”`, clear: () => setSearch('') } : null,
   ].filter(Boolean) as { key: string; label: string; clear: () => void }[];
-  const clearFilters = () => { setStatus(''); setRisk(''); setChannelId(''); setFulfillment(''); setDateFrom(''); setDateTo(''); setSearch(''); setPage(1); };
+  const clearFilters = () => { setStatus(''); setRisk(''); setChannelId(''); setDateFrom(''); setDateTo(''); setSearch(''); setPage(1); };
 
   // Context-aware empty state — the copy + actions match the active tab and
   // whether a search/filter is narrowing the list, so the Manual tab never
   // tells you to "connect a channel".
-  const hasActiveQuery = !!(search || status || risk || channelId || fulfillment || dateFrom || dateTo);
+  const hasActiveQuery = !!(search || status || risk || channelId || dateFrom || dateTo);
   const ordersEmptyState = hasActiveQuery ? (
     <EmptyState
       icon={<ShoppingBag size={26} />}
@@ -339,22 +329,22 @@ export default function OrdersPage() {
       action={<Button variant="outline" leftIcon={<X size={14} />} onClick={clearFilters}>Clear filters</Button>}
       size="lg"
     />
-  ) : source === 'manual' ? (
+  ) : tab === 'manual' ? (
     <EmptyState
       icon={<Hand size={26} />}
       iconBg="bg-emerald-50 text-emerald-600"
-      title="No manual orders yet"
-      description="Manual orders are ones you create here for offline, phone, or B2B sales — they don't come from a connected channel."
+      title="Nothing to fulfill right now"
+      description="Orders you ship yourself land here — Amazon MFN (self-fulfilled) orders and anything you create for offline, phone, or B2B sales."
       action={<Button leftIcon={<Plus size={14} />} onClick={() => setModalOpen(true)}>New order</Button>}
       decorative
       size="lg"
     />
-  ) : source === 'auto' ? (
+  ) : tab === 'auto' ? (
     <EmptyState
       icon={<Zap size={26} />}
       iconBg="bg-emerald-50 text-emerald-600"
-      title="No synced orders yet"
-      description="Orders from your connected channels (Amazon, Shopify, Flipkart…) appear here automatically. Connect a channel or run a sync to pull them in."
+      title="No hands-off orders yet"
+      description="Orders the channel fulfills for you — Amazon FBA and dropship — appear here automatically. Nothing to do; they ship on their own."
       action={<Link href="/channels"><Button leftIcon={<Plug size={14} />}>Connect a channel</Button></Link>}
       decorative
       size="lg"
@@ -626,7 +616,7 @@ export default function OrdersPage() {
           <div className="p-3 sm:p-4 space-y-3 border-b border-slate-100 dark:border-slate-800">
             {/* Title row — subtitle + primary actions, inside the card */}
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <p className="text-sm font-medium text-slate-500">{`${data?.total || 0} ${source === 'auto' ? 'auto-synced' : source === 'manual' ? 'manual' : 'total'} order${(data?.total || 0) === 1 ? '' : 's'}`}</p>
+              <p className="text-sm font-medium text-slate-500">{`${data?.total || 0} ${tab === 'auto' ? 'hands-off' : tab === 'manual' ? 'to fulfill' : 'total'} order${(data?.total || 0) === 1 ? '' : 's'}`}</p>
               <div className="flex items-center gap-2">
                 {/* Split button — Sync (all channels) + a menu to sync ONE channel */}
                 <div className="flex items-center">
@@ -668,15 +658,16 @@ export default function OrdersPage() {
               </div>
             </div>
 
-            {/* Source tabs — auto-synced (from a marketplace) vs manual (created
-                here). Both update together on sync since it's one data source. */}
-            <Tabs<SourceTab>
-              value={source}
-              onChange={(k) => { setSource(k); setPage(1); }}
+            {/* Tabs split by who fulfils the order: Auto = FBA/dropship the
+                channel ships (hands-off); Manual = MFN + orders you create and
+                ship yourself. */}
+            <Tabs<OrderTab>
+              value={tab}
+              onChange={(k) => { setTab(k); setPage(1); }}
               items={[
-                { key: 'all',    label: 'All Orders',   icon: <Layers size={14} /> },
-                { key: 'auto',   label: 'Auto-synced',  icon: <Zap size={14} /> },
-                { key: 'manual', label: 'Manual',       icon: <Hand size={14} /> },
+                { key: 'all',    label: 'All Orders', icon: <Layers size={14} /> },
+                { key: 'auto',   label: 'Auto (FBA)', icon: <Zap size={14} /> },
+                { key: 'manual', label: 'Manual (MFN)', icon: <Hand size={14} /> },
               ]}
             />
 
@@ -695,7 +686,7 @@ export default function OrdersPage() {
                 align="right"
                 trigger={<Button variant="ghost" size="sm" leftIcon={<Bookmark size={14} />}>Views</Button>}
                 items={[
-                  { label: 'All orders', icon: <Layers size={14} />, onClick: () => { clearFilters(); setSource('all'); } },
+                  { label: 'All orders', icon: <Layers size={14} />, onClick: () => { clearFilters(); setTab('all'); } },
                   { label: 'Needs shipping', icon: <Truck size={14} />, onClick: () => { setStatus('PROCESSING'); setRisk(''); setPage(1); } },
                   { label: 'High risk', icon: <AlertTriangle size={14} />, onClick: () => { setRisk('HIGH'); setPage(1); } },
                   { label: 'Needs review', icon: <Star size={14} />, onClick: () => { setRisk('APPROVAL'); setPage(1); } },
@@ -933,14 +924,6 @@ export default function OrdersPage() {
             onChange={(v) => { setChannelId(v); setPage(1); }}
             options={[{ value: '', label: 'All channels' }, ...channels.map((c) => ({ value: c.id, label: c.name }))]}
             placeholder="All channels"
-          />
-          <Select
-            label="Fulfillment"
-            fullWidth
-            value={fulfillment}
-            onChange={(v) => { setFulfillment(v); setPage(1); }}
-            options={FULFILLMENT_OPTIONS}
-            placeholder="All fulfillment"
           />
           <div>
             <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Date range</label>
