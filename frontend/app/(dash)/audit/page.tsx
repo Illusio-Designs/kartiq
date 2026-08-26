@@ -228,8 +228,8 @@ export default function TenantAuditPage() {
                               <div className="text-[10px] font-mono text-slate-400 mt-1">#{l.resourceId.slice(0, 8)}</div>
                             )}
                           </td>
-                          <td className="px-4 py-3 align-top text-xs text-slate-700 truncate max-w-[200px]">
-                            {l.userEmail || '—'}
+                          <td className="px-4 py-3 align-top text-xs text-slate-700 max-w-[200px]">
+                            <div className="truncate" title={l.userEmail || undefined}>{l.userEmail || '—'}</div>
                           </td>
                           <td className="px-4 py-3 align-top">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -238,7 +238,7 @@ export default function TenantAuditPage() {
                                   {l.method}
                                 </span>
                               )}
-                              <span className="text-xs font-mono text-slate-600 truncate max-w-xs">{l.path || '—'}</span>
+                              <span className="text-xs font-mono text-slate-600 truncate max-w-xs" title={l.path || undefined}>{l.path || '—'}</span>
                               {l.statusCode != null && (
                                 <span className={`text-xs font-bold ${statusColor(l.statusCode)}`}>{l.statusCode}</span>
                               )}

@@ -451,9 +451,9 @@ function ChannelRow({
         <div className="flex items-center gap-3">
           <ChannelCardLogo type={entry.type} name={entry.name} />
           <div className="min-w-0">
-            <div className="font-bold text-slate-900 truncate">{entry.name}</div>
+            <div className="font-bold text-slate-900 truncate" title={entry.name}>{entry.name}</div>
             {entry.tagline && (
-              <div className="text-xs text-slate-500 truncate max-w-[280px]">{entry.tagline}</div>
+              <div className="text-xs text-slate-500 truncate max-w-[280px]" title={entry.tagline}>{entry.tagline}</div>
             )}
           </div>
         </div>

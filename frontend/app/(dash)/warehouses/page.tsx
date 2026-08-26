@@ -214,7 +214,7 @@ export default function WarehousesPage() {
                           </span>
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                              <span className="font-bold text-slate-900 truncate">{w.name}</span>
+                              <span className="font-bold text-slate-900 truncate" title={w.name || undefined}>{w.name}</span>
                               {virtual && <Badge variant="amber">Amazon · System</Badge>}
                             </div>
                             <div className="text-[11px] text-slate-400 font-mono font-bold uppercase tracking-wider">{w.code}</div>
@@ -231,8 +231,8 @@ export default function WarehousesPage() {
                           </Tooltip>
                         ) : <span className="text-slate-400">—</span>}
                       </td>
-                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
-                        {contact || <span className="text-slate-400">—</span>}
+                      <td className="px-4 py-3 text-slate-500 max-w-[200px]">
+                        {contact ? <div className="truncate" title={contact}>{contact}</div> : <span className="text-slate-400">—</span>}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <Badge variant={w.isActive ? 'emerald' : 'slate'} dot>

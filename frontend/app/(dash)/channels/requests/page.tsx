@@ -154,9 +154,9 @@ export default function ChannelRequestsPage() {
                     const StatusIcon = meta.icon;
                     return (
                       <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="px-5 py-3">
-                          <div className="font-semibold text-slate-900">{r.name || r.type}</div>
-                          {r.name && r.type && <div className="text-xs text-slate-400">{r.type}</div>}
+                        <td className="px-5 py-3 max-w-[240px]">
+                          <div className="font-semibold text-slate-900 truncate" title={r.name || r.type || undefined}>{r.name || r.type}</div>
+                          {r.name && r.type && <div className="text-xs text-slate-400 truncate" title={r.type}>{r.type}</div>}
                         </td>
                         <td className="px-5 py-3 text-slate-500 whitespace-nowrap">{r.category || '—'}</td>
                         <td className="px-5 py-3 whitespace-nowrap">
@@ -164,7 +164,9 @@ export default function ChannelRequestsPage() {
                             <StatusIcon size={11} /> {r.status}
                           </Badge>
                         </td>
-                        <td className="px-5 py-3 text-slate-500 max-w-xs truncate">{r.notes || '—'}</td>
+                        <td className="px-5 py-3 text-slate-500 max-w-xs">
+                          <div className="truncate" title={r.notes || undefined}>{r.notes || '—'}</div>
+                        </td>
                         <td className="px-5 py-3 text-xs text-slate-400 whitespace-nowrap">
                           {r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '—'}
                         </td>

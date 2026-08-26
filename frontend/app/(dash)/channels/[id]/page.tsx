@@ -481,7 +481,9 @@ export default function ChannelDetailPage() {
                         </td>
                         <td className="px-5 py-3 font-medium text-slate-800">
                           {mapped ? (
-                            l.product?.name || <span className="text-slate-400">—</span>
+                            l.product?.name
+                              ? <div className="truncate max-w-[240px]" title={l.product.name}>{l.product.name}</div>
+                              : <span className="text-slate-400">—</span>
                           ) : (
                             <VariantPicker
                               options={variantOptions}
@@ -580,7 +582,9 @@ export default function ChannelDetailPage() {
                     {mcfRows.map((r: any, i: number) => (
                       <tr key={r.channelSku || r.sku || i} className="border-b border-slate-50 last:border-0">
                         <td className="px-5 py-3 font-mono text-xs text-slate-700">{r.channelSku || r.sku || '—'}</td>
-                        <td className="px-5 py-3 text-slate-700">{r.name || r.productName || '—'}</td>
+                        <td className="px-5 py-3 text-slate-700 max-w-[280px]">
+                          <div className="truncate" title={r.name || r.productName || undefined}>{r.name || r.productName || '—'}</div>
+                        </td>
                         <td className="px-5 py-3 text-right text-slate-900 font-semibold tabular-nums">{r.quantity ?? 0}</td>
                       </tr>
                     ))}
@@ -730,7 +734,9 @@ export default function ChannelDetailPage() {
                           )}
                         </td>
                         <td className="px-5 py-3 text-right text-slate-900 font-semibold tabular-nums">{r.quantity ?? 0}</td>
-                        <td className="px-5 py-3 text-slate-600">{r.reason || '—'}</td>
+                        <td className="px-5 py-3 text-slate-600 max-w-[220px]">
+                          <div className="truncate" title={r.reason || undefined}>{r.reason || '—'}</div>
+                        </td>
                         <td className="px-5 py-3">
                           <Badge variant={returnPillVariant(r.status || r.resolution)} dot>
                             {r.status || r.resolution || 'Unknown'}

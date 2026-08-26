@@ -173,10 +173,10 @@ function UsersTab({ canManage, showNew, setShowNew }: {
                         <Avatar name={u.name} size="sm" />
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold text-slate-900 truncate">{u.name}</span>
+                            <span className="font-semibold text-slate-900 truncate" title={u.name || undefined}>{u.name}</span>
                             {u.isPlatformAdmin && <Badge variant="amber">Platform admin</Badge>}
                           </div>
-                          <div className="text-xs text-slate-500 truncate">{u.email}</div>
+                          <div className="text-xs text-slate-500 truncate" title={u.email || undefined}>{u.email}</div>
                         </div>
                       </div>
                     </td>

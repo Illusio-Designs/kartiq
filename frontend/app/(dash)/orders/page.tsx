@@ -501,12 +501,16 @@ export default function OrdersPage() {
               >
                 {initials(o.customer?.name || '?')}
               </span>
-              <span className="text-slate-700 truncate max-w-[170px]">{o.customer?.name || '—'}</span>
+              <span className="text-slate-700 truncate max-w-[170px]" title={o.customer?.name || undefined}>{o.customer?.name || '—'}</span>
             </div>
           </td>
         );
       case 'channel':
-        return <td key={key} className="px-3 py-2.5 text-slate-500 whitespace-nowrap">{o.channel?.name}</td>;
+        return (
+          <td key={key} className="px-3 py-2.5 text-slate-500 max-w-[180px]">
+            <div className="truncate" title={o.channel?.name || undefined}>{o.channel?.name}</div>
+          </td>
+        );
       case 'fulfillment':
         return (
           <td key={key} className="px-3 py-2.5">
