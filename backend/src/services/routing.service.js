@@ -28,8 +28,11 @@ async function scoreWarehouseForItems(warehouseId, items) {
 
 // Returns a ranked list of warehouses for this order (best first).
 async function rankWarehouses({ tenantId, items, shippingAddress }) {
+  // Only route to REAL warehouses the seller operates. The virtual "Amazon FBA"
+  // facility (isVirtual) is Amazon-managed — you can't ship an MFN order from
+  // it — so it must never be a routing candidate.
   const warehouses = await prisma.warehouse.findMany({
-    where: { tenantId, isActive: true },
+    where: { tenantId, isActive: true, isVirtual: false },
   });
   if (warehouses.length === 0) return [];
 

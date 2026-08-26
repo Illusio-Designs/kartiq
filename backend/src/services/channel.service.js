@@ -745,6 +745,13 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
         try { resolvedWarehouseId = (await ensureFbaFacility(tenantId)).id; }
         catch (e) { console.warn(`[import] FBA facility resolve failed: ${e.message}`); }
       }
+      // Self-shipped (MFN / Shopify / custom) order with no warehouse yet — the
+      // tenant has no real warehouse. Auto-create a default one so the order is
+      // linked to a real fulfilment location and its stock can be tracked there.
+      if (!resolvedWarehouseId && fulfillmentType === 'SELF') {
+        try { resolvedWarehouseId = (await ensureDefaultWarehouse(tenantId)).id; }
+        catch (e) { console.warn(`[import] default warehouse resolve failed: ${e.message}`); }
+      }
 
       await prisma.$transaction(async (tx) => {
         await tx.order.create({
@@ -1014,6 +1021,28 @@ function isAmazonChannelType(type) {
   return String(type || '').toUpperCase().includes('AMAZON');
 }
 
+// Ensure the tenant has at least one REAL (non-virtual) warehouse to fulfil
+// self-shipped (MFN / Shopify / custom) orders from. Without this, a tenant
+// whose only "warehouse" is the virtual Amazon-FBA facility has nowhere to
+// route MFN orders or hold merchant-fulfilled stock. Creates a blank
+// "My Warehouse" the seller can then rename + fill the ship-from address on.
+async function ensureDefaultWarehouse(tenantId) {
+  const existing = await prisma.warehouse.findFirst({
+    where: { tenantId, isActive: true, isVirtual: false },
+  });
+  if (existing) return existing;
+  return prisma.warehouse.create({
+    data: {
+      tenantId,
+      name: 'My Warehouse',
+      code: `WH-${Date.now().toString(36).toUpperCase()}`,
+      address: {},
+      isActive: true,
+      isVirtual: false,
+    },
+  });
+}
+
 // ── One-time catalog import: pull a channel's products + stock into Kartriq ──
 // Reuses ensureListingForItem so products/variants/listings are created without
 // manual setup, then seeds inventory into a warehouse (auto-created if the
@@ -1236,4 +1265,4 @@ async function listChannelReturns(channelId, { tenantId, limit = 100 } = {}) {
     .limit(Math.min(500, Number(limit) || 100));
 }
 
-module.exports = { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, pushProductToChannels, importCatalogFromChannel, confirmChannelShipment, syncChannelSettlements, listChannelSettlements, syncChannelReturns, listChannelReturns, ensureFbaFacility };
+module.exports = { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, pushProductToChannels, importCatalogFromChannel, confirmChannelShipment, syncChannelSettlements, listChannelSettlements, syncChannelReturns, listChannelReturns, ensureFbaFacility, ensureDefaultWarehouse };
