@@ -202,7 +202,11 @@ class AmazonAdapter {
     // CreatedBefore/After window, which is why we send it alone.)
     const params = {
       MarketplaceIds: this.marketplaceId,
-      OrderStatuses: 'Unshipped,PartiallyShipped,Shipped,Pending,Canceled',
+      // Skip "Pending" — payment isn't authorised yet, so Amazon withholds the
+      // order total, buyer, address, and line items (they'd import as empty ₹0
+      // rows). Amazon releases the data when the order flips to Unshipped, which
+      // this same query then picks up with everything populated.
+      OrderStatuses: 'Unshipped,PartiallyShipped,Shipped,Canceled',
       LastUpdatedAfter: sinceIso,
     };
     // Try to include buyer PII + shipping address via a Restricted Data Token.

@@ -610,6 +610,17 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
         // fall through to a full re-import with line items
       }
 
+      // Skip brand-new channel orders that are still awaiting payment — no items,
+      // no total, PENDING. The marketplace withholds their data (Amazon's
+      // "Pending" state), so they'd import as empty ₹0 placeholders. They import
+      // properly once payment clears and the order becomes Unshipped.
+      const isEmptyPending =
+        !!raw.channelOrderId &&
+        String(raw.status || '').toUpperCase() === 'PENDING' &&
+        !(raw.items && raw.items.length) &&
+        !Number(raw.total);
+      if (isEmptyPending) { results.skipped++; continue; }
+
       let customer = raw.customer.email
         ? await prisma.customer.findFirst({ where: { tenantId, email: raw.customer.email } })
         : null;
@@ -784,7 +795,30 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
     }
   }
 
+  // Sweep away any empty "awaiting payment" placeholders left from before we
+  // stopped importing Pending orders — PENDING, channel-synced, ₹0, no items.
+  try {
+    const purged = await purgeEmptyPendingChannelOrders(tenantId, channelId);
+    if (purged) results.purgedPending = purged;
+  } catch (e) {
+    console.warn(`[import] purge empty pending failed: ${e.message}`);
+  }
+
   return results;
+}
+
+// Remove channel-synced orders that are still empty "awaiting payment" stubs
+// (PENDING, no line items, ₹0 total). They carry no usable data; when payment
+// clears the marketplace re-sends them as Unshipped and they import in full.
+async function purgeEmptyPendingChannelOrders(tenantId, channelId) {
+  return db('orders')
+    .where({ tenantId, channelId, status: 'PENDING' })
+    .whereNotNull('channelOrderId')
+    .where(function () { this.whereNull('total').orWhere('total', 0); })
+    .whereNotExists(function () {
+      this.select(db.raw('1')).from('order_items').whereRaw('order_items.orderId = orders.id');
+    })
+    .del();
 }
 
 // ── Inventory push ───────────────────────────────────────────────────────────
