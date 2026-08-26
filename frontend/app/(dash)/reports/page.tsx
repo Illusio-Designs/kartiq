@@ -156,9 +156,9 @@ export default function ReportsPage() {
                   {topProducts.map((p, idx) => (
                     <tr key={p.variantId || idx} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
                       <td className="px-5 py-3 text-slate-400 font-bold text-xs">{idx + 1}</td>
-                      <td className="px-2 py-3">
-                        <div className="font-semibold text-slate-900 dark:text-slate-100">{p.name}</div>
-                        <div className="text-[11px] text-slate-400 font-mono">{p.sku}</div>
+                      <td className="px-2 py-3 max-w-[320px]">
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate" title={p.name}>{p.name}</div>
+                        <div className="text-[11px] text-slate-400 font-mono truncate">{p.sku}</div>
                       </td>
                       <td className="px-2 py-3 text-right tabular-nums font-semibold">{p.qty.toLocaleString()}</td>
                       <td className="px-5 py-3 text-right tabular-nums text-emerald-700 dark:text-emerald-400 font-semibold">{formatCurrency(p.revenue)}</td>
@@ -232,9 +232,13 @@ export default function ReportsPage() {
                   {visibleItems.map((item: any, idx: number) => (
                     <tr key={item.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
                       <td className="px-5 py-3 text-slate-500 font-semibold text-xs">{idx + 1}</td>
-                      <td className="px-2 py-3 font-semibold text-slate-900 dark:text-slate-100">{item.variant?.product?.name}</td>
+                      <td className="px-2 py-3 font-semibold text-slate-900 dark:text-slate-100 max-w-[280px]">
+                        <div className="truncate" title={item.variant?.product?.name || undefined}>{item.variant?.product?.name}</div>
+                      </td>
                       <td className="px-2 py-3 text-slate-500 font-mono text-xs">{item.variant?.sku}</td>
-                      <td className="px-2 py-3 text-slate-500">{item.warehouse?.name}</td>
+                      <td className="px-2 py-3 text-slate-500 max-w-[160px]">
+                        <div className="truncate" title={item.warehouse?.name || undefined}>{item.warehouse?.name}</div>
+                      </td>
                       <td className="px-2 py-3 text-right tabular-nums">{item.quantityOnHand}</td>
                       <td className="px-2 py-3 text-right tabular-nums">{formatCurrency(item.variant?.costPrice || 0)}</td>
                       <td className="px-5 py-3 text-right font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">{formatCurrency(item.value)}</td>

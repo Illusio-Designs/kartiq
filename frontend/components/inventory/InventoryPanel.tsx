@@ -171,9 +171,9 @@ function InventoryRow({ item, onSaved }: { item: any; onSaved: () => void }) {
 
   return (
     <tr className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
-      <td className="px-4 py-3">
-        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">{item.variant?.product?.name || item.variant?.name || '—'}</div>
-        <div className="text-[11px] text-slate-400 font-mono">{item.variant?.sku || '—'}</div>
+      <td className="px-4 py-3 max-w-[280px]">
+        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate" title={item.variant?.product?.name || item.variant?.name || undefined}>{item.variant?.product?.name || item.variant?.name || '—'}</div>
+        <div className="text-[11px] text-slate-400 font-mono truncate">{item.variant?.sku || '—'}</div>
       </td>
       <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
         <span className="inline-flex items-center gap-1.5"><Store size={13} className="text-slate-400" />{item.warehouse?.name || '—'}</span>

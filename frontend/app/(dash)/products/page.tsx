@@ -13,7 +13,7 @@ import {
 } from '@/components/ui';
 import type { Density } from '@/components/ui';
 import { Plus, Package, RefreshCw, CheckCircle2, XCircle, Boxes, Layers, AlertTriangle, Ban, Tag, SearchX, ListFilter, ArrowUpDown, Bookmark, Download, SlidersHorizontal, Trash2, Send, Eye, EyeOff, X, ArrowUp, ArrowDown, ChevronsUpDown, Upload, MoreHorizontal } from 'lucide-react';
-import { ProductCardSkeleton } from '@/components/Shimmer';
+import { TableRowsSkeleton } from '@/components/Shimmer';
 import { StatRow } from '@/components/StatCards';
 import { InventoryPanel } from '@/components/inventory/InventoryPanel';
 import Link from 'next/link';
@@ -501,11 +501,15 @@ export default function ProductsPage() {
         )}
 
         {isLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <ProductCardSkeleton key={i} />
-            ))}
-          </div>
+          // The catalog renders as a table — shimmer it as a table, not cards.
+          <Card className="p-0 overflow-hidden">
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="h-4 w-48 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />
+            </div>
+            <table className="w-full"><tbody>
+              <TableRowsSkeleton rows={8} cols={7} cellClassName="px-4 py-3.5" />
+            </tbody></table>
+          </Card>
         ) : data?.products?.length ? (
           filteredProducts.length === 0 ? (
             <Card>

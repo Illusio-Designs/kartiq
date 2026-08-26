@@ -6,7 +6,6 @@
 // = in-flight, rose = problem, slate = neutral total.
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import { Tooltip } from '@/components/ui';
 
 export type StatTone = 'slate' | 'emerald' | 'amber' | 'blue' | 'violet' | 'rose' | 'cyan';
 
@@ -33,16 +32,16 @@ export interface StatItem {
 }
 
 function StatCardInner({ label, value, tone = 'slate', icon, loading }: StatItem) {
+  // Fixed structure so every card is identical in size: a 36px icon tile always
+  // occupies the left slot, and the number/label column is a fixed two-line block.
   return (
-    <div className="flex items-center gap-3 p-4 h-full">
-      {icon && (
-        <span className={cn('w-9 h-9 rounded-xl grid place-items-center flex-shrink-0', TONE[tone])}>
-          {icon}
-        </span>
-      )}
+    <div className="flex items-center gap-3 px-4 w-full">
+      <span className={cn('w-9 h-9 rounded-xl grid place-items-center flex-shrink-0', TONE[tone])}>
+        {icon}
+      </span>
       <div className="min-w-0">
         {loading ? (
-          <div className="h-6 w-10 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />
+          <div className="h-[22px] w-12 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />
         ) : (
           <div className="text-xl font-bold text-slate-900 dark:text-slate-100 tabular-nums leading-none truncate">{value}</div>
         )}
@@ -53,23 +52,26 @@ function StatCardInner({ label, value, tone = 'slate', icon, loading }: StatItem
 }
 
 export function StatCard(item: StatItem) {
-  const base = 'bg-white dark:bg-slate-900 border rounded-2xl shadow-sm transition-shadow';
+  // Same base on every variant → identical height (h-16) and layout, whether the
+  // card is a link, a filter button, or static. hint uses a native title so no
+  // wrapper element changes the box.
+  const base = 'flex items-center h-16 bg-white dark:bg-slate-900 border rounded-2xl shadow-sm transition-shadow';
   const border = item.active ? 'border-emerald-400 ring-2 ring-emerald-500/15' : 'border-slate-200 dark:border-slate-800';
   const hoverable = 'hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700';
+  const title = item.hint || undefined;
   const inner = <StatCardInner {...item} />;
-  let card: React.ReactNode;
+
   if (item.href) {
-    card = <Link href={item.href} className={cn(base, border, 'block', hoverable)}>{inner}</Link>;
-  } else if (item.onClick) {
-    card = (
-      <button type="button" onClick={item.onClick} className={cn(base, border, 'w-full text-left', hoverable, 'focus:outline-none focus:ring-2 focus:ring-emerald-500/30')}>
+    return <Link href={item.href} title={title} className={cn(base, border, hoverable)}>{inner}</Link>;
+  }
+  if (item.onClick) {
+    return (
+      <button type="button" onClick={item.onClick} title={title} className={cn(base, border, hoverable, 'text-left focus:outline-none focus:ring-2 focus:ring-emerald-500/30')}>
         {inner}
       </button>
     );
-  } else {
-    card = <div className={cn(base, border)}>{inner}</div>;
   }
-  return item.hint ? <Tooltip content={item.hint}><div className="h-full">{card}</div></Tooltip> : card;
+  return <div title={title} className={cn(base, border)}>{inner}</div>;
 }
 
 // A responsive row of stat cards. Pass `cols` to hint the column count on wide

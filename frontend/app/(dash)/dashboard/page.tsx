@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { dashboardApi, channelApi } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 import {
-  Tooltip, Badge, Card, DatePicker, Pagination, Dropdown, Avatar,
+  Tooltip, Badge, Card, Pagination, Dropdown, Avatar,
 } from '@/components/ui';
 import {
   Wallet, TrendingDown, ShoppingBag, MoreHorizontal, ArrowUp, ArrowDown,
@@ -31,7 +31,6 @@ const EarningsAreaChart = dynamic(() => import('@/components/charts/EarningsArea
 });
 
 export default function DashboardPage() {
-  const [date, setDate] = useState<Date | null>(new Date());
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -73,7 +72,6 @@ export default function DashboardPage() {
         <PageHeader
           title="Dashboard"
           subtitle="Welcome back — here's what's happening across your commerce today."
-          actions={<DatePicker value={date} onChange={setDate} />}
         />
         <StatsSkeleton count={3} />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -96,7 +94,6 @@ export default function DashboardPage() {
         <PageHeader
           title="Dashboard"
           subtitle="Welcome back — here's what's happening across your commerce today."
-          actions={<DatePicker value={date} onChange={setDate} />}
         />
 
         {/* ── Stat cards ────────────────────────────────────────────── */}
@@ -142,18 +139,17 @@ export default function DashboardPage() {
             </div>
           </Card>
 
-          {/* Total Orders */}
-          <Card className="p-5 flex flex-col gap-2.5 hover:shadow-lg transition-shadow">
+          {/* Total Orders — clickable through to the Orders list */}
+          <Link href="/orders" className="block group">
+          <Card className="p-5 flex flex-col gap-2.5 hover:shadow-lg group-hover:border-slate-300 dark:group-hover:border-slate-700 transition-all h-full">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 min-w-0">
                 <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
                   <ShoppingBag size={15} className="text-blue-600" />
                 </div>
                 <span className="text-sm font-semibold text-slate-600 truncate">Total Orders</span>
-                <Tooltip content="Orders across all connected channels">
-                  <Info size={12} className="text-slate-400 flex-shrink-0" />
-                </Tooltip>
               </div>
+              <ArrowUpRight size={15} className="text-slate-300 group-hover:text-slate-500 transition-colors" />
             </div>
             <div className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight tabular-nums">
               {(s.totalOrders || 0).toLocaleString()}
@@ -165,19 +161,19 @@ export default function DashboardPage() {
               </span>
             </div>
           </Card>
+          </Link>
 
-          {/* Low Stock SKUs */}
-          <Card className="p-5 flex flex-col gap-2.5 hover:shadow-lg transition-shadow sm:col-span-2 lg:col-span-1">
+          {/* Low Stock SKUs — clickable through to the low-stock inventory view */}
+          <Link href="/products?view=inventory&lowStock=true" className="block group sm:col-span-2 lg:col-span-1">
+          <Card className="p-5 flex flex-col gap-2.5 hover:shadow-lg group-hover:border-slate-300 dark:group-hover:border-slate-700 transition-all h-full">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 min-w-0">
                 <div className="w-8 h-8 rounded-lg bg-rose-50 flex items-center justify-center flex-shrink-0">
                   <TrendingDown size={15} className="text-rose-600" />
                 </div>
                 <span className="text-sm font-semibold text-slate-600 truncate">Low Stock SKUs</span>
-                <Tooltip content="Number of SKUs below their reorder point">
-                  <Info size={12} className="text-slate-400 flex-shrink-0" />
-                </Tooltip>
               </div>
+              <ArrowUpRight size={15} className="text-slate-300 group-hover:text-slate-500 transition-colors" />
             </div>
             <div className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight tabular-nums">
               {(s.lowStockCount || 0).toLocaleString()}
@@ -189,6 +185,7 @@ export default function DashboardPage() {
               <span className="text-xs text-slate-400">below reorder point</span>
             </div>
           </Card>
+          </Link>
         </div>
 
         {/* ── Channels + Chart ─────────────────────────── */}
