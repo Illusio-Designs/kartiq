@@ -49,6 +49,13 @@ async function initDb() {
     // to stop pushing local quantities to FBA listings, which Amazon rejects.
     { table: 'channel_listings', column: 'fulfillmentType', ddl: 'VARCHAR(16) DEFAULT NULL' },
 
+    // Virtual facilities (e.g. the pooled "Amazon FBA" location). isVirtual
+    // facilities are Amazon-managed, so they are excluded from the plan's
+    // facility limit and are read-only (no edit/delete). externalSource tags
+    // where the facility comes from (e.g. 'AMAZON_FBA').
+    { table: 'warehouses', column: 'isVirtual',      ddl: 'TINYINT(1) NOT NULL DEFAULT 0' },
+    { table: 'warehouses', column: 'externalSource', ddl: 'VARCHAR(64) DEFAULT NULL' },
+
     // Amazon ASIN parsed from the listings report — kept so mappings can show
     // and report the ASIN alongside the seller SKU.
     { table: 'channel_listings', column: 'asin', ddl: 'VARCHAR(20) DEFAULT NULL' },

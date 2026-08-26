@@ -8,7 +8,13 @@ import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import {
   Button, Badge, Card, Modal, Input, Checkbox, EmptyState, Tooltip, Loader,
 } from '@/components/ui';
-import { Plus, Store, MapPin, Pencil, Trash2, Search } from 'lucide-react';
+import { toast } from '@/store/toast.store';
+import { Plus, Store, MapPin, Pencil, Trash2, Search, Cloud, RefreshCw } from 'lucide-react';
+
+// The pooled, Amazon-managed "Amazon FBA" facility — read-only in Kartriq.
+function isVirtualFacility(w: any): boolean {
+  return !!w?.isVirtual || w?.externalSource === 'AMAZON_FBA';
+}
 
 // Render the address (object or legacy string) as a short "City, State" line.
 function locationLine(address: any): string {
@@ -60,6 +66,18 @@ export default function WarehousesPage() {
     },
   });
 
+  // Amazon has no "list my warehouses" API — FBA stock is pooled across its
+  // fulfilment network. This ensures the single read-only "Amazon FBA" facility
+  // exists so FBA inventory and orders always have a location to attach to.
+  const syncFbaMutation = useMutation({
+    mutationFn: () => warehouseApi.syncFba().then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['warehouses'] });
+      toast.success('Amazon FBA facility is synced');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not sync Amazon facility'),
+  });
+
   return (
     <>
       <div className="space-y-5 animate-slide-up">
@@ -74,9 +92,16 @@ export default function WarehousesPage() {
               <p className="text-sm font-medium text-slate-500">
                 {`${warehouses.length} fulfillment location${warehouses.length !== 1 ? 's' : ''}`}
               </p>
-              <Button size="sm" leftIcon={<Plus size={15} />} onClick={() => setCreateOpen(true)}>
-                New warehouse
-              </Button>
+              <div className="flex items-center gap-2">
+                <Tooltip content="Amazon FBA warehouses can't be listed via API — this adds the pooled, read-only Amazon FBA facility that FBA stock & orders attach to.">
+                  <Button size="sm" variant="outline" leftIcon={<RefreshCw size={14} className={syncFbaMutation.isPending ? 'animate-spin' : ''} />} loading={syncFbaMutation.isPending} onClick={() => syncFbaMutation.mutate()}>
+                    Sync Amazon FBA
+                  </Button>
+                </Tooltip>
+                <Button size="sm" leftIcon={<Plus size={15} />} onClick={() => setCreateOpen(true)}>
+                  New warehouse
+                </Button>
+              </div>
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
@@ -108,15 +133,19 @@ export default function WarehousesPage() {
                 ) : warehouses.length ? warehouses.map((w: any) => {
                   const loc = locationLine(w.address);
                   const contact = [w.phone, w.email].filter(Boolean).join(' · ');
+                  const virtual = isVirtualFacility(w);
                   return (
                     <tr key={w.id} className="transition-colors hover:bg-slate-50/70">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <span className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 grid place-items-center flex-shrink-0">
-                            <Store size={17} />
+                          <span className={`w-9 h-9 rounded-lg grid place-items-center flex-shrink-0 ${virtual ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                            {virtual ? <Cloud size={17} /> : <Store size={17} />}
                           </span>
                           <div className="min-w-0">
-                            <div className="font-bold text-slate-900 truncate">{w.name}</div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-slate-900 truncate">{w.name}</span>
+                              {virtual && <Badge variant="amber">Amazon · System</Badge>}
+                            </div>
                             <div className="text-[11px] text-slate-400 font-mono font-bold uppercase tracking-wider">{w.code}</div>
                           </div>
                         </div>
@@ -141,16 +170,24 @@ export default function WarehousesPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
-                          <Tooltip content="Edit warehouse">
-                            <Button variant="outline" size="icon" onClick={() => setEditWarehouse(w)}>
-                              <Pencil size={13} />
-                            </Button>
-                          </Tooltip>
-                          <Tooltip content="Delete warehouse">
-                            <Button variant="danger" size="icon" onClick={() => setDeleteTarget(w)}>
-                              <Trash2 size={13} />
-                            </Button>
-                          </Tooltip>
+                          {virtual ? (
+                            <Tooltip content="Amazon-managed facility — read-only">
+                              <span><Button variant="outline" size="icon" disabled><Cloud size={13} /></Button></span>
+                            </Tooltip>
+                          ) : (
+                            <>
+                              <Tooltip content="Edit warehouse">
+                                <Button variant="outline" size="icon" onClick={() => setEditWarehouse(w)}>
+                                  <Pencil size={13} />
+                                </Button>
+                              </Tooltip>
+                              <Tooltip content="Delete warehouse">
+                                <Button variant="danger" size="icon" onClick={() => setDeleteTarget(w)}>
+                                  <Trash2 size={13} />
+                                </Button>
+                              </Tooltip>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>

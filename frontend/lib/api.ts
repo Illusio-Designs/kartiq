@@ -467,6 +467,8 @@ export const warehouseApi = {
   create: (data: any) => api.post('/warehouses', data),
   update: (id: string, data: any) => api.put(`/warehouses/${id}`, data),
   delete: (id: string) => api.delete(`/warehouses/${id}`),
+  // Ensure the virtual, read-only "Amazon FBA" facility exists (pooled network).
+  syncFba: () => api.post('/warehouses/amazon/fba', {}),
 };
 
 export const shipmentApi = {

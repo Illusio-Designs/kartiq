@@ -686,6 +686,15 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
         raw.status ||
         (fulfillmentType === 'CHANNEL' ? 'PROCESSING' : 'PENDING');
 
+      // 5b. Warehouse — SELF orders use smart routing; Amazon FBA (CHANNEL)
+      // orders attach to the virtual "Amazon FBA" facility so they always show
+      // a fulfilment location instead of a blank one.
+      let resolvedWarehouseId = routing?.warehouseId || null;
+      if (!resolvedWarehouseId && fulfillmentType === 'CHANNEL' && isAmazonChannelType(channelRecord?.type)) {
+        try { resolvedWarehouseId = (await ensureFbaFacility(tenantId)).id; }
+        catch (e) { console.warn(`[import] FBA facility resolve failed: ${e.message}`); }
+      }
+
       await prisma.$transaction(async (tx) => {
         await tx.order.create({
           data: {
@@ -694,7 +703,7 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
             channelId,
             channelOrderId: raw.channelOrderId,
             customerId: customer.id,
-            warehouseId: routing?.warehouseId || null,
+            warehouseId: resolvedWarehouseId,
             shippingAddress: raw.shippingAddress,
             subtotal: raw.subtotal,
             shippingCharge: raw.shippingCharge || 0,
@@ -861,6 +870,47 @@ async function pushProductToChannels(productId, { channelIds = null, tenantId = 
   return results;
 }
 
+// ── Virtual "Amazon FBA" facility ───────────────────────────────────────────
+// FBA inventory lives in Amazon's pooled fulfilment network — the seller can't
+// list, manage, or ship from those warehouses. We model that as ONE virtual
+// facility so FBA stock and FBA orders always have a location to attach to.
+// It is flagged isVirtual (excluded from the plan facility limit) and read-only.
+async function ensureFbaFacility(tenantId) {
+  let wh = await prisma.warehouse.findFirst({
+    where: { tenantId, externalSource: 'AMAZON_FBA' },
+  });
+  if (!wh) {
+    // Adopt a pre-existing plain "Amazon FBA" facility (older auto-created one)
+    // if present, otherwise create it. Guard the unique (tenantId, code) key.
+    wh = await prisma.warehouse.findFirst({ where: { tenantId, code: 'AMAZON-FBA' } })
+      || await prisma.warehouse.findFirst({ where: { tenantId, code: 'FBA' } });
+    if (wh) {
+      await prisma.warehouse.update({
+        where: { id: wh.id },
+        data: { isVirtual: true, externalSource: 'AMAZON_FBA', name: 'Amazon FBA' },
+      }).catch(() => {});
+      wh = { ...wh, isVirtual: true, externalSource: 'AMAZON_FBA', name: 'Amazon FBA' };
+    } else {
+      wh = await prisma.warehouse.create({
+        data: {
+          tenantId,
+          name: 'Amazon FBA',
+          code: 'AMAZON-FBA',
+          address: { note: 'Amazon-managed fulfilment network (pooled across FCs)' },
+          isActive: true,
+          isVirtual: true,
+          externalSource: 'AMAZON_FBA',
+        },
+      });
+    }
+  }
+  return wh;
+}
+
+function isAmazonChannelType(type) {
+  return String(type || '').toUpperCase().includes('AMAZON');
+}
+
 // ── One-time catalog import: pull a channel's products + stock into Kartriq ──
 // Reuses ensureListingForItem so products/variants/listings are created without
 // manual setup, then seeds inventory into a warehouse (auto-created if the
@@ -899,12 +949,18 @@ async function importCatalogFromChannel(channel, { tenantId } = {}) {
   }
   const results = { total: items.length, products: 0, inventory: 0, failed: 0, error: null };
 
-  // A warehouse to hold the pulled stock — reuse the tenant's first active one,
-  // else create a default so first-time users get inventory without setup.
-  let warehouse = await prisma.warehouse.findFirst({ where: { tenantId, isActive: true } });
-  if (!warehouse) {
-    warehouse = await prisma.warehouse.create({
-      data: { tenantId, name: 'Amazon FBA', code: 'FBA', address: {}, isActive: true },
+  // Where the pulled stock lands. Amazon FBA (CHANNEL) stock is pooled in
+  // Amazon's network, so it goes to the virtual "Amazon FBA" facility.
+  // Merchant-fulfilled (SELF) stock is real seller stock → a real warehouse.
+  const isAmazon = isAmazonChannelType(channel.type);
+  const fbaWarehouse = isAmazon ? await ensureFbaFacility(tenantId) : null;
+  // A real (non-virtual) warehouse for self-fulfilled stock — reuse the tenant's
+  // first active real one, else create a default so first-time users get
+  // inventory without setup.
+  let realWarehouse = await prisma.warehouse.findFirst({ where: { tenantId, isActive: true, isVirtual: false } });
+  if (!realWarehouse) {
+    realWarehouse = await prisma.warehouse.create({
+      data: { tenantId, name: 'Main Warehouse', code: `WH-${Date.now().toString(36).toUpperCase()}`, address: {}, isActive: true },
     });
   }
 
@@ -929,7 +985,12 @@ async function importCatalogFromChannel(channel, { tenantId } = {}) {
     }
     try {
       if (listing?.variantId) {
-        await upsertInventory({ tenantId, warehouseId: warehouse.id, productId: listing.productId, variantId: listing.variantId, qty: item.quantity });
+        // Route stock to the right facility: FBA/CHANNEL → virtual Amazon FBA
+        // facility (when Amazon), everything else → the real warehouse.
+        const itemModel = fromReport ? (item.fulfillmentType || 'CHANNEL') : 'CHANNEL';
+        const targetWarehouse = (isAmazon && itemModel === 'CHANNEL' && fbaWarehouse)
+          ? fbaWarehouse : realWarehouse;
+        await upsertInventory({ tenantId, warehouseId: targetWarehouse.id, productId: listing.productId, variantId: listing.variantId, qty: item.quantity });
         results.inventory++;
       }
     } catch (e) {
@@ -1072,4 +1133,4 @@ async function listChannelReturns(channelId, { tenantId, limit = 100 } = {}) {
     .limit(Math.min(500, Number(limit) || 100));
 }
 
-module.exports = { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, pushProductToChannels, importCatalogFromChannel, confirmChannelShipment, syncChannelSettlements, listChannelSettlements, syncChannelReturns, listChannelReturns };
+module.exports = { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, pushProductToChannels, importCatalogFromChannel, confirmChannelShipment, syncChannelSettlements, listChannelSettlements, syncChannelReturns, listChannelReturns, ensureFbaFacility };

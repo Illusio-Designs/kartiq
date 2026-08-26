@@ -248,7 +248,9 @@ const enforceLimit = (resource) => async (req, res, next) => {
     switch (resource) {
       case 'warehouses':
         limit = plan.maxFacilities;
-        used = await prisma.warehouse.count({ where: { tenantId } });
+        // Virtual facilities (e.g. the pooled "Amazon FBA" location) are
+        // Amazon-managed, not seller warehouses — never count against the plan.
+        used = await prisma.warehouse.count({ where: { tenantId, isVirtual: false } });
         metric = 'facilities';
         break;
       case 'skus':
