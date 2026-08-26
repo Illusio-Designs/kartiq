@@ -149,6 +149,15 @@ const COMPARE_ROWS: Array<[string, CompareCell, CompareCell, CompareCell, Compar
   ['ERP integration', false, false, false, true],
 ];
 
+// Features that are marketing-only (not yet built) — flagged "Soon" in the table.
+const COMING_SOON = [
+  'purchase management',
+  'advanced warehouse ops',
+  'vendor management',
+  'api integration',
+  'erp integration',
+];
+
 export default function PricingPage() {
   const [yearly, setYearly] = useState(false); // show Monthly first
   interface PlanView {
@@ -366,7 +375,14 @@ export default function PricingPage() {
                         i % 2 === 1 ? 'bg-slate-50/60 dark:bg-white/[0.02]' : ''
                       }`}
                     >
-                      <td className="text-left font-semibold text-slate-700 px-4 py-3.5">{label}</td>
+                      <td className="text-left font-semibold text-slate-700 px-4 py-3.5">
+                        {label}
+                        {COMING_SOON.some(k => label.toLowerCase().includes(k)) && (
+                          <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200 align-middle">
+                            Soon
+                          </span>
+                        )}
+                      </td>
                       {cells.map((cell, j) => (
                         <td key={j} className="text-center px-4 py-3.5">
                           {typeof cell === 'boolean' ? (

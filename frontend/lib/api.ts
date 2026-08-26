@@ -590,4 +590,5 @@ export const reportApi = {
   sales: (params?: any) => api.get('/reports/sales', { params }),
   inventoryValuation: () => api.get('/reports/inventory-valuation'),
   topProducts: (params?: any) => api.get('/reports/top-products', { params }),
+  revenueSeries: (params?: any) => api.get('/reports/revenue-series', { params }),
 };

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { reportApi, dashboardApi, orderApi } from '@/lib/api';
+import { reportApi, orderApi } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 import { Card, Skeleton, EmptyState, DateRangePicker, Badge, Button } from '@/components/ui';
 import { StatRow } from '@/components/StatCards';
@@ -50,13 +50,16 @@ export default function ReportsPage() {
     queryKey: ['inventory-valuation'],
     queryFn: () => reportApi.inventoryValuation().then((r) => r.data),
   });
-  const { data: dashboard, isLoading: dashboardLoading } = useQuery({
-    queryKey: ['dashboard'],
-    queryFn: () => dashboardApi.get().then((r) => r.data),
+  const { data: revenueData, isLoading: revenueLoading } = useQuery({
+    queryKey: ['report-revenue-series', from, to],
+    queryFn: () => reportApi.revenueSeries({ from: from || undefined, to: to || undefined }).then((r) => r.data),
   });
 
-  const revenueByMonth: Array<{ month: string; earnings: number }> = dashboard?.revenueByMonth || [];
+  const revenueByMonth: Array<{ month: string; earnings: number }> = (revenueData?.series || []).map(
+    (s: { month: string; earnings: number }) => ({ month: s.month, earnings: Number(s.earnings) || 0 }),
+  );
   const hasRevenueSeries = revenueByMonth.some((m) => Number(m.earnings) > 0);
+  const hasRange = Boolean(from || to);
 
   const rto = orderStats?.rto || {};
   const returnRate = rto.returnRate ?? 0;
@@ -102,7 +105,7 @@ export default function ReportsPage() {
       ]} cols={4} />
 
       {/* Revenue trend */}
-      {(dashboardLoading || hasRevenueSeries) && (
+      {(revenueLoading || hasRevenueSeries) && (
         <Card className="p-5">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
             <div className="flex items-center gap-2">
@@ -112,10 +115,10 @@ export default function ReportsPage() {
                 <p className="text-xs text-slate-500 mt-0.5">Gross revenue across all channels</p>
               </div>
             </div>
-            <Badge variant="emerald" dot>12 months</Badge>
+            <Badge variant="emerald" dot>{hasRange ? 'Custom range' : '12 months'}</Badge>
           </div>
           <div className="h-56 sm:h-64 -ml-2">
-            {dashboardLoading ? (
+            {revenueLoading ? (
               <div className="h-full w-full bg-slate-50 dark:bg-slate-800 rounded animate-pulse" aria-hidden="true" />
             ) : (
               <EarningsAreaChart data={revenueByMonth} />

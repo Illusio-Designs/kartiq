@@ -84,4 +84,48 @@ router.get('/top-products', requirePermission('reports.read'), async (req, res) 
   }
 });
 
+router.get('/revenue-series', requirePermission('reports.read'), async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    // Resolve the window: explicit range, or the trailing 12 months.
+    const end = to ? new Date(String(to)) : new Date();
+    let start;
+    if (from) {
+      start = new Date(String(from));
+    } else {
+      start = new Date(end);
+      start.setMonth(start.getMonth() - 11);
+      start.setDate(1);
+    }
+
+    // Sum order totals per month, excluding cancelled orders (same filter as /sales).
+    const rows = await db('orders')
+      .where('tenantId', req.tenant.id)
+      .whereNotIn('status', ['CANCELLED'])
+      .where('createdAt', '>=', start)
+      .where('createdAt', '<=', end)
+      .groupByRaw("DATE_FORMAT(createdAt, '%Y-%m')")
+      .select(db.raw("DATE_FORMAT(createdAt, '%Y-%m') as month"))
+      .sum({ earnings: 'total' })
+      .catch(() => []);
+
+    const byMonth = new Map(rows.map((r) => [r.month, Number(r.earnings || 0)]));
+
+    // Fill every month in the window with 0 so the chart is continuous.
+    const series = [];
+    const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+    const last = new Date(end.getFullYear(), end.getMonth(), 1);
+    while (cursor <= last) {
+      const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
+      series.push({ month: key, earnings: byMonth.get(key) || 0 });
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+
+    res.json({ series });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Failed to fetch revenue series' });
+  }
+});
+
 module.exports = router;

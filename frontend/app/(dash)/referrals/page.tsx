@@ -15,7 +15,7 @@
 import { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { referralApi } from '@/lib/api';
-import { Button, Badge, Card } from '@/components/ui';
+import { Button, Badge, Card, Pagination } from '@/components/ui';
 import { TableRowsSkeleton } from '@/components/Shimmer';
 import { StatRow } from '@/components/StatCards';
 import { Gift, Copy, Share2, CheckCircle2, Clock, XCircle, Sparkles } from 'lucide-react';
@@ -53,12 +53,20 @@ export default function ReferralsPage() {
   const [data, setData] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [refPage, setRefPage] = useState(1);
+  const pageSize = 12;
 
   useEffect(() => {
     referralApi.me()
       .then((r) => setData(r.data))
       .finally(() => setLoading(false));
   }, []);
+
+  const refList = data?.referrals || [];
+  const pagedReferrals = refList.slice((refPage - 1) * pageSize, refPage * pageSize);
+
+  // Keep the page in range when the underlying list changes.
+  useEffect(() => { setRefPage(1); }, [refList.length]);
 
   const copy = (key: string, text: string) => {
     if (!text) return;
@@ -195,7 +203,7 @@ export default function ReferralsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {data.referrals.map((r) => {
+                  {pagedReferrals.map((r) => {
                     const meta = STATUS_META[r.status];
                     const Icon = meta.icon;
                     return (
@@ -231,6 +239,10 @@ export default function ReferralsPage() {
             </div>
           )}
         </Card>
+
+        {refList.length > pageSize && (
+          <Pagination page={refPage} total={refList.length} pageSize={pageSize} onPageChange={setRefPage} />
+        )}
 
         {/* How it works */}
         <Card className="p-5 bg-slate-50/60">
