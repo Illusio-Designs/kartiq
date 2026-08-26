@@ -793,10 +793,13 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
           },
         });
 
-        // Bump PAYG usage meter for this tenant — but NOT on a re-import of an
-        // existing order (the empty stub already counted once; re-counting would
-        // double-bill the tenant).
-        if (!isReimport) {
+        // Bump the PAYG "orders" meter — but ONLY for orders the seller actually
+        // fulfils themselves (fulfillmentType SELF): Amazon MFN, Shopify, custom,
+        // Flipkart self-ship, etc. Channel-fulfilled orders (Amazon FBA / dropship)
+        // are processed by the channel, not by Kartriq, so they don't count toward
+        // the plan's order limit or draw wallet overage. Skip re-imports too (the
+        // stub already counted once) to avoid double-billing.
+        if (!isReimport && fulfillmentType === 'SELF') {
           const period = new Date().toISOString().slice(0, 7);
           await tx.usageMeter.upsert({
             where: { tenantId_metric_period: { tenantId, metric: 'orders', period } },
