@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import {
-  LayoutDashboard, Package, ShoppingCart, Boxes,
+  LayoutDashboard, Package, ShoppingCart,
   Store, BarChart2, Settings, LogOut,
   Plug, HelpCircle, Sparkles, PanelLeftClose, PanelLeftOpen, X,
   Wallet, UserCog, ChevronDown, Activity, Gift,
@@ -35,7 +35,6 @@ const DEFAULT_NAV_GROUPS: SidebarNavGroup[] = [
       { label: 'Dashboard',   href: '/dashboard',   icon: LayoutDashboard },
       { label: 'Orders',      href: '/orders',       icon: ShoppingCart },
       { label: 'Catalog',     href: '/products',     icon: Package },
-      { label: 'Inventory',   href: '/inventory',    icon: Boxes },
       { label: 'Reports',     href: '/reports',      icon: BarChart2 },
     ],
   },

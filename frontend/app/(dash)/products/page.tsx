@@ -15,6 +15,7 @@ import type { Density } from '@/components/ui';
 import { Plus, Package, RefreshCw, CheckCircle2, XCircle, Boxes, Layers, AlertTriangle, Ban, Tag, SearchX, ListFilter, ArrowUpDown, Bookmark, Download, SlidersHorizontal, Trash2, Send, Eye, EyeOff, X, ArrowUp, ArrowDown, ChevronsUpDown, Upload, MoreHorizontal } from 'lucide-react';
 import { ProductCardSkeleton } from '@/components/Shimmer';
 import { StatRow } from '@/components/StatCards';
+import { InventoryPanel } from '@/components/inventory/InventoryPanel';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
@@ -76,6 +77,21 @@ const PRODUCT_CSV: Record<string, (p: any) => string> = {
 export default function ProductsPage() {
   const qc = useQueryClient();
   const router = useRouter();
+  // Catalog now hosts two views — Products and Inventory — as tabs. Seed from
+  // ?view= so /inventory (which redirects here) opens the Inventory tab.
+  const [view, setView] = useState<'products' | 'inventory'>(() => {
+    if (typeof window === 'undefined') return 'products';
+    return new URLSearchParams(window.location.search).get('view') === 'inventory' ? 'inventory' : 'products';
+  });
+  const changeView = (v: 'products' | 'inventory') => {
+    setView(v);
+    try {
+      const url = new URL(window.location.href);
+      if (v === 'inventory') url.searchParams.set('view', 'inventory');
+      else url.searchParams.delete('view');
+      window.history.replaceState(null, '', url.toString());
+    } catch { /* ignore */ }
+  };
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [syncingId, setSyncingId] = useState<string | null>(null);
@@ -328,8 +344,23 @@ export default function ProductsPage() {
   return (
     <>
       <div className="space-y-5 animate-slide-up">
-        <PageHeader title="Catalog" />
+        <PageHeader
+          title="Catalog"
+          actions={
+            <Tabs<'products' | 'inventory'>
+              value={view}
+              onChange={changeView}
+              size="sm"
+              items={[
+                { key: 'products', label: 'Products', icon: <Package size={14} /> },
+                { key: 'inventory', label: 'Inventory', icon: <Boxes size={14} /> },
+              ]}
+            />
+          }
+        />
 
+        {view === 'inventory' ? <InventoryPanel /> : (
+        <>
         <StatRow items={[
           { label: 'Total SKUs', value: (prodStats?.total ?? 0).toLocaleString(), tone: 'slate', icon: <Package size={16} /> },
           { label: 'In stock', value: (prodStats?.inStock ?? 0).toLocaleString(), tone: 'emerald', icon: <CheckCircle2 size={16} /> },
@@ -620,6 +651,8 @@ export default function ProductsPage() {
               size="lg"
             />
           </Card>
+        )}
+        </>
         )}
       </div>
 
