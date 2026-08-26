@@ -5,6 +5,7 @@ const { OAuth2Client } = require('google-auth-library');
 const prisma = require('../utils/prisma');
 const { sendWelcome } = require('../services/email.service');
 const { notifyAdmins, notifyTenant } = require('../services/notifications.service');
+const { issueSessionToken } = require('../services/session.service');
 
 const registerSchema = z.object({
   name: z.string().min(2),
@@ -98,7 +99,7 @@ const login = async (req, res) => {
       return;
     }
 
-    const token = issueJwt(user);
+    const token = await issueSessionToken(user, req);
     res.json({ token, user: publicUser(user) });
   } catch (err) {
     if (err instanceof z.ZodError) { res.status(400).json({ error: err.errors }); return; }
@@ -177,7 +178,7 @@ const googleAuth = async (req, res) => {
       return res.status(403).json({ error: 'Account is disabled' });
     }
 
-    const token = issueJwt(user);
+    const token = await issueSessionToken(user, req);
     res.json({ token, user: publicUser(user) });
   } catch (err) {
     console.error('Google auth error:', err.message);
@@ -324,7 +325,7 @@ const onboardBusiness = async (req, res) => {
       return { tenant, user };
     });
 
-    const token = issueJwt(result.user);
+    const token = await issueSessionToken(result.user, req);
     sendWelcome({
       to: result.user.email,
       name: result.user.name,

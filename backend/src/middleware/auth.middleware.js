@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const prisma = require('../utils/prisma');
+const { isSessionActive } = require('../services/session.service');
 
 // Plan-limit alerts are throttled to once per (tenant, metric) per day so a
 // busy import job doesn't trigger a flood of emails.
@@ -126,6 +127,19 @@ const authenticate = async (req, res, next) => {
     } catch {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
+    // Single-session-per-device-class guard: if this token carries a session id,
+    // it must still be the active session for its device class. When the account
+    // signs in again on the same kind of device, that login supersedes this one.
+    if (decoded.sid) {
+      const active = await isSessionActive(decoded.sid, decoded.id);
+      if (!active) {
+        return res.status(401).json({
+          error: 'You were signed out because your account signed in on another device.',
+          code: 'SESSION_SUPERSEDED',
+        });
+      }
+    }
+    req.sessionId = decoded.sid || null;
     lookup = { value: decoded.id, byEmail: false };
   }
 

@@ -2,7 +2,10 @@ import axios from 'axios';
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api/v1',
-  headers: { 'Content-Type': 'application/json' },
+  // Identify this client as the web/PC device class so the backend's
+  // single-session guard treats it independently from the mobile app (one web
+  // + one mobile session may be signed in at the same time).
+  headers: { 'Content-Type': 'application/json', 'X-Client-Type': 'web' },
 });
 
 // Attach JWT token + impersonation tenant id to every request
@@ -29,6 +32,11 @@ api.interceptors.response.use(
       const url = err.config?.url || '';
       const isAuth = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/onboard') || url.includes('/auth/google');
       if (status === 401 && !isAuth) {
+        // If this account was signed in on another device of the same kind,
+        // surface why on the login screen instead of a silent bounce.
+        if (err.response?.data?.code === 'SESSION_SUPERSEDED') {
+          try { sessionStorage.setItem('kq-signout-reason', 'another-device'); } catch {}
+        }
         localStorage.removeItem('token');
         localStorage.removeItem('kartriq-auth');
         window.location.href = '/login';

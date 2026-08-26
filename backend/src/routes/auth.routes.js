@@ -8,6 +8,7 @@ const db = require('../utils/db');
 const { generateSecret, verifyTOTP, otpauthUrl } = require('../utils/totp');
 const { audit } = require('../services/audit.service');
 const { sendPasswordReset } = require('../services/email.service');
+const { issueSessionToken, revokeSession, revokeAllForUser } = require('../services/session.service');
 
 const router = Router();
 
@@ -53,10 +54,12 @@ router.post('/change-password', authenticate, async (req, res) => {
   }
 });
 
-// Logout — invalidates the server-side permission cache immediately.
-// (The JWT itself is stateless; the client should also drop its copy.)
-router.post('/logout', authenticate, (req, res) => {
+// Logout — invalidates the server-side permission cache and revokes THIS
+// device's session (so its token stops validating), leaving any other device
+// class (e.g. the mobile app) signed in. The client should also drop its copy.
+router.post('/logout', authenticate, async (req, res) => {
   invalidateUserCache(req.user.id);
+  if (req.sessionId) await revokeSession(req.sessionId);
   res.json({ ok: true });
 });
 
@@ -125,15 +128,7 @@ router.post('/accept-invite', async (req, res) => {
     });
     audit({ req, action: 'auth.invite.accept', resource: 'user', resourceId: user.id });
 
-    const session = jwt.sign(
-      {
-        id: updated.id, email: updated.email, role: updated.role,
-        tenantId: updated.tenantId || null,
-        isPlatformAdmin: !!updated.isPlatformAdmin,
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    const session = await issueSessionToken(updated, req);
 
     res.json({
       token: session,
@@ -195,6 +190,9 @@ router.post('/reset-password', async (req, res) => {
     if (!user || !user.isActive) return res.status(401).json({ error: 'Account not found' });
     const hashed = await bcrypt.hash(newPassword, 12);
     await prisma.user.update({ where: { id: user.id }, data: { password: hashed } });
+    // A password reset signs out every device (web + mobile) — anyone holding
+    // an old session must sign in again with the new password.
+    await revokeAllForUser(user.id);
     audit({ req, action: 'auth.password.reset', resource: 'user', resourceId: user.id });
     res.json({ ok: true });
   } catch (err) {
@@ -212,18 +210,6 @@ router.post('/reset-password', async (req, res) => {
 //   4. POST /2fa/login      → exchanges the short-lived mfaToken from
 //                             /login for a full session JWT once the user
 //                             submits a valid TOTP code
-
-function issueSessionJwt(user) {
-  return jwt.sign(
-    {
-      id: user.id, email: user.email, role: user.role,
-      tenantId: user.tenantId || null,
-      isPlatformAdmin: !!user.isPlatformAdmin,
-    },
-    process.env.JWT_SECRET,
-    { expiresIn: '7d' }
-  );
-}
 
 router.post('/2fa/setup', authenticate, async (req, res) => {
   try {
@@ -297,7 +283,7 @@ router.post('/2fa/login', async (req, res) => {
     if (!verifyTOTP(user.totpSecret, token)) {
       return res.status(401).json({ error: 'Invalid code' });
     }
-    const session = issueSessionJwt(user);
+    const session = await issueSessionToken(user, req);
     res.json({
       token: session,
       user: {

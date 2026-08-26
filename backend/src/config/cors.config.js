@@ -87,6 +87,9 @@ module.exports = {
     'Content-Type',
     'Authorization',
     'x-tenant-id',
+    // Device-class hint for the single-session login guard (web vs mobile)
+    'X-Client-Type',
+    'x-client-type',
     // Added with the idempotency middleware
     'Idempotency-Key',
     'idempotency-key',

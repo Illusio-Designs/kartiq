@@ -32,6 +32,17 @@ export default function LoginPage() {
     if (mfaToken) mfaInputRef.current?.focus();
   }, [mfaToken]);
 
+  // Explain an involuntary sign-out from the single-session guard (the account
+  // signed in on another device of the same kind).
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem('kq-signout-reason') === 'another-device') {
+        setError('You were signed out because your account signed in on another device. You can be signed in on one computer and one phone at a time.');
+        sessionStorage.removeItem('kq-signout-reason');
+      }
+    } catch {}
+  }, []);
+
   // Already logged in with a valid token? Redirect away. If expired, clear it.
   useEffect(() => {
     if (!token) return;

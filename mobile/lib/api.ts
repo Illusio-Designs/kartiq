@@ -9,7 +9,10 @@ const baseURL =
 
 const api = axios.create({
   baseURL,
-  headers: { 'Content-Type': 'application/json' },
+  // Identify this client as the mobile device class so the backend's single-
+  // session guard keeps it independent from a web/PC session (one of each may
+  // be signed in at once).
+  headers: { 'Content-Type': 'application/json', 'X-Client-Type': 'mobile' },
 });
 
 api.interceptors.request.use((config) => {

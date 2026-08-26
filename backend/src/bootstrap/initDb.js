@@ -291,6 +291,24 @@ async function initDb() {
       KEY \`order_videos_tenant_order_idx\` (\`tenantId\`, \`orderId\`),
       KEY \`order_videos_prune_idx\` (\`status\`, \`deleteAfter\`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+    // Active login sessions — enforces "one session per device class". A user
+    // may hold at most one WEB and one MOBILE session at a time; a new login on
+    // a class replaces the previous row (unique on userId+deviceClass), so the
+    // old device's token (which carries the old session id) stops validating.
+    `CREATE TABLE IF NOT EXISTS \`user_sessions\` (
+      \`id\` varchar(191) NOT NULL,
+      \`userId\` varchar(191) NOT NULL,
+      \`tenantId\` varchar(191) DEFAULT NULL,
+      \`deviceClass\` varchar(16) NOT NULL,
+      \`userAgent\` text DEFAULT NULL,
+      \`ip\` varchar(64) DEFAULT NULL,
+      \`createdAt\` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+      \`lastSeenAt\` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+      \`revokedAt\` datetime(3) DEFAULT NULL,
+      PRIMARY KEY (\`id\`),
+      UNIQUE KEY \`user_sessions_user_device_unique\` (\`userId\`, \`deviceClass\`),
+      KEY \`user_sessions_user_idx\` (\`userId\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
     // Background job queue — durable retry/DLQ without needing Redis.
     // status: pending | running | done | dead.
     // Workers claim a row via UPDATE (atomic) and run the registered handler.
