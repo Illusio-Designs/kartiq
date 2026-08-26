@@ -546,6 +546,32 @@ async function applyOrderProgress(existing, raw) {
   if (!existing.deliveredAt && (raw.deliveredAt || effective === 'DELIVERED')) {
     upd.deliveredAt = raw.deliveredAt || new Date();
   }
+
+  // Backfill the order total once the channel releases it. Amazon returns no
+  // OrderTotal for Pending orders — it appears when the order moves to Unshipped
+  // — so the ₹0 "awaiting" row fills in automatically on a later sync.
+  if ((existing.total == null || Number(existing.total) === 0) && Number(raw.total) > 0) {
+    upd.total = raw.total;
+    if (raw.subtotal != null) upd.subtotal = raw.subtotal;
+  }
+
+  // Re-assess data completeness from the fresh poll, but only UPGRADE it — a
+  // header-only poll (no line items) must never regress a COMPLETE order back to
+  // PARTIAL. This clears stale PARTIAL flags once the missing data arrives.
+  if (Array.isArray(raw.items) && raw.items.length) {
+    try {
+      const c = assessCompleteness(
+        { customer: raw.customer, shippingAddress: raw.shippingAddress, items: raw.items, channelOrderId: existing.channelOrderId || raw.channelOrderId },
+        { fulfillmentType: existing.fulfillmentType }
+      );
+      const rank = { MINIMAL: 0, PARTIAL: 1, COMPLETE: 2 };
+      if ((rank[c.level] ?? 1) > (rank[existing.dataCompleteness] ?? 1)) {
+        upd.dataCompleteness = c.level;
+        upd.missingFields = c.missing;
+      }
+    } catch { /* completeness recompute is best-effort */ }
+  }
+
   if (!Object.keys(upd).length) return false;
   await prisma.order.update({ where: { id: existing.id }, data: upd }).catch(() => {});
   return true;

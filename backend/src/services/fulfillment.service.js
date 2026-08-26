@@ -87,11 +87,21 @@ function resolveFulfillmentType(raw, channel) {
 function assessCompleteness(raw, { fulfillmentType } = {}) {
   const missing = [];
 
+  // Marketplace-synced orders (they carry a channelOrderId) anonymise the buyer:
+  // Amazon & most channels withhold the buyer's real name, phone, and email as
+  // managed PII. Flagging those as "missing" would leave every channel order
+  // stuck at PARTIAL forever, so only require buyer identity/contact for orders
+  // we handle directly (manual / own-store, no channelOrderId).
+  const isMarketplace = !!raw?.channelOrderId;
   const customer = raw?.customer || {};
-  if (!customer.name || customer.name.trim() === '') missing.push('customer.name');
-  if (!customer.phone && !customer.email) missing.push('customer.contact');
+  if (!isMarketplace) {
+    if (!customer.name || customer.name.trim() === '') missing.push('customer.name');
+    if (!customer.phone && !customer.email) missing.push('customer.contact');
+  }
 
-  // Address only required when the tenant ships the order themselves
+  // Address only required when the tenant ships the order themselves. For those
+  // (SELF/DROPSHIP) a missing address genuinely blocks fulfilment, so it's still
+  // flagged even on marketplace orders.
   if (fulfillmentType !== 'CHANNEL') {
     const addr = raw?.shippingAddress || {};
     if (!addr.line1) missing.push('shippingAddress.line1');

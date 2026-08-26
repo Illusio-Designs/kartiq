@@ -106,6 +106,7 @@ router.patch('/:id/enrich', requirePermission('orders.update'), async (req, res)
         customer: refreshed.customer,
         shippingAddress: orderUpdate.shippingAddress || refreshed.shippingAddress,
         items: refreshed.items,
+        channelOrderId: refreshed.channelOrderId,
       },
       { fulfillmentType: refreshed.fulfillmentType }
     );
