@@ -4,9 +4,10 @@ import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { warehouseApi } from '@/lib/api';
+import { TableRowsSkeleton } from '@/components/Shimmer';
 import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import {
-  Button, Badge, Card, Modal, Input, Checkbox, EmptyState, Tooltip, Loader,
+  Button, Badge, Card, Modal, Input, Checkbox, EmptyState, Tooltip,
 } from '@/components/ui';
 import { toast } from '@/store/toast.store';
 import { Plus, Store, MapPin, Pencil, Trash2, Search, Cloud, RefreshCw } from 'lucide-react';
@@ -129,7 +130,7 @@ export default function WarehousesPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
-                  <tr><td colSpan={5} className="p-6"><Loader size="sm" /></td></tr>
+                  <TableRowsSkeleton rows={5} cols={5} />
                 ) : warehouses.length ? warehouses.map((w: any) => {
                   const loc = locationLine(w.address);
                   const contact = [w.phone, w.email].filter(Boolean).join(' · ');

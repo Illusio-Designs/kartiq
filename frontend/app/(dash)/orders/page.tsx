@@ -6,8 +6,9 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { orderApi, customerApi, channelApi, productApi } from '@/lib/api';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import { useFilteredBySearch } from '@/lib/useGlobalSearch';
+import { TableRowsSkeleton, ShimmerTheme, Skeleton } from '@/components/Shimmer';
 import {
-  Button, Badge, Card, Modal, Input, Textarea, Select, Pagination, Tooltip, Loader, Tabs, EmptyState, Checkbox,
+  Button, Badge, Card, Modal, Input, Textarea, Select, Pagination, Tooltip, Tabs, EmptyState, Checkbox,
   SearchField, DateRangePicker, Popover, BulkActionBar, DensityToggle, Dropdown, Kbd, useConfirm,
 } from '@/components/ui';
 import type { Density } from '@/components/ui';
@@ -738,7 +739,7 @@ export default function OrdersPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
-                  <tr><td colSpan={visibleColumns.length + 2}><Loader size="sm" /></td></tr>
+                  <TableRowsSkeleton rows={8} cols={visibleColumns.length + 2} />
                 ) : sortedOrders.length ? sortedOrders.map((o: any) => (
                   <tr key={o.id} className={`transition-colors ${selected.has(o.id) ? 'bg-emerald-50/60' : 'hover:bg-slate-50/70'}`}>
                     <td className="px-3 py-2.5"><Checkbox checked={selected.has(o.id)} onCheckedChange={() => toggleOne(o.id)} /></td>
@@ -818,7 +819,15 @@ export default function OrdersPage() {
           {/* Mobile list */}
           <div className="md:hidden divide-y divide-slate-100">
             {isLoading ? (
-              <div className="p-6"><Loader size="sm" /></div>
+              <ShimmerTheme>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="p-4 flex items-center gap-3">
+                    <Skeleton width={36} height={36} borderRadius={10} />
+                    <div className="flex-1"><Skeleton height={12} width="60%" /><Skeleton height={10} width="40%" className="mt-2" /></div>
+                    <Skeleton width={54} height={20} borderRadius={20} />
+                  </div>
+                ))}
+              </ShimmerTheme>
             ) : !sortedOrders.length ? (
               <EmptyState
                 icon={<ShoppingBag size={28} />}

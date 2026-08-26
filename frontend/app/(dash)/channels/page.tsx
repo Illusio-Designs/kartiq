@@ -4,6 +4,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { channelApi, oauthApi } from '@/lib/api';
+import { TableRowsSkeleton } from '@/components/Shimmer';
 import {
   Plug, Clock, Inbox, Sparkles, Lock, Plus,
   ShoppingBag, Zap, Truck, Globe, MessageCircle, Building2, ChevronRight, HelpCircle, Mail,
@@ -13,7 +14,6 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
-import { Loader } from '@/components/ui/Loader';
 import { SearchField } from '@/components/ui/SearchField';
 import { Modal } from '@/components/ui/Modal';
 import { Input, Textarea } from '@/components/ui/Input';
@@ -323,8 +323,8 @@ export default function ChannelsPage() {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {isLoading ? (
-                  <tr><td colSpan={5} className="p-6"><Loader size="sm" /></td></tr>
-                ) : rows.length ? rows.map(entry => (
+                  <TableRowsSkeleton rows={6} cols={5} />
+                ) :rows.length ? rows.map(entry => (
                   <ChannelRow
                     key={entry.type}
                     entry={entry}

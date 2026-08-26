@@ -61,6 +61,27 @@ export function CardSkeletonGrid({ count = 3 }: { count?: number }) {
   );
 }
 
+/**
+ * Table-rows skeleton — shimmer rows that slot directly inside an existing
+ * <tbody> (SkeletonTheme renders no DOM wrapper, so <tr>s stay valid). Use for
+ * the data-loading state of a real table instead of a spinner.
+ */
+export function TableRowsSkeleton({ rows = 6, cols = 4, cellClassName = 'px-3 py-3' }: { rows?: number; cols?: number; cellClassName?: string }) {
+  return (
+    <ShimmerTheme>
+      {Array.from({ length: rows }).map((_, r) => (
+        <tr key={r} className="border-b border-slate-50 dark:border-slate-800/60">
+          {Array.from({ length: cols }).map((_, c) => (
+            <td key={c} className={cellClassName}>
+              <Skeleton height={12} borderRadius={6} width={c === 0 ? '70%' : `${45 + ((c * 13) % 35)}%`} />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </ShimmerTheme>
+  );
+}
+
 /** Table skeleton — mimics a data table */
 export function TableSkeleton({ rows = 5, cols = 4 }: { rows?: number; cols?: number }) {
   return (

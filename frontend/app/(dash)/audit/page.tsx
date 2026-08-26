@@ -14,8 +14,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { billingApi } from '@/lib/api';
+import { TableRowsSkeleton } from '@/components/Shimmer';
 import { Activity, RefreshCw, ChevronDown } from 'lucide-react';
-import { Button, Badge, Card, Select, SearchField, EmptyState, Loader } from '@/components/ui';
+import { Button, Badge, Card, Select, SearchField, EmptyState } from '@/components/ui';
 
 interface AuditRow {
   id: string;
@@ -202,7 +203,7 @@ export default function TenantAuditPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
-                  <tr><td colSpan={4}><Loader size="sm" /></td></tr>
+                  <TableRowsSkeleton rows={8} cols={4} />
                 ) : filtered.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="p-0">
