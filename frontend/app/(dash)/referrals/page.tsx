@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { referralApi } from '@/lib/api';
 import { Button, Badge, Card } from '@/components/ui';
+import { TableRowsSkeleton } from '@/components/Shimmer';
 import { Gift, Copy, Share2, CheckCircle2, Clock, XCircle, Sparkles } from 'lucide-react';
 import { toast } from '@/store/toast.store';
 
@@ -169,7 +170,7 @@ export default function ReferralsPage() {
           </div>
 
           {loading ? (
-            <div className="p-12 text-center text-sm text-slate-400">Loading…</div>
+            <table className="w-full text-sm"><tbody><TableRowsSkeleton rows={5} cols={4} cellClassName="px-5 py-3" /></tbody></table>
           ) : !data || data.referrals.length === 0 ? (
             <div className="p-10 text-center">
               <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 mb-3">

@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { ConnectChannelModal } from '@/components/channels/ConnectChannelModal';
 import { Badge, Button, Card, Input, Select, Tooltip, useConfirm } from '@/components/ui';
 import { toast } from '@/store/toast.store';
+import { useAuthStore } from '@/store/auth.store';
 import { DetailPageSkeleton } from '@/components/Shimmer';
 import { formatDate, formatDateTime, cn } from '@/lib/utils';
 import { domainFor, logoDevUrl, iconHorseUrl, googleFaviconUrl, getChannelInitials } from '@/lib/channel-logos';
@@ -25,6 +26,9 @@ export default function ChannelDetailPage() {
   const qc = useQueryClient();
   const [connectOpen, setConnectOpen] = useState(false);
   const [confirmUi, askConfirm] = useConfirm();
+  const hasFeature = useAuthStore((s) => s.hasFeature);
+  const hasReconciliation = hasFeature('paymentReconciliation');
+  const hasReturns = hasFeature('returns');
 
   const { data: channel, isLoading } = useQuery({
     queryKey: ['channel', id],
@@ -165,7 +169,7 @@ export default function ChannelDetailPage() {
   } = useQuery({
     queryKey: ['channel-finances', id],
     queryFn: () => channelApi.finances(id).then(r => r.data),
-    enabled: !!channel && String(channel.type).startsWith('AMAZON'),
+    enabled: !!channel && String(channel.type).startsWith('AMAZON') && hasReconciliation,
   });
 
   const financesSyncMutation = useMutation({
@@ -197,7 +201,7 @@ export default function ChannelDetailPage() {
   } = useQuery({
     queryKey: ['channel-returns', id],
     queryFn: () => channelApi.returns(id).then(r => r.data),
-    enabled: !!channel && String(channel.type).startsWith('AMAZON'),
+    enabled: !!channel && String(channel.type).startsWith('AMAZON') && hasReturns,
   });
 
   const returnsSyncMutation = useMutation({
@@ -584,8 +588,8 @@ export default function ChannelDetailPage() {
           </Card>
         )}
 
-        {/* Amazon payouts / settlements — Amazon channels only */}
-        {isAmazon && (
+        {/* Amazon payouts / settlements — Amazon channels only, plan feature */}
+        {isAmazon && hasReconciliation && (
           <Card className="overflow-hidden">
             <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
@@ -659,8 +663,8 @@ export default function ChannelDetailPage() {
           </Card>
         )}
 
-        {/* Amazon merchant returns — Amazon channels only */}
-        {isAmazon && (
+        {/* Amazon merchant returns — Amazon channels only, plan feature */}
+        {isAmazon && hasReturns && (
           <Card className="overflow-hidden">
             <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2.5">

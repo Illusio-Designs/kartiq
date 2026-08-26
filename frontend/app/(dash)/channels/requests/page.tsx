@@ -9,7 +9,7 @@ import { ArrowLeft, Inbox, Clock, CheckCircle2, XCircle, Loader2, X, Search } fr
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
-import { Loader } from '@/components/ui/Loader';
+import { TableRowsSkeleton } from '@/components/Shimmer';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { Badge, Card, EmptyState, useConfirm } from '@/components/ui';
 
@@ -102,7 +102,7 @@ export default function ChannelRequestsPage() {
 
           {/* Body: loader · empty state · table */}
           {isLoading ? (
-            <div className="p-8"><Loader /></div>
+            <table className="w-full text-sm"><tbody><TableRowsSkeleton rows={5} cols={6} cellClassName="px-5 py-3.5" /></tbody></table>
           ) : isEmpty ? (
             <EmptyState
               icon={<Inbox size={28} />}

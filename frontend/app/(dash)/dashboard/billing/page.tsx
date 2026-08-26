@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Checkbox } from '@/components/ui/Checkbox';
-import { Loader } from '@/components/ui/Loader';
+import { StatsSkeleton, CardSkeletonItem, CardSkeletonGrid } from '@/components/Shimmer';
 import { Modal } from '@/components/ui/Modal';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -231,7 +231,22 @@ export default function BillingPage() {
     document.getElementById('switch-plan')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  if (!sub || !usage) return <Loader fullScreen size="lg" />;
+  if (!sub || !usage) {
+    return (
+      <div className="space-y-6 animate-slide-up">
+        <PageHeader
+          title="Billing"
+          subtitle="Manage your plan, wallet, usage and pay-as-you-go — all in one place."
+        />
+        <StatsSkeleton count={3} />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <div className="lg:col-span-2"><CardSkeletonItem /></div>
+          <CardSkeletonItem />
+        </div>
+        <CardSkeletonGrid count={3} />
+      </div>
+    );
+  }
 
   const plan = sub.plan;
   const periodEnd = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString() : '—';

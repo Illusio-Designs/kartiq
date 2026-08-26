@@ -56,7 +56,7 @@ const PLANS = [
     code: 'STANDARD',
     name: 'Starter',
     tagline: 'For micro-businesses launching their first online channels.',
-    monthlyPrice: 999, yearlyPrice: 9990, sortOrder: 1,
+    monthlyPrice: 999, yearlyPrice: 10789, sortOrder: 1, // yearly = 12mo − 10%
     maxFacilities: 1, maxSkus: 10000, maxUserRoles: 3, maxUsers: 2, maxOrdersPerMonth: 500,
     features: {
       maxChannels: 3,
@@ -68,14 +68,15 @@ const PLANS = [
     },
     // extraOrders = per self-fulfilled order over the monthly limit. extraChannels
     // & extraFacilities are billed MONTHLY (recurring standing add-ons);
-    // extraUsers & extraSkus are one-time at add.
-    meteredRates: { extraOrders: 0.5, extraSkus: 0.1, extraFacilities: 799, extraChannels: 199, extraUsers: 299 },
+    // extraUsers & extraSkus are one-time at add. Orders & SKUs are a FLAT rate
+    // across all plans (₹2 / ₹1); seats/channels/warehouses taper by tier.
+    meteredRates: { extraOrders: 2, extraSkus: 1, extraFacilities: 499, extraChannels: 199, extraUsers: 299 },
   },
   {
     code: 'PROFESSIONAL',
     name: 'Growth',
     tagline: 'For growing brands strengthening their multi-channel operations.',
-    monthlyPrice: 2999, yearlyPrice: 29990, sortOrder: 2,
+    monthlyPrice: 2999, yearlyPrice: 32389, sortOrder: 2, // yearly = 12mo − 10%
     maxFacilities: 3, maxSkus: 50000, maxUserRoles: 6, maxUsers: 6, maxOrdersPerMonth: 2500,
     features: {
       maxChannels: 8,
@@ -85,13 +86,13 @@ const PLANS = [
       customReports: false, apiIntegration: false, advancedWarehouseOps: false,
       vendorManagement: false, omniChannel: false, erpIntegration: false,
     },
-    meteredRates: { extraOrders: 0.4, extraSkus: 0.08, extraFacilities: 1299, extraChannels: 149, extraUsers: 249 },
+    meteredRates: { extraOrders: 2, extraSkus: 1, extraFacilities: 399, extraChannels: 149, extraUsers: 249 },
   },
   {
     code: 'BUSINESS',
     name: 'Scale',
     tagline: 'For scaling brands that need full omnichannel coverage and warehouse ops.',
-    monthlyPrice: 7999, yearlyPrice: 79990, sortOrder: 3,
+    monthlyPrice: 7999, yearlyPrice: 86389, sortOrder: 3, // yearly = 12mo − 10%
     maxFacilities: 6, maxSkus: 250000, maxUserRoles: 12, maxUsers: 20, maxOrdersPerMonth: 10000,
     features: {
       maxChannels: 20,
@@ -101,7 +102,7 @@ const PLANS = [
       customReports: true, apiIntegration: false, advancedWarehouseOps: true,
       vendorManagement: true, omniChannel: true, erpIntegration: false,
     },
-    meteredRates: { extraOrders: 0.3, extraSkus: 0.06, extraFacilities: 1799, extraChannels: 99, extraUsers: 199 },
+    meteredRates: { extraOrders: 2, extraSkus: 1, extraFacilities: 299, extraChannels: 99, extraUsers: 199 },
   },
   {
     code: 'ENTERPRISE',

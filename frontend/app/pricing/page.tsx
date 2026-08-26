@@ -55,60 +55,58 @@ function planToView(p: any) {
   };
 }
 
+// Fallback only renders if the plans API is unreachable — keep it in sync with
+// backend/src/scripts/seed.js so a degraded page still shows the real ladder.
 const FALLBACK_PLANS = [
   {
     name: 'Starter',
-    tagline: 'For indie brands getting started',
-    price: { monthly: 0, yearly: 0 },
-    cta: 'Start Free',
+    tagline: 'For micro-businesses launching their first online channels.',
+    price: { monthly: 999, yearly: 10789 },
+    cta: 'Start 14-day Trial',
     highlight: false,
     features: [
-      '3 channels',
-      '500 orders/month',
+      '3 sales channels',
+      '500 self-fulfilled orders/month',
       '1 warehouse',
-      '1 user',
-      'Order & inventory sync',
-      'Community support',
+      '2 users · 3 roles',
+      '10,000 SKUs',
+      'Payment reconciliation · mobile app',
     ],
-    excluded: ['AI insights', 'Auto review requests', 'Webhooks API'],
+    excluded: ['Video management (VMS)', 'Purchase management', 'Custom reports'],
   },
   {
     name: 'Growth',
-    tagline: 'For scaling D2C brands',
-    price: { monthly: 2499, yearly: 24990 },
+    tagline: 'For growing brands strengthening their multi-channel operations.',
+    price: { monthly: 2999, yearly: 32389 },
     cta: 'Start 14-day Trial',
     highlight: true,
     features: [
-      'Unlimited channels',
-      '10,000 orders/month',
-      '5 warehouses',
-      '10 users',
-      'Everything in Starter',
-      'Auto review requests',
-      'Shipping aggregators',
-      'Webhooks & API',
-      'Priority email support',
+      '8 channels · +Quick-commerce & Social',
+      '2,500 self-fulfilled orders/month',
+      '3 warehouses',
+      '6 users · 6 roles',
+      '50,000 SKUs',
+      'Video management (VMS) · enhanced returns',
+      'Purchase management · SKU barcoding',
     ],
-    excluded: ['AI demand forecasting'],
+    excluded: ['Custom reports', 'API / ERP integration'],
   },
   {
     name: 'Scale',
-    tagline: 'For multi-brand enterprises',
-    price: { monthly: 7999, yearly: 79990 },
-    cta: 'Talk to Sales',
+    tagline: 'For scaling brands that need full omnichannel coverage and warehouse ops.',
+    price: { monthly: 7999, yearly: 86389 },
+    cta: 'Start 14-day Trial',
     highlight: false,
     features: [
-      'Unlimited channels',
-      'Unlimited orders',
-      'Unlimited warehouses',
-      'Unlimited users',
-      'Everything in Growth',
-      'AI demand forecasting',
-      'Custom integrations',
-      'Dedicated account manager',
-      'SLA & 24/7 support',
+      '20 channels · +B2B',
+      '10,000 self-fulfilled orders/month',
+      '6 warehouses',
+      '20 users · 12 roles',
+      '250,000 SKUs',
+      'Custom reports · advanced warehouse ops',
+      'Vendor management · full omnichannel',
     ],
-    excluded: [],
+    excluded: ['API access', 'ERP integration'],
   },
 ];
 
@@ -135,11 +133,11 @@ const FAQ = [
 const COMPARE_COLUMNS = ['Starter', 'Growth', 'Scale', 'Enterprise'];
 type CompareCell = string | boolean;
 const COMPARE_ROWS: Array<[string, CompareCell, CompareCell, CompareCell, CompareCell]> = [
-  ['SKUs', '10,000', '50,000', '200,000', 'Unlimited'],
-  ['Facilities', '1', '2', '5', 'Unlimited'],
-  ['User roles', '3', '5', '10', 'Unlimited'],
-  ['Orders / month', '500', '2,500', '10,000', 'Unlimited'],
-  ['Sales channels', '2', '7', '15', 'All'],
+  ['SKUs', '10,000', '50,000', '250,000', 'Unlimited'],
+  ['Warehouses', '1', '3', '6', 'Unlimited'],
+  ['User roles', '3', '6', '12', 'Unlimited'],
+  ['Self-fulfilled orders / month', '500', '2,500', '10,000', 'Unlimited'],
+  ['Sales channels', '3', '8', '20', 'All'],
   ['Pay-as-you-go', false, true, true, true],
   ['Payment reconciliation', true, true, true, true],
   ['Purchase management', false, true, true, true],
@@ -152,7 +150,7 @@ const COMPARE_ROWS: Array<[string, CompareCell, CompareCell, CompareCell, Compar
 ];
 
 export default function PricingPage() {
-  const [yearly, setYearly] = useState(true);
+  const [yearly, setYearly] = useState(false); // show Monthly first
   interface PlanView {
     code?: string;
     name: string;
@@ -202,7 +200,7 @@ export default function PricingPage() {
           <div className="mt-10 inline-flex items-center gap-1 p-1 bg-white border border-slate-200 rounded-xl shadow-sm">
             {[
               { key: false, label: 'Monthly' },
-              { key: true,  label: 'Yearly', savings: 'Save 17%' },
+              { key: true,  label: 'Yearly', savings: 'Save 10%' },
             ].map(opt => (
               <button
                 key={opt.label}

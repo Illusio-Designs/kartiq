@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const {
-  authenticate, requireTenant, requirePermission, enforceLimit,
+  authenticate, requireTenant, requirePermission, requireFeature, enforceLimit,
 } = require('../middleware/auth.middleware');
 const prisma = require('../utils/prisma');
 const { encryptCredentials, maskCredentials } = require('../utils/crypto');
@@ -749,7 +749,7 @@ router.get('/:id/mcf/inventory', requirePermission('channels.read'), async (req,
 // ── Finances / settlements (payouts) ──────────────────────────────────────
 // Pull the channel's settlement/payout groups from the marketplace (Amazon
 // SP-API financialEventGroups) and store them for reconciliation.
-router.post('/:id/finances/sync', requirePermission('channels.sync'), async (req, res) => {
+router.post('/:id/finances/sync', requirePermission('channels.sync'), requireFeature('paymentReconciliation'), async (req, res) => {
   try {
     const channel = await loadTenantChannel(req);
     if (!channel) return res.status(404).json({ error: 'Channel not found' });
@@ -768,7 +768,7 @@ router.post('/:id/finances/sync', requirePermission('channels.sync'), async (req
   }
 });
 
-router.get('/:id/finances', requirePermission('channels.read'), async (req, res) => {
+router.get('/:id/finances', requirePermission('channels.read'), requireFeature('paymentReconciliation'), async (req, res) => {
   try {
     const channel = await loadTenantChannel(req);
     if (!channel) return res.status(404).json({ error: 'Channel not found' });
@@ -785,7 +785,7 @@ router.get('/:id/finances', requirePermission('channels.read'), async (req, res)
 // ── Returns (read-only) ───────────────────────────────────────────────────
 // Pull the channel's customer returns from the marketplace (Amazon merchant
 // returns report). Refund issuance is intentionally NOT exposed here.
-router.post('/:id/returns/sync', requirePermission('channels.sync'), async (req, res) => {
+router.post('/:id/returns/sync', requirePermission('channels.sync'), requireFeature('returns'), async (req, res) => {
   try {
     const channel = await loadTenantChannel(req);
     if (!channel) return res.status(404).json({ error: 'Channel not found' });
@@ -804,7 +804,7 @@ router.post('/:id/returns/sync', requirePermission('channels.sync'), async (req,
   }
 });
 
-router.get('/:id/returns', requirePermission('channels.read'), async (req, res) => {
+router.get('/:id/returns', requirePermission('channels.read'), requireFeature('returns'), async (req, res) => {
   try {
     const channel = await loadTenantChannel(req);
     if (!channel) return res.status(404).json({ error: 'Channel not found' });

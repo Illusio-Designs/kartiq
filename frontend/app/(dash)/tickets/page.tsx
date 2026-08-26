@@ -23,7 +23,7 @@ import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { Loader } from '@/components/ui/Loader';
+import { TableRowsSkeleton } from '@/components/Shimmer';
 
 interface TicketMessage {
   id: string;
@@ -147,7 +147,9 @@ export default function TicketsPage() {
         />
 
         {loading ? (
-          <Card className="p-0"><Loader /></Card>
+          <Card className="p-0 overflow-hidden">
+            <table className="w-full"><tbody><TableRowsSkeleton rows={6} cols={3} cellClassName="px-4 py-3.5" /></tbody></table>
+          </Card>
         ) : tickets.length === 0 ? (
           <Card className="p-0">
             <EmptyState

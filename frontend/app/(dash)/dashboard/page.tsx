@@ -12,6 +12,7 @@ import {
   Wallet, TrendingDown, ShoppingBag, MoreHorizontal, ArrowUp, ArrowDown,
   ArrowUpRight, Plus, Package, Info, RefreshCw,
 } from 'lucide-react';
+import { StatsSkeleton, CardSkeletonItem, TableRowsSkeleton } from '@/components/Shimmer';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 
@@ -64,6 +65,30 @@ export default function DashboardPage() {
   // Real 12-month earnings from the backend. Show an empty chart the first
   // time a tenant has no orders yet rather than falling back to fake data.
   const CHART_DATA = data?.revenueByMonth || [];
+
+  // First load — shimmer the whole dashboard rather than flashing zeros.
+  if (isLoading) {
+    return (
+      <div className="space-y-5 animate-slide-up">
+        <PageHeader
+          title="Dashboard"
+          subtitle="Welcome back — here's what's happening across your commerce today."
+          actions={<DatePicker value={date} onChange={setDate} />}
+        />
+        <StatsSkeleton count={3} />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <div className="lg:col-span-2"><CardSkeletonItem /></div>
+          <CardSkeletonItem />
+        </div>
+        <Card className="p-0 overflow-hidden">
+          <div className="p-4 border-b border-slate-100 dark:border-slate-800">
+            <div className="h-4 w-40 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />
+          </div>
+          <table className="w-full"><tbody><TableRowsSkeleton rows={6} cols={5} cellClassName="px-5 py-3" /></tbody></table>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5 animate-slide-up">

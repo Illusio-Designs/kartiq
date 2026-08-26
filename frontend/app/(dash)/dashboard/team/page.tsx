@@ -8,6 +8,7 @@ import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import { formatDateTime } from '@/lib/utils';
 import { Plus, Trash2, Users, Shield, Save, Pencil, Mail, Send, Copy, Search, Lock, Sparkles } from 'lucide-react';
 import { toast } from '@/store/toast.store';
+import { TableRowsSkeleton, CardSkeletonGrid } from '@/components/Shimmer';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { PasswordInput } from '@/components/ui/PasswordInput';
@@ -74,11 +75,16 @@ function UsersTab({ canManage, showNew, setShowNew }: {
   const [users, setUsers] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
   const [editing, setEditing] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const [confirmUi, askConfirm] = useConfirm();
 
   const load = async () => {
-    const [u, r] = await Promise.all([userApi.list(), roleApi.list()]);
-    setUsers(u.data); setRoles(r.data);
+    try {
+      const [u, r] = await Promise.all([userApi.list(), roleApi.list()]);
+      setUsers(u.data); setRoles(r.data);
+    } finally {
+      setLoading(false);
+    }
   };
   useEffect(() => { load(); }, []);
 
@@ -135,7 +141,8 @@ function UsersTab({ canManage, showNew, setShowNew }: {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredUsers.length ? filteredUsers.map((u) => {
+              {loading ? <TableRowsSkeleton rows={4} cols={5} cellClassName="px-4 py-3.5" /> :
+               filteredUsers.length ? filteredUsers.map((u) => {
                 // No dedicated last-active field exists yet — show a real
                 // timestamp when the API provides one, otherwise a neutral dash
                 // (never a fabricated value).
@@ -334,20 +341,25 @@ function RolesTab({ canManage, showNew, setShowNew }: {
   const [editing, setEditing] = useState<any>(null);
   const [confirmUi, askConfirm] = useConfirm();
   const [usage, setUsage] = useState<{ used: number; limit: number | null } | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const load = async () => {
-    const [r, p, u] = await Promise.all([
-      roleApi.list(),
-      userApi.permissionCatalog(),
-      // Optional — fall back gracefully if the call fails (perms or network)
-      billingApi.usage().catch(() => null),
-    ]);
-    setRoles(r.data); setPerms(p.data);
-    if (u?.data) {
-      // Custom roles only — system roles don't count against the plan limit
-      const customCount = (r.data || []).filter((x: any) => !x.isSystem).length;
-      const limit = u.data.plan?.maxUserRoles ?? null;
-      setUsage({ used: customCount, limit });
+    try {
+      const [r, p, u] = await Promise.all([
+        roleApi.list(),
+        userApi.permissionCatalog(),
+        // Optional — fall back gracefully if the call fails (perms or network)
+        billingApi.usage().catch(() => null),
+      ]);
+      setRoles(r.data); setPerms(p.data);
+      if (u?.data) {
+        // Custom roles only — system roles don't count against the plan limit
+        const customCount = (r.data || []).filter((x: any) => !x.isSystem).length;
+        const limit = u.data.plan?.maxUserRoles ?? null;
+        setUsage({ used: customCount, limit });
+      }
+    } finally {
+      setLoading(false);
     }
   };
   useEffect(() => { load(); }, []);
@@ -448,7 +460,9 @@ function RolesTab({ canManage, showNew, setShowNew }: {
             ))}
           </CardHeader>
 
-          {customRoles.length === 0 ? (
+          {loading ? (
+            <div className="p-5"><CardSkeletonGrid count={3} /></div>
+          ) : customRoles.length === 0 ? (
             <EmptyState
               icon={<Sparkles size={26} />}
               iconBg="bg-emerald-50 text-emerald-600"
