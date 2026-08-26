@@ -4,8 +4,8 @@ import { useParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Package, Truck, PackageCheck, Navigation, XCircle } from 'lucide-react';
-import { orderApi, channelApi } from '@/lib/api';
+import { ArrowLeft, Package, Truck, PackageCheck, Navigation, XCircle, Ship, Printer, Store, CheckCircle2 } from 'lucide-react';
+import { orderApi, channelApi, warehouseApi } from '@/lib/api';
 import { formatCurrency, formatDateTime, ORDER_STATUS_COLORS } from '@/lib/utils';
 import { DetailPageSkeleton } from '@/components/Shimmer';
 import { Badge, Button, Card, Input, Select, useConfirm } from '@/components/ui';
@@ -67,6 +67,34 @@ export default function OrderDetailPage() {
     onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Failed to update order'),
   });
 
+  // ── Generate label (self-fulfilled) ────────────────────────────────────────
+  // A connected logistics courier (category === 'LOGISTICS') mints a real AWB
+  // for this order and ships it from the chosen warehouse. The backend also
+  // stamps trackingNumber/courierName/status on the order, so we refetch it.
+  const { data: warehousesData } = useQuery({
+    queryKey: ['warehouses'],
+    queryFn: () => warehouseApi.list().then((r) => r.data),
+  });
+  const warehouses: any[] = Array.isArray(warehousesData) ? warehousesData : (warehousesData?.warehouses || []);
+
+  const [labelCourierId, setLabelCourierId] = useState('');
+  const [shipFromId, setShipFromId] = useState('');
+  const [shipResult, setShipResult] = useState<any>(null);
+
+  const createShipmentMutation = useMutation({
+    mutationFn: () =>
+      channelApi
+        .createShipment(labelCourierId, { orderId: order.id, warehouseId: shipFromId || undefined })
+        .then((r) => r.data),
+    onSuccess: (data: any) => {
+      setShipResult(data);
+      qc.invalidateQueries({ queryKey: ['order', id] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      toast.success('Shipping label generated');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not generate label'),
+  });
+
   // ── Amazon MCF (multi-channel fulfilment) ──────────────────────────────────
   // Find the first connected AMAZON_SMARTBIZ / AMAZON_FBA channel — the "MCF
   // channel" that can fulfil this order via Amazon's warehouses.
@@ -77,6 +105,16 @@ export default function OrderDetailPage() {
     queryFn: () => channelApi.list().then((r) => r.data),
   });
   const channels: any[] = Array.isArray(channelsData) ? channelsData : (channelsData?.channels || []);
+  const logisticsCouriers = channels.filter((c) => String(c.category || '').toUpperCase() === 'LOGISTICS');
+  // Sensible defaults for the label form once data lands.
+  useEffect(() => {
+    if (!labelCourierId && logisticsCouriers.length) setLabelCourierId(logisticsCouriers[0].id);
+  }, [logisticsCouriers.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (shipFromId) return;
+    if (order?.warehouse?.id) setShipFromId(order.warehouse.id);
+    else if (warehouses.length) setShipFromId(warehouses[0].id);
+  }, [order?.warehouse?.id, warehouses.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const mcfChannel = channels.find((c) => {
     const t = String(c.type || '').toUpperCase();
     return t === 'AMAZON_SMARTBIZ' || t === 'AMAZON_FBA';
@@ -148,6 +186,10 @@ export default function OrderDetailPage() {
   // by the seller — they ship them and record status/tracking here.
   const editable = order.fulfillmentType !== 'CHANNEL';
   const isClosed = order.status === 'DELIVERED' || order.status === 'CANCELLED';
+  const isAmazonChannel = String(order.channel?.type || '').toUpperCase().includes('AMAZON');
+  // AWB + label link surfaced right after a courier mints them.
+  const generatedAwb = shipResult ? (shipResult.awbCode || shipResult.waybill || null) : null;
+  const generatedLabelUrl = shipResult ? (shipResult.labelUrl || shipResult.label || shipResult.awbUrl || null) : null;
 
   // Order Summary totals — derived only from real data. Subtotal is the sum of
   // the line items; the grand total comes from the order itself. Optional
@@ -159,7 +201,7 @@ export default function OrderDetailPage() {
   const grandTotal = typeof order.total === 'number' ? order.total : subtotal;
 
   return (
-    <div className="space-y-5 animate-slide-up max-w-4xl">
+    <div className="space-y-5 animate-slide-up">
         <Link href="/orders" className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-800">
           <ArrowLeft size={15} /> Back to Orders
         </Link>
@@ -204,43 +246,132 @@ export default function OrderDetailPage() {
           )}
         </Card>
 
-        {/* Editable fulfillment — self-fulfilled / manual orders only. FBA
-            orders are managed by Amazon, so no manual controls are shown. */}
+        {/* Ship this order — self-fulfilled / manual orders. Preferred path:
+            generate a real label via a connected logistics courier. Fallback:
+            enter tracking manually / mark shipped. FBA orders (below) are
+            managed by the marketplace and show a read-only info card instead. */}
         {editable ? (
           <Card className="p-5 space-y-4">
             <div className="flex items-center gap-2">
               <Truck size={15} className="text-emerald-600" />
-              <span className="text-sm font-bold text-slate-800">Update fulfillment</span>
-              <span className="text-xs text-slate-400">you ship this order</span>
+              <span className="text-sm font-bold text-slate-800">Ship this order</span>
+              <span className="text-xs text-slate-400">you fulfil this order</span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Status</label>
-                <Select value={statusDraft} onChange={setStatusDraft} options={EDITABLE_STATUSES} fullWidth />
+
+            {/* Preferred: generate a courier label */}
+            {logisticsCouriers.length > 0 ? (
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-700/60 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Ship size={14} className="text-emerald-600" />
+                  <span className="text-sm font-bold text-slate-700">Generate a shipping label</span>
+                  <Badge variant="emerald" dot>recommended</Badge>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Courier</label>
+                    <Select
+                      value={labelCourierId}
+                      onChange={setLabelCourierId}
+                      options={logisticsCouriers.map((c) => ({ value: c.id, label: c.name }))}
+                      placeholder="Select courier…"
+                      fullWidth
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Ship from</label>
+                    <Select
+                      value={shipFromId}
+                      onChange={setShipFromId}
+                      options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+                      placeholder="Select warehouse…"
+                      fullWidth
+                    />
+                  </div>
+                  <Button
+                    leftIcon={<Ship size={14} />}
+                    loading={createShipmentMutation.isPending}
+                    disabled={!labelCourierId}
+                    onClick={() => createShipmentMutation.mutate()}
+                  >
+                    Generate label
+                  </Button>
+                </div>
+                {generatedAwb && (
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-emerald-200 bg-emerald-50/70 dark:border-emerald-500/30 dark:bg-emerald-500/10 px-3 py-2.5 text-sm">
+                    <span className="flex items-center gap-1.5 text-emerald-700 font-semibold">
+                      <CheckCircle2 size={15} /> Label ready
+                    </span>
+                    <div>
+                      <span className="text-slate-400">AWB</span>{' '}
+                      <span className="font-mono text-slate-700">{generatedAwb}</span>
+                      {shipResult?.courierName ? <span className="text-slate-400"> · {shipResult.courierName}</span> : null}
+                    </div>
+                    {generatedLabelUrl && (
+                      <a
+                        href={generatedLabelUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-emerald-700 font-semibold hover:underline"
+                      >
+                        <Printer size={14} /> Print label
+                      </a>
+                    )}
+                  </div>
+                )}
               </div>
-              <Input
-                label="Tracking number"
-                value={trackingDraft}
-                onChange={(e) => setTrackingDraft(e.target.value)}
-                placeholder="e.g. 1Z999AA10123456784"
-              />
-              <Input
-                label="Courier"
-                value={courierDraft}
-                onChange={(e) => setCourierDraft(e.target.value)}
-                placeholder="e.g. Delhivery"
-              />
-              <Button
-                loading={statusMutation.isPending}
-                onClick={() => statusMutation.mutate({
-                  status: statusDraft,
-                  trackingNumber: trackingDraft || undefined,
-                  courierName: courierDraft || undefined,
-                })}
-              >
-                Save
-              </Button>
+            ) : (
+              <p className="text-xs text-slate-500">
+                Connect a courier under <Link href="/channels" className="text-emerald-600 font-semibold hover:underline">Channels</Link> to generate labels here.
+              </p>
+            )}
+
+            {/* Fallback: manual tracking / mark shipped */}
+            <div className="pt-1">
+              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">…or enter tracking manually</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Status</label>
+                  <Select value={statusDraft} onChange={setStatusDraft} options={EDITABLE_STATUSES} fullWidth />
+                </div>
+                <Input
+                  label="Tracking number"
+                  value={trackingDraft}
+                  onChange={(e) => setTrackingDraft(e.target.value)}
+                  placeholder="e.g. 1Z999AA10123456784"
+                />
+                <Input
+                  label="Courier"
+                  value={courierDraft}
+                  onChange={(e) => setCourierDraft(e.target.value)}
+                  placeholder="e.g. Delhivery"
+                />
+                <Button
+                  variant="secondary"
+                  loading={statusMutation.isPending}
+                  onClick={() => statusMutation.mutate({
+                    status: statusDraft,
+                    trackingNumber: trackingDraft || undefined,
+                    courierName: courierDraft || undefined,
+                  })}
+                >
+                  Save
+                </Button>
+              </div>
+              <div className="mt-3">
+                <Button
+                  leftIcon={<PackageCheck size={14} />}
+                  loading={statusMutation.isPending}
+                  onClick={() => statusMutation.mutate({
+                    status: 'SHIPPED',
+                    trackingNumber: trackingDraft || undefined,
+                    courierName: courierDraft || undefined,
+                  })}
+                >
+                  Mark as shipped
+                </Button>
+              </div>
             </div>
+
             {order.channelOrderId && order.fulfillmentType === 'SELF' && (
               <p className="text-xs text-slate-500">
                 Marking this order shipped with a tracking number also confirms the shipment back to {order.channel?.name || 'the channel'} so the buyer sees tracking.
@@ -250,7 +381,35 @@ export default function OrderDetailPage() {
               <p className="text-xs text-slate-400">This order is {order.status.toLowerCase()}. You can still correct its status if needed.</p>
             )}
           </Card>
-        ) : null}
+        ) : (
+          /* Channel-fulfilled (FBA) — read-only info card, no manual controls. */
+          <Card className="p-5 space-y-3">
+            <div className="flex items-center gap-2">
+              <Store size={15} className="text-emerald-600" />
+              <span className="text-sm font-bold text-slate-800">
+                {isAmazonChannel ? 'Fulfilled by Amazon (FBA)' : `Fulfilled by ${order.channel?.name || 'channel'}`}
+              </span>
+              <Badge variant="violet" dot>no action needed</Badge>
+            </div>
+            <p className="text-sm text-slate-500">
+              {isAmazonChannel ? 'Amazon' : (order.channel?.name || 'The channel')} picks, packs and ships this order automatically and reports tracking back — no action needed on your part.
+            </p>
+            {(order.trackingNumber || order.status) && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-slate-200 bg-slate-50/60 dark:border-slate-700/60 dark:bg-slate-800/40 px-3 py-2.5 text-sm">
+                {order.trackingNumber ? (
+                  <div>
+                    <span className="text-slate-400">Tracking</span>{' '}
+                    <span className="font-mono text-slate-700">{order.trackingNumber}</span>
+                    {order.courierName ? <span className="text-slate-400"> · {order.courierName}</span> : null}
+                  </div>
+                ) : (
+                  <span className="text-slate-400">Tracking not reported yet</span>
+                )}
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${statusClass}`}>{order.status}</span>
+              </div>
+            )}
+          </Card>
+        )}
 
         {/* Amazon fulfilment (MCF) — only when an AMAZON_SMARTBIZ / AMAZON_FBA
             channel is connected. Lets the seller fulfil this order out of
