@@ -326,6 +326,52 @@ export default function OrdersPage() {
   ].filter(Boolean) as { key: string; label: string; clear: () => void }[];
   const clearFilters = () => { setStatus(''); setRisk(''); setChannelId(''); setFulfillment(''); setDateFrom(''); setDateTo(''); setSearch(''); setPage(1); };
 
+  // Context-aware empty state — the copy + actions match the active tab and
+  // whether a search/filter is narrowing the list, so the Manual tab never
+  // tells you to "connect a channel".
+  const hasActiveQuery = !!(search || status || risk || channelId || fulfillment || dateFrom || dateTo);
+  const ordersEmptyState = hasActiveQuery ? (
+    <EmptyState
+      icon={<ShoppingBag size={26} />}
+      iconBg="bg-slate-100 text-slate-500"
+      title="No matching orders"
+      description="No orders match your current search and filters. Try clearing them to see everything."
+      action={<Button variant="outline" leftIcon={<X size={14} />} onClick={clearFilters}>Clear filters</Button>}
+      size="lg"
+    />
+  ) : source === 'manual' ? (
+    <EmptyState
+      icon={<Hand size={26} />}
+      iconBg="bg-emerald-50 text-emerald-600"
+      title="No manual orders yet"
+      description="Manual orders are ones you create here for offline, phone, or B2B sales — they don't come from a connected channel."
+      action={<Button leftIcon={<Plus size={14} />} onClick={() => setModalOpen(true)}>New order</Button>}
+      decorative
+      size="lg"
+    />
+  ) : source === 'auto' ? (
+    <EmptyState
+      icon={<Zap size={26} />}
+      iconBg="bg-emerald-50 text-emerald-600"
+      title="No synced orders yet"
+      description="Orders from your connected channels (Amazon, Shopify, Flipkart…) appear here automatically. Connect a channel or run a sync to pull them in."
+      action={<Link href="/channels"><Button leftIcon={<Plug size={14} />}>Connect a channel</Button></Link>}
+      decorative
+      size="lg"
+    />
+  ) : (
+    <EmptyState
+      icon={<ShoppingBag size={28} />}
+      iconBg="bg-emerald-50 text-emerald-600"
+      title="No orders yet"
+      description="Orders flow in automatically from connected channels (Amazon, Shopify, Flipkart…). You can also create one manually for offline / B2B sales."
+      action={<Link href="/channels"><Button leftIcon={<Plug size={14} />}>Connect a channel</Button></Link>}
+      secondaryAction={<Button variant="ghost" size="sm" leftIcon={<Plus size={12} />} onClick={() => setModalOpen(true)}>Create manually</Button>}
+      decorative
+      size="lg"
+    />
+  );
+
   // Export a set of rows (visible columns) to CSV.
   const exportRows = (rows: any[]) => {
     const cols = ORDER_COLUMNS.filter((c) => !hiddenCols.has(c.key));
@@ -580,7 +626,7 @@ export default function OrdersPage() {
           <div className="p-3 sm:p-4 space-y-3 border-b border-slate-100 dark:border-slate-800">
             {/* Title row — subtitle + primary actions, inside the card */}
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <p className="text-sm font-medium text-slate-500">{`${data?.total || 0} total orders`}</p>
+              <p className="text-sm font-medium text-slate-500">{`${data?.total || 0} ${source === 'auto' ? 'auto-synced' : source === 'manual' ? 'manual' : 'total'} order${(data?.total || 0) === 1 ? '' : 's'}`}</p>
               <div className="flex items-center gap-2">
                 {/* Split button — Sync (all channels) + a menu to sync ONE channel */}
                 <div className="flex items-center">
@@ -791,24 +837,7 @@ export default function OrdersPage() {
                 )) : (
                   <tr>
                     <td colSpan={visibleColumns.length + 2} className="p-0">
-                      <EmptyState
-                        icon={<ShoppingBag size={28} />}
-                        iconBg="bg-emerald-50 text-emerald-600"
-                        title="No orders yet"
-                        description="Orders flow in automatically from connected channels (Amazon, Shopify, Flipkart…). You can also create one manually for offline / B2B sales."
-                        action={
-                          <Link href="/channels">
-                            <Button leftIcon={<Plug size={14} />}>Connect a channel</Button>
-                          </Link>
-                        }
-                        secondaryAction={
-                          <Button variant="ghost" size="sm" leftIcon={<Plus size={12} />} onClick={() => setModalOpen(true)}>
-                            Create manually
-                          </Button>
-                        }
-                        decorative
-                        size="lg"
-                      />
+                      {ordersEmptyState}
                     </td>
                   </tr>
                 )}
@@ -829,18 +858,7 @@ export default function OrdersPage() {
                 ))}
               </ShimmerTheme>
             ) : !sortedOrders.length ? (
-              <EmptyState
-                icon={<ShoppingBag size={28} />}
-                iconBg="bg-emerald-50 text-emerald-600"
-                title="No orders yet"
-                description="Orders flow in automatically from connected channels. You can also create one manually for offline / B2B sales."
-                action={
-                  <Button size="sm" leftIcon={<Plus size={12} />} onClick={() => setModalOpen(true)}>
-                    Create manually
-                  </Button>
-                }
-                decorative
-              />
+              ordersEmptyState
             ) : sortedOrders.map((o: any) => {
               const isAmazon = String(o.channel?.type || '').toUpperCase().includes('AMAZON');
               const fulLabel = o.fulfillmentType === 'CHANNEL' ? (isAmazon ? 'FBA' : 'Channel')
