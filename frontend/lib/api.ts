@@ -547,6 +547,14 @@ export const channelApi = {
     api.post(`/channels/${id}/returns/sync`, body || {}),
   returns: (id: string, params?: { limit?: number }) =>
     api.get(`/channels/${id}/returns`, { params }),
+
+  // Amazon Buy Shipping (Merchant Fulfillment, /mfn/v0) — seller-fulfilled labels
+  amazonMfnRates: (id: string, body: { orderId: string; warehouseId?: string; weight?: any; dimensions?: any }) =>
+    api.post(`/channels/${id}/amazon/mfn/rates`, body),
+  amazonMfnBuy: (id: string, body: { orderId: string; warehouseId?: string; shippingServiceId: string; shippingServiceOfferId?: string; weight?: any; dimensions?: any }) =>
+    api.post(`/channels/${id}/amazon/mfn/buy`, body),
+  amazonMfnCancel: (id: string, shipmentId: string) =>
+    api.delete(`/channels/${id}/amazon/mfn/${shipmentId}`),
 };
 
 export const customerApi = {

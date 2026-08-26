@@ -810,4 +810,95 @@ router.get('/:id/returns', requirePermission('channels.read'), async (req, res) 
   }
 });
 
+// ── Amazon Buy Shipping (Merchant Fulfillment, /mfn/v0) ────────────────────
+// Seller-fulfilled label purchase for an MFN order. Resolves the Amazon order
+// id + ship-from warehouse from our records, then rates / buys / cancels.
+async function loadOrderAndShipFrom(req) {
+  const tenantId = req.tenant.id;
+  const order = await prisma.order.findFirst({ where: { id: req.body.orderId, tenantId } });
+  if (!order) return { error: 'Order not found' };
+  if (!order.channelOrderId) return { error: 'Order has no Amazon order id' };
+  let shipFrom = {};
+  if (req.body.warehouseId) {
+    const wh = await prisma.warehouse.findFirst({ where: { id: req.body.warehouseId, tenantId } });
+    if (wh) {
+      const a = wh.address || {};
+      shipFrom = {
+        name: wh.name, line1: a.line1, line2: a.line2, city: a.city,
+        state: a.state, pincode: a.pincode, country: a.country || 'IN',
+        phone: wh.phone || a.phone, email: a.email,
+      };
+    }
+  }
+  return { order, shipFrom };
+}
+
+router.post('/:id/amazon/mfn/rates', requirePermission('shipments.create'), async (req, res) => {
+  try {
+    const channel = await loadTenantChannel(req);
+    if (!channel) return res.status(404).json({ error: 'Channel not found' });
+    const adapter = getAdapter(channel);
+    if (typeof adapter.getMfnRates !== 'function') {
+      return res.status(400).json({ error: 'This channel does not support Amazon Buy Shipping' });
+    }
+    const { order, shipFrom, error } = await loadOrderAndShipFrom(req);
+    if (error) return res.status(404).json({ error });
+    const rates = await adapter.getMfnRates(order.channelOrderId, {
+      shipFrom, weight: req.body.weight, dimensions: req.body.dimensions, declaredValue: req.body.declaredValue,
+    });
+    res.json({ rates });
+  } catch (err) {
+    res.status(500).json({ error: 'Rate lookup failed', details: err.message });
+  }
+});
+
+router.post('/:id/amazon/mfn/buy', requirePermission('shipments.create'), async (req, res) => {
+  try {
+    const channel = await loadTenantChannel(req);
+    if (!channel) return res.status(404).json({ error: 'Channel not found' });
+    const adapter = getAdapter(channel);
+    if (typeof adapter.buyMfnShipping !== 'function') {
+      return res.status(400).json({ error: 'This channel does not support Amazon Buy Shipping' });
+    }
+    const { order, shipFrom, error } = await loadOrderAndShipFrom(req);
+    if (error) return res.status(404).json({ error });
+    const result = await adapter.buyMfnShipping(order.channelOrderId, {
+      shipFrom, weight: req.body.weight, dimensions: req.body.dimensions, declaredValue: req.body.declaredValue,
+      shippingServiceId: req.body.shippingServiceId, shippingServiceOfferId: req.body.shippingServiceOfferId,
+    });
+    // Buying the label registers + confirms the shipment on Amazon, so advance
+    // the local order to SHIPPED with the tracking Amazon assigned.
+    if (result.trackingId) {
+      await prisma.order.update({
+        where: { id: order.id },
+        data: {
+          trackingNumber: result.trackingId,
+          courierName: result.carrier || 'Amazon',
+          channelShipmentId: result.shipmentId || null,
+          status: 'SHIPPED',
+          shippedAt: new Date(),
+        },
+      }).catch(() => {});
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: 'Buy shipping failed', details: err.message });
+  }
+});
+
+router.delete('/:id/amazon/mfn/:shipmentId', requirePermission('shipments.create'), async (req, res) => {
+  try {
+    const channel = await loadTenantChannel(req);
+    if (!channel) return res.status(404).json({ error: 'Channel not found' });
+    const adapter = getAdapter(channel);
+    if (typeof adapter.cancelMfnShipping !== 'function') {
+      return res.status(400).json({ error: 'This channel does not support Amazon Buy Shipping' });
+    }
+    const result = await adapter.cancelMfnShipping(req.params.shipmentId);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

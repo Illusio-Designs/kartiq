@@ -30,6 +30,9 @@ async function initDb() {
     { table: 'orders', column: 'fulfillmentType',        ddl: "VARCHAR(16) NOT NULL DEFAULT 'SELF'" },
     { table: 'orders', column: 'channelFulfillmentCenter', ddl: 'VARCHAR(191) DEFAULT NULL' },
     { table: 'orders', column: 'awb',                    ddl: 'VARCHAR(191) DEFAULT NULL' },
+    // Amazon Buy Shipping (MFN) shipment id — kept so a purchased label can be
+    // cancelled/voided later.
+    { table: 'orders', column: 'channelShipmentId',      ddl: 'VARCHAR(191) DEFAULT NULL' },
     { table: 'orders', column: 'courierTrackingUrl',     ddl: 'TEXT DEFAULT NULL' },
 
     // Data-quality flagging for channels that give incomplete orders

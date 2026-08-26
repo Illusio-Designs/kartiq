@@ -165,6 +165,87 @@ export default function OrderDetailPage() {
     if (ok) mcfCancelMutation.mutate(order.orderNumber);
   };
 
+  // ── Buy shipping via Amazon (Merchant Fulfilment / Buy Shipping) ────────────
+  // Amazon-partnered carrier label for a self-fulfilled (MFN) Amazon order:
+  // fetch eligible rates, pick one, buy the label. The buy call auto-confirms
+  // the shipment + stamps tracking on the order server-side, so we refetch.
+  const [amznWhId, setAmznWhId] = useState('');
+  const [amznWeight, setAmznWeight] = useState('500');
+  const [amznLength, setAmznLength] = useState('20');
+  const [amznWidth, setAmznWidth] = useState('15');
+  const [amznHeight, setAmznHeight] = useState('10');
+  const [amznRates, setAmznRates] = useState<any[] | null>(null);
+  const [amznServiceId, setAmznServiceId] = useState('');
+  const [amznResult, setAmznResult] = useState<any>(null);
+  const [amznLabelUrl, setAmznLabelUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (amznWhId) return;
+    if (order?.warehouse?.id) setAmznWhId(order.warehouse.id);
+    else if (warehouses.length) setAmznWhId(warehouses[0].id);
+  }, [order?.warehouse?.id, warehouses.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const amznWeightPayload = () => ({ value: Number(amznWeight) || 500, unit: 'grams' });
+  const amznDimsPayload = () => ({
+    length: Number(amznLength) || 0,
+    width: Number(amznWidth) || 0,
+    height: Number(amznHeight) || 0,
+    unit: 'centimeters',
+  });
+
+  const amznRatesMutation = useMutation({
+    mutationFn: () =>
+      channelApi
+        .amazonMfnRates(order.channelId || order.channel?.id, {
+          orderId: order.id,
+          warehouseId: amznWhId || undefined,
+          weight: amznWeightPayload(),
+          dimensions: amznDimsPayload(),
+        })
+        .then((r) => r.data),
+    onSuccess: (data: any) => {
+      const rates: any[] = Array.isArray(data?.rates) ? data.rates : [];
+      setAmznRates(rates);
+      setAmznServiceId('');
+      setAmznResult(null);
+      setAmznLabelUrl(null);
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not fetch Amazon rates'),
+  });
+
+  const amznBuyMutation = useMutation({
+    mutationFn: () => {
+      const rate = (amznRates || []).find((r) => r.serviceId === amznServiceId);
+      return channelApi
+        .amazonMfnBuy(order.channelId || order.channel?.id, {
+          orderId: order.id,
+          warehouseId: amznWhId || undefined,
+          shippingServiceId: amznServiceId,
+          shippingServiceOfferId: rate?.serviceOfferId || undefined,
+          weight: amznWeightPayload(),
+          dimensions: amznDimsPayload(),
+        })
+        .then((r) => r.data);
+    },
+    onSuccess: (data: any) => {
+      setAmznResult(data);
+      let url: string | null = null;
+      if (data?.label?.contentBase64) {
+        try {
+          const blob = new Blob(
+            [Uint8Array.from(atob(data.label.contentBase64), (c) => c.charCodeAt(0))],
+            { type: data.label.mime || 'application/pdf' },
+          );
+          url = URL.createObjectURL(blob);
+        } catch { url = null; }
+      }
+      setAmznLabelUrl(url);
+      qc.invalidateQueries({ queryKey: ['order', id] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      toast.success('Amazon shipping label purchased');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not buy Amazon label'),
+  });
+
   if (isLoading) {
     return <DetailPageSkeleton />;
   }
@@ -456,6 +537,160 @@ export default function OrderDetailPage() {
               <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm">
                 <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Amazon status</span>
                 <span className="font-semibold text-slate-700">{mcfTracking}</span>
+              </div>
+            )}
+          </Card>
+        )}
+
+        {/* Buy shipping via Amazon (Merchant Fulfilment / Buy Shipping) — only
+            for self-fulfilled (MFN) Amazon orders. The Amazon-preferred path:
+            buy a partnered-carrier label that auto-confirms the shipment and
+            keeps valid tracking for Prime & seller metrics. */}
+        {order.fulfillmentType === 'SELF' && isAmazonChannel && (
+          <Card className="p-5 space-y-4">
+            <div className="flex items-center gap-2 flex-wrap">
+              <PackageCheck size={15} className="text-emerald-600" />
+              <span className="text-sm font-bold text-slate-800">Buy shipping via Amazon</span>
+              <Badge variant="emerald" dot>Recommended</Badge>
+            </div>
+            <p className="text-xs text-slate-500">
+              Amazon-partnered carrier label — auto-confirms the shipment and keeps valid tracking (best for Prime &amp; metrics).
+            </p>
+
+            {/* Package inputs */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 items-end">
+              <div className="col-span-2 sm:col-span-3 lg:col-span-2">
+                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Ship from</label>
+                <Select
+                  value={amznWhId}
+                  onChange={setAmznWhId}
+                  options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+                  placeholder="Select warehouse…"
+                  fullWidth
+                />
+              </div>
+              <Input
+                id="amzn-weight"
+                label="Weight (g)"
+                type="number"
+                min={1}
+                value={amznWeight}
+                onChange={(e) => setAmznWeight(e.target.value)}
+              />
+              <Input
+                id="amzn-length"
+                label="L (cm)"
+                type="number"
+                min={1}
+                value={amznLength}
+                onChange={(e) => setAmznLength(e.target.value)}
+              />
+              <Input
+                id="amzn-width"
+                label="W (cm)"
+                type="number"
+                min={1}
+                value={amznWidth}
+                onChange={(e) => setAmznWidth(e.target.value)}
+              />
+              <Input
+                id="amzn-height"
+                label="H (cm)"
+                type="number"
+                min={1}
+                value={amznHeight}
+                onChange={(e) => setAmznHeight(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Button
+                leftIcon={<Truck size={14} />}
+                loading={amznRatesMutation.isPending}
+                onClick={() => amznRatesMutation.mutate()}
+              >
+                Get Amazon rates
+              </Button>
+            </div>
+
+            {/* Rates list */}
+            {amznRates !== null && (
+              amznRates.length === 0 ? (
+                <p className="text-sm text-slate-500">No eligible services — check the address/weight.</p>
+              ) : (
+                <div className="space-y-2">
+                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Select a service</div>
+                  {amznRates.map((r: any) => {
+                    const rid = r.serviceId;
+                    const active = amznServiceId === rid;
+                    return (
+                      <button
+                        key={`${rid}-${r.serviceOfferId || ''}`}
+                        type="button"
+                        onClick={() => setAmznServiceId(rid)}
+                        className={`w-full flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-xl border px-3 py-2.5 text-sm text-left transition-colors ${
+                          active
+                            ? 'border-emerald-400 bg-emerald-50/70 dark:border-emerald-500/40 dark:bg-emerald-500/10'
+                            : 'border-slate-200 dark:border-slate-700/60 hover:border-slate-300'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
+                          {active
+                            ? <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
+                            : <span className="w-[15px] shrink-0" />}
+                          <span className="font-semibold text-slate-800 truncate">{r.carrier || 'Carrier'}</span>
+                          <span className="text-slate-400">·</span>
+                          <span className="text-slate-600 truncate">{r.name || 'Service'}</span>
+                        </span>
+                        <span className="flex items-center gap-3 shrink-0">
+                          {r.estimatedDelivery && <span className="text-xs text-slate-400">ETA {r.estimatedDelivery}</span>}
+                          <span className="font-bold text-slate-900 tabular-nums">
+                            {r.amount != null ? `${r.amount} ${r.currency || ''}`.trim() : '—'}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                  <div className="pt-1">
+                    <Button
+                      leftIcon={<PackageCheck size={14} />}
+                      loading={amznBuyMutation.isPending}
+                      disabled={!amznServiceId}
+                      onClick={() => amznBuyMutation.mutate()}
+                    >
+                      Buy label
+                    </Button>
+                  </div>
+                </div>
+              )
+            )}
+
+            {/* Purchased label result */}
+            {amznResult && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-emerald-200 bg-emerald-50/70 dark:border-emerald-500/30 dark:bg-emerald-500/10 px-3 py-2.5 text-sm">
+                <span className="flex items-center gap-1.5 text-emerald-700 font-semibold">
+                  <CheckCircle2 size={15} /> Label purchased
+                </span>
+                {amznResult.trackingId && (
+                  <div>
+                    <span className="text-slate-400">AWB</span>{' '}
+                    <span className="font-mono text-slate-700">{amznResult.trackingId}</span>
+                    {amznResult.carrier ? <span className="text-slate-400"> · {amznResult.carrier}</span> : null}
+                    {amznResult.serviceName ? <span className="text-slate-400"> · {amznResult.serviceName}</span> : null}
+                  </div>
+                )}
+                {amznLabelUrl ? (
+                  <a
+                    href={amznLabelUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-emerald-700 font-semibold hover:underline"
+                  >
+                    <Printer size={14} /> Print / download label
+                  </a>
+                ) : (
+                  <span className="text-slate-400">Label document not returned — tracking is confirmed above.</span>
+                )}
               </div>
             )}
           </Card>

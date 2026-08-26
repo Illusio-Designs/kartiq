@@ -723,6 +723,124 @@ class AmazonAdapter {
     return out;
   }
 
+  // ── Amazon Buy Shipping (Merchant Fulfillment API, /mfn/v0) ────────────────
+  // Seller-fulfilled label purchase: get rates → buy the label → Amazon
+  // auto-confirms the shipment. Preferred over self-ship + confirmShipment for
+  // MFN (valid tracking, metric protection, Seller-Fulfilled Prime). The order
+  // still ships from OUR warehouse; Amazon just supplies the carrier + label.
+
+  async _getAmazonOrderItemList(amazonOrderId) {
+    const data = await this._request('GET', `/orders/v0/orders/${encodeURIComponent(amazonOrderId)}/orderItems`);
+    return (data.payload?.OrderItems || []).map((it) => ({
+      OrderItemId: it.OrderItemId,
+      Quantity: Number(it.QuantityOrdered || 1) || 1,
+    }));
+  }
+
+  _buildShipmentRequestDetails(amazonOrderId, itemList, opts = {}) {
+    const w = opts.weight || {};
+    const d = opts.dimensions || {};
+    const s = opts.shipFrom || {};
+    return {
+      AmazonOrderId: amazonOrderId,
+      ItemList: itemList,
+      ShipFromAddress: {
+        Name: s.name || 'Warehouse',
+        AddressLine1: s.line1 || '',
+        ...(s.line2 ? { AddressLine2: s.line2 } : {}),
+        City: s.city || '',
+        StateOrProvinceCode: s.state || '',
+        PostalCode: String(s.pincode || ''),
+        CountryCode: s.country || 'IN',
+        Phone: String(s.phone || ''),
+        ...(s.email ? { Email: s.email } : {}),
+      },
+      PackageDimensions: {
+        Length: Number(d.length || 20),
+        Width: Number(d.width || 15),
+        Height: Number(d.height || 10),
+        Unit: d.unit || 'centimeters',
+      },
+      Weight: { Value: Number(w.value || 500), Unit: w.unit || 'grams' },
+      ShippingServiceOptions: {
+        DeliveryExperience: opts.deliveryExperience || 'DeliveryConfirmationWithoutSignature',
+        CarrierWillPickUp: opts.carrierWillPickUp ?? false,
+        ...(opts.declaredValue ? { DeclaredValue: opts.declaredValue } : {}),
+      },
+    };
+  }
+
+  // Get eligible Amazon-partnered shipping services (rates) for an order.
+  async getMfnRates(amazonOrderId, opts = {}) {
+    const itemList = opts.itemList || await this._getAmazonOrderItemList(amazonOrderId);
+    const ShipmentRequestDetails = this._buildShipmentRequestDetails(amazonOrderId, itemList, opts);
+    const token = await this._getAccessToken();
+    const { data } = await axios.post(
+      `${this.endpoint}/mfn/v0/eligibleShippingServices`,
+      { ShipmentRequestDetails },
+      { headers: { 'x-amz-access-token': token, 'Content-Type': 'application/json' } }
+    );
+    const list = data.payload?.ShippingServiceList || [];
+    return list.map((sv) => ({
+      serviceId: sv.ShippingServiceId,
+      serviceOfferId: sv.ShippingServiceOfferId,
+      name: sv.ShippingServiceName,
+      carrier: sv.CarrierName,
+      amount: Number(sv.Rate?.Amount ?? 0),
+      currency: sv.Rate?.CurrencyCode || null,
+      shipDate: sv.ShipDate || null,
+      estimatedDelivery: sv.LatestEstimatedDeliveryDate || sv.EarliestEstimatedDeliveryDate || null,
+    }));
+  }
+
+  // Buy the label for a chosen service. Amazon returns the label (a GZIP'd,
+  // base64 file — PDF/PNG/ZPL) which we gunzip and hand back for printing, and
+  // registers/confirms the shipment on Amazon.
+  async buyMfnShipping(amazonOrderId, opts = {}) {
+    if (!opts.shippingServiceId) throw new Error('buyMfnShipping requires a shippingServiceId');
+    const itemList = opts.itemList || await this._getAmazonOrderItemList(amazonOrderId);
+    const ShipmentRequestDetails = this._buildShipmentRequestDetails(amazonOrderId, itemList, opts);
+    const body = { ShipmentRequestDetails, ShippingServiceId: opts.shippingServiceId };
+    if (opts.shippingServiceOfferId) body.ShippingServiceOfferId = opts.shippingServiceOfferId;
+
+    const token = await this._getAccessToken();
+    const { data } = await axios.post(
+      `${this.endpoint}/mfn/v0/shipments`,
+      body,
+      { headers: { 'x-amz-access-token': token, 'Content-Type': 'application/json' } }
+    );
+    const p = data.payload || {};
+    const fc = p.Label?.FileContents;
+    let labelBase64 = null;
+    let mime = null;
+    if (fc?.Contents) {
+      try {
+        const zlib = require('zlib');
+        labelBase64 = zlib.gunzipSync(Buffer.from(fc.Contents, 'base64')).toString('base64');
+      } catch (_) {
+        labelBase64 = fc.Contents; // not gzipped — use as-is
+      }
+      const t = String(fc.FileType || 'PDF').toUpperCase();
+      mime = t.includes('PNG') ? 'image/png' : t.includes('ZPL') ? 'text/plain' : 'application/pdf';
+    }
+    return {
+      shipmentId: p.ShipmentId || null,
+      trackingId: p.TrackingId || null,
+      carrier: p.ShippingService?.CarrierName || null,
+      serviceName: p.ShippingService?.ShippingServiceName || null,
+      cost: p.ShippingService?.Rate
+        ? { amount: Number(p.ShippingService.Rate.Amount || 0), currency: p.ShippingService.Rate.CurrencyCode || null }
+        : null,
+      status: p.Status || null,
+      label: labelBase64 ? { contentBase64: labelBase64, mime } : null,
+    };
+  }
+
+  async cancelMfnShipping(shipmentId) {
+    await this._request('DELETE', `/mfn/v0/shipments/${encodeURIComponent(shipmentId)}`);
+    return { cancelled: true, shipmentId };
+  }
+
   _transformOrder(o) {
     return {
       channelOrderId: o.AmazonOrderId,
