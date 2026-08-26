@@ -137,6 +137,16 @@ const orderStatusVariant = (s?: string): 'emerald' | 'blue' | 'violet' | 'amber'
   }
 };
 
+// The RTO "NEEDS REVIEW" gate only applies before an order is fulfilled. Once
+// it ships (or reaches any terminal state) the review is moot, so a lingering
+// `needsApproval` flag must NOT mask the real status in the table.
+const SHIPPED_OR_TERMINAL = new Set([
+  'SHIPPED', 'PARTIALLY_SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED',
+  'CANCELLED', 'RETURNED', 'REFUNDED', 'FAILED',
+]);
+const showsNeedsReview = (o: any): boolean =>
+  !!o.needsApproval && !SHIPPED_OR_TERMINAL.has(String(o.status || '').toUpperCase());
+
 type FulfillmentTab = 'all' | 'auto' | 'manual';
 const FULFILLMENT_PARAM: Record<FulfillmentTab, string | undefined> = {
   all: undefined,
@@ -473,7 +483,7 @@ export default function OrdersPage() {
       case 'status':
         return (
           <td key={key} className="px-3 py-2.5 whitespace-nowrap">
-            {o.needsApproval ? (
+            {showsNeedsReview(o) ? (
               <Badge variant="rose" dot>NEEDS REVIEW</Badge>
             ) : (
               <Badge variant={orderStatusVariant(o.status)}>{o.status}</Badge>
@@ -500,7 +510,7 @@ export default function OrdersPage() {
         </BulkActionBar>
 
         {/* Needs-approval banner */}
-        {(data?.orders || []).some((o: any) => o.needsApproval) && risk !== 'APPROVAL' && (
+        {(data?.orders || []).some((o: any) => showsNeedsReview(o)) && risk !== 'APPROVAL' && (
           <button
             onClick={() => setRisk('APPROVAL')}
             className="w-full flex items-center gap-3 bg-rose-50 border border-rose-200 rounded-xl p-4 hover:bg-rose-100 transition-colors text-left"
@@ -510,7 +520,7 @@ export default function OrdersPage() {
             </div>
             <div className="flex-1">
               <div className="text-sm font-extrabold text-rose-700">
-                {(data?.orders || []).filter((o: any) => o.needsApproval).length} order(s) need your review
+                {(data?.orders || []).filter((o: any) => showsNeedsReview(o)).length} order(s) need your review
               </div>
               <div className="text-xs text-rose-600 font-medium">
                 High RTO risk — click to review and approve or reject
@@ -718,7 +728,7 @@ export default function OrdersPage() {
                     {visibleColumns.map((c) => renderCell(o, c.key))}
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end gap-1">
-                        {!!o.needsApproval && (
+                        {showsNeedsReview(o) && (
                           <>
                             <Tooltip content="Approve order">
                               <Button variant="outline" size="icon" onClick={() => approveMutation.mutate(o.id)} disabled={approveMutation.isPending}>

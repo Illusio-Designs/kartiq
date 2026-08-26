@@ -877,6 +877,9 @@ router.post('/:id/amazon/mfn/buy', requirePermission('shipments.create'), async 
           channelShipmentId: result.shipmentId || null,
           status: 'SHIPPED',
           shippedAt: new Date(),
+          // Buying the label ships the order — the RTO review gate is moot now,
+          // so clear it to avoid the "NEEDS REVIEW" badge masking a SHIPPED status.
+          needsApproval: false,
         },
       }).catch(() => {});
     }

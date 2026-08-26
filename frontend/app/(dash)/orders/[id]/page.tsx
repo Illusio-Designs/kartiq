@@ -67,6 +67,41 @@ export default function OrderDetailPage() {
     onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Failed to update order'),
   });
 
+  // ── RTO review gate (approve / reject) ──────────────────────────────────────
+  // High RTO-risk orders are held with needsApproval=true before fulfilment.
+  // Approving confirms the order so it can ship; rejecting cancels it.
+  const approveMutation = useMutation({
+    mutationFn: () => orderApi.approve(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['order', id] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      toast.success('Order approved — cleared for fulfilment');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not approve order'),
+  });
+  const rejectMutation = useMutation({
+    mutationFn: () => orderApi.reject(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['order', id] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      toast.success('Order rejected and cancelled');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not reject order'),
+  });
+
+  // ── Buyer review request (Amazon Solicitations) ─────────────────────────────
+  // Ask the marketplace to send the "Request a Review" solicitation to the
+  // buyer. Amazon only permits this 5–30 days after delivery.
+  const requestReviewMutation = useMutation({
+    mutationFn: () => orderApi.requestReview(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['order', id] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      toast.success('Buyer review requested via the channel');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not request review'),
+  });
+
   // ── Generate label (self-fulfilled) ────────────────────────────────────────
   // A connected logistics courier (category === 'LOGISTICS') mints a real AWB
   // for this order and ships it from the chosen warehouse. The backend also
@@ -268,6 +303,21 @@ export default function OrderDetailPage() {
   const editable = order.fulfillmentType !== 'CHANNEL';
   const isClosed = order.status === 'DELIVERED' || order.status === 'CANCELLED';
   const isAmazonChannel = String(order.channel?.type || '').toUpperCase().includes('AMAZON');
+
+  // ── Review state ────────────────────────────────────────────────────────────
+  // (1) RTO approval gate — only meaningful before the order ships. A lingering
+  //     needsApproval flag on a shipped/terminal order must not show as pending.
+  const SHIPPED_OR_TERMINAL = ['SHIPPED', 'PARTIALLY_SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED', 'RETURNED', 'REFUNDED', 'FAILED'];
+  const needsReview = !!order.needsApproval && !SHIPPED_OR_TERMINAL.includes(String(order.status || '').toUpperCase());
+  // (2) Buyer review request eligibility — delivered, or Amazon shipped 7+ days
+  //     ago (Amazon has no "delivered" event; the API enforces the 5–30d window).
+  const AMZ_SHIPPED_REVIEW_DAYS = 7;
+  const shippedAgo = order.shippedAt || order.orderedAt;
+  const reviewEligible = !!order.channelOrderId && !order.reviewRequestedAt && (
+    order.status === 'DELIVERED' ||
+    (order.status === 'SHIPPED' && isAmazonChannel && shippedAgo &&
+      Date.now() - new Date(shippedAgo).getTime() >= AMZ_SHIPPED_REVIEW_DAYS * 86400000)
+  );
   // AWB + label link surfaced right after a courier mints them.
   const generatedAwb = shipResult ? (shipResult.awbCode || shipResult.waybill || null) : null;
   const generatedLabelUrl = shipResult ? (shipResult.labelUrl || shipResult.label || shipResult.awbUrl || null) : null;
@@ -326,6 +376,68 @@ export default function OrderDetailPage() {
             </div>
           )}
         </Card>
+
+        {/* RTO review gate — high-risk order held for a human decision before
+            fulfilment. Approve to clear it for shipping, or reject to cancel. */}
+        {needsReview && (
+          <Card className="p-5 border-rose-200 bg-rose-50/60">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center shrink-0">
+                <XCircle size={18} className="text-rose-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-extrabold text-rose-700">Needs your review before fulfilment</span>
+                  {order.rtoRiskLevel && (
+                    <Badge variant="rose" dot>RTO {order.rtoScore ?? 0}/100 · {order.rtoRiskLevel}</Badge>
+                  )}
+                </div>
+                <p className="text-xs text-rose-600 font-medium mt-1">
+                  Flagged as high return-to-origin risk. Approve to confirm and allow shipping, or reject to cancel the order.
+                </p>
+                <div className="flex items-center gap-2 mt-3">
+                  <Button size="sm" leftIcon={<CheckCircle2 size={14} />} loading={approveMutation.isPending} onClick={() => approveMutation.mutate()}>
+                    Approve &amp; confirm
+                  </Button>
+                  <Button size="sm" variant="danger" leftIcon={<XCircle size={14} />} loading={rejectMutation.isPending}
+                    onClick={async () => { if (await confirm({ title: 'Reject this order?', description: 'This cancels the order due to RTO risk. This cannot be undone.', variant: 'danger' })) rejectMutation.mutate(); }}>
+                    Reject &amp; cancel
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Buyer review request — once delivered (or Amazon-shipped long enough
+            ago) ask the marketplace to solicit a product review from the buyer. */}
+        {(reviewEligible || order.reviewRequestedAt) && (
+          <Card className="p-5">
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
+                <CheckCircle2 size={18} className="text-amber-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-bold text-slate-800">Buyer review</div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {order.reviewRequestedAt
+                    ? `Review requested ${new Date(order.reviewRequestedAt).toLocaleDateString()} — the channel sent the buyer a review solicitation.`
+                    : 'Ask the marketplace to send this buyer a “Request a Review” message (Amazon allows this 5–30 days after delivery).'}
+                </p>
+                {order.reviewRequestError && !order.reviewRequestedAt && (
+                  <p className="text-xs text-rose-600 mt-1">Last attempt: {order.reviewRequestError}</p>
+                )}
+              </div>
+              {order.reviewRequestedAt ? (
+                <Badge variant="emerald" dot>Requested</Badge>
+              ) : (
+                <Button size="sm" variant="outline" loading={requestReviewMutation.isPending} onClick={() => requestReviewMutation.mutate()}>
+                  Request review
+                </Button>
+              )}
+            </div>
+          </Card>
+        )}
 
         {/* Ship this order — self-fulfilled / manual orders. Preferred path:
             generate a real label via a connected logistics courier. Fallback:
