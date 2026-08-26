@@ -263,6 +263,34 @@ async function initDb() {
       KEY \`channel_returns_tenant_idx\` (\`tenantId\`, \`returnDate\`),
       KEY \`channel_returns_channel_idx\` (\`channelId\`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+    // Order videos (VMS — Video Management) — packing/dispatch clips attached
+    // to an order as proof-of-packing for RTO/return/chargeback disputes. The
+    // bytes live in object storage; this row holds the URL + metadata only.
+    // deleteAfter is stamped when the order is delivered (deliveredAt +
+    // retention window); a background job prunes rows past that date unless a
+    // return/dispute is still open. status: ACTIVE | DELETED.
+    `CREATE TABLE IF NOT EXISTS \`order_videos\` (
+      \`id\` varchar(191) NOT NULL,
+      \`tenantId\` varchar(191) NOT NULL,
+      \`orderId\` varchar(191) NOT NULL,
+      \`orderNumber\` varchar(191) DEFAULT NULL,
+      \`type\` varchar(24) NOT NULL DEFAULT 'PACKING',
+      \`url\` text NOT NULL,
+      \`storageKey\` varchar(512) DEFAULT NULL,
+      \`thumbnailUrl\` text DEFAULT NULL,
+      \`sizeBytes\` bigint(20) DEFAULT NULL,
+      \`durationSec\` int(11) DEFAULT NULL,
+      \`status\` varchar(16) NOT NULL DEFAULT 'ACTIVE',
+      \`capturedAt\` datetime(3) DEFAULT NULL,
+      \`deleteAfter\` datetime(3) DEFAULT NULL,
+      \`uploadedById\` varchar(191) DEFAULT NULL,
+      \`createdAt\` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+      \`updatedAt\` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
+      \`deletedAt\` datetime(3) DEFAULT NULL,
+      PRIMARY KEY (\`id\`),
+      KEY \`order_videos_tenant_order_idx\` (\`tenantId\`, \`orderId\`),
+      KEY \`order_videos_prune_idx\` (\`status\`, \`deleteAfter\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
     // Background job queue — durable retry/DLQ without needing Redis.
     // status: pending | running | done | dead.
     // Workers claim a row via UPDATE (atomic) and run the registered handler.

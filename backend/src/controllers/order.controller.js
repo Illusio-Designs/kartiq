@@ -3,6 +3,7 @@ const prisma = require('../utils/prisma');
 const { notifyTenant } = require('../services/notifications.service');
 const { confirmChannelShipment } = require('../services/channel.service');
 const { applyOrderStock } = require('../services/stock.service');
+const { stampRetentionOnDelivery } = require('../services/vms.service');
 
 // Move stock for a self-fulfilled order after its status changed (deduct on
 // ship, release on cancel, add back on return). Best-effort, idempotent.
@@ -397,6 +398,12 @@ const updateOrderStatus = async (req, res) => {
     }
 
     await moveOrderStock(order); // deduct on ship / add back on return, etc.
+
+    // On delivery, start the retention clock on any packing/dispatch videos so
+    // they're auto-pruned RETENTION_DAYS later (unless a dispute is open).
+    if (status === 'DELIVERED') {
+      stampRetentionOnDelivery(order).catch(() => {});
+    }
 
     res.json(order);
   } catch (err) {

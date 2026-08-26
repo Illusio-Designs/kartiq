@@ -461,6 +461,13 @@ export const orderApi = {
   enrich: (id: string, body: any) => api.patch(`/orders/${id}/enrich`, body),
   setFulfillment: (id: string, body: { fulfillmentType: 'SELF' | 'CHANNEL' | 'DROPSHIP'; channelFulfillmentCenter?: string }) =>
     api.patch(`/orders/${id}/fulfillment`, body),
+  // Video Management (VMS) — packing/dispatch clips (plan feature 'vms')
+  listVideos: (id: string) => api.get(`/orders/${id}/videos`),
+  addVideoUrl: (id: string, body: { url: string; type?: string; durationSec?: number; sizeBytes?: number; capturedAt?: string }) =>
+    api.post(`/orders/${id}/videos`, body),
+  uploadVideo: (id: string, body: { dataUrl: string; type?: string; durationSec?: number; capturedAt?: string }) =>
+    api.post(`/orders/${id}/videos/upload`, body),
+  deleteVideo: (id: string, videoId: string) => api.delete(`/orders/${id}/videos/${videoId}`),
 };
 
 export const warehouseApi = {

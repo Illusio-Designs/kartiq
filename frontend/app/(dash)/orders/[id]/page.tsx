@@ -2,14 +2,15 @@
 
 import { useParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Package, Truck, PackageCheck, Navigation, XCircle, Ship, Printer, Store, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Package, Truck, PackageCheck, Navigation, XCircle, Ship, Printer, Store, CheckCircle2, Video, Upload, Trash2, ShieldCheck, Clock } from 'lucide-react';
 import { orderApi, channelApi, warehouseApi } from '@/lib/api';
 import { formatCurrency, formatDateTime, ORDER_STATUS_COLORS } from '@/lib/utils';
 import { DetailPageSkeleton } from '@/components/Shimmer';
 import { Badge, Button, Card, Input, Select, useConfirm } from '@/components/ui';
 import { toast } from '@/store/toast.store';
+import { useAuthStore } from '@/store/auth.store';
 
 // Statuses a seller can set manually on a self-fulfilled (MFN) / manual order.
 const EDITABLE_STATUSES = [
@@ -37,6 +38,8 @@ function fulfillmentInfo(order: any): { label: string; short: string; variant: '
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
+  const hasFeature = useAuthStore((s) => s.hasFeature);
+  const vmsEnabled = hasFeature('vms');
 
   const { data: order, isLoading, isError } = useQuery({
     queryKey: ['order', id],
@@ -280,6 +283,67 @@ export default function OrderDetailPage() {
     },
     onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not buy Amazon label'),
   });
+
+  // ── Video Management (VMS) — packing/dispatch clips ─────────────────────────
+  // Plan-gated feature: only fetch/show when the tenant's plan includes 'vms'.
+  const { data: videoData } = useQuery({
+    queryKey: ['order-videos', id],
+    queryFn: () => orderApi.listVideos(id).then((r) => r.data),
+    enabled: !!id && vmsEnabled,
+  });
+  const videos: any[] = videoData?.videos || [];
+  const retentionDays: number = videoData?.retentionDays ?? 30;
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [videoType, setVideoType] = useState<'PACKING' | 'DISPATCH'>('PACKING');
+  const [uploading, setUploading] = useState(false);
+
+  const uploadVideoMutation = useMutation({
+    mutationFn: (body: { dataUrl: string; type: string; durationSec?: number }) => orderApi.uploadVideo(id, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['order-videos', id] });
+      toast.success('Video attached to order');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not upload video'),
+    onSettled: () => setUploading(false),
+  });
+
+  const deleteVideoMutation = useMutation({
+    mutationFn: (videoId: string) => orderApi.deleteVideo(id, videoId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['order-videos', id] });
+      toast.success('Video removed');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not remove video'),
+  });
+
+  // Read the picked file to a base64 data URL and probe its duration via a
+  // hidden <video> before uploading, so we store the real clip length.
+  const handleVideoPicked = (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith('video/')) { toast.error('Please choose a video file'); return; }
+    if (file.size > 60 * 1024 * 1024) { toast.error('Video is too large (max 60 MB). Keep packing clips short.'); return; }
+    setUploading(true);
+    const reader = new FileReader();
+    reader.onerror = () => { setUploading(false); toast.error('Could not read the video file'); };
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      // Probe duration (best-effort — upload proceeds even if it fails).
+      const probe = document.createElement('video');
+      probe.preload = 'metadata';
+      let done = false;
+      const go = (durationSec?: number) => {
+        if (done) return; done = true;
+        uploadVideoMutation.mutate({ dataUrl, type: videoType, durationSec });
+      };
+      probe.onloadedmetadata = () => go(Number.isFinite(probe.duration) ? Math.round(probe.duration) : undefined);
+      probe.onerror = () => go(undefined);
+      probe.src = dataUrl;
+      // Fallback if metadata never fires.
+      setTimeout(() => go(undefined), 4000);
+    };
+    reader.readAsDataURL(file);
+  };
 
   if (isLoading) {
     return <DetailPageSkeleton />;
@@ -898,6 +962,92 @@ export default function OrderDetailPage() {
           </Card>
         </div>
 
+        {/* Video Management (VMS) — packing/dispatch proof. Plan-gated. */}
+        {vmsEnabled && (
+          <Card className="overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                  <Video size={17} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">Packing &amp; dispatch videos</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Proof of what left the warehouse — your evidence for return / RTO / chargeback disputes.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="w-32 hidden sm:block">
+                  <Select
+                    value={videoType}
+                    onChange={(v) => setVideoType(v as 'PACKING' | 'DISPATCH')}
+                    options={[{ value: 'PACKING', label: 'Packing' }, { value: 'DISPATCH', label: 'Dispatch' }]}
+                    fullWidth
+                  />
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="video/*"
+                  className="hidden"
+                  onChange={(e) => { handleVideoPicked(e.target.files?.[0]); e.target.value = ''; }}
+                />
+                <Button size="sm" leftIcon={<Upload size={14} />} loading={uploading} onClick={() => fileInputRef.current?.click()}>
+                  Upload video
+                </Button>
+              </div>
+            </div>
+
+            {/* Retention note */}
+            <div className="flex items-start gap-2 px-5 py-3 bg-slate-50/60 border-b border-slate-100 text-xs text-slate-500">
+              <ShieldCheck size={14} className="mt-0.5 shrink-0 text-emerald-500" />
+              <span>
+                Videos are kept until <b className="text-slate-700">{retentionDays} days after delivery</b>, then auto-removed to save storage.
+                If a return or dispute is still open, the clip is held until it clears.
+              </span>
+            </div>
+
+            {videos.length === 0 ? (
+              <div className="px-5 py-10 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 mx-auto flex items-center justify-center mb-3">
+                  <Video size={22} />
+                </div>
+                <p className="text-sm font-semibold text-slate-600">No videos yet</p>
+                <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">Record a short clip as you pack this order, then upload it here. Keep it under 60&nbsp;MB.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-5">
+                {videos.map((v: any) => (
+                  <div key={v.id} className="rounded-2xl border border-slate-200 dark:border-slate-700/60 overflow-hidden bg-slate-50/40">
+                    {/* Packing/dispatch proof clips have no captions track — nothing to caption. */}
+                    {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                    <video src={v.url} controls preload="metadata" className="w-full aspect-video bg-black object-contain" />
+                    <div className="p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <Badge variant={v.type === 'DISPATCH' ? 'blue' : 'emerald'} dot>{v.type === 'DISPATCH' ? 'Dispatch' : 'Packing'}</Badge>
+                        <Button variant="ghost" size="sm" className="text-rose-600 hover:text-rose-700 -mr-1"
+                          loading={deleteVideoMutation.isPending && deleteVideoMutation.variables === v.id}
+                          onClick={async () => { if (await confirm({ title: 'Remove this video?', description: 'The clip will be permanently deleted.', confirmLabel: 'Delete', variant: 'danger' })) deleteVideoMutation.mutate(v.id); }}>
+                          <Trash2 size={13} />
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-400 flex-wrap">
+                        {typeof v.durationSec === 'number' && <span>{formatDuration(v.durationSec)}</span>}
+                        {typeof v.sizeBytes === 'number' && <span>· {formatBytes(v.sizeBytes)}</span>}
+                        {v.capturedAt && <span>· {new Date(v.capturedAt).toLocaleDateString()}</span>}
+                      </div>
+                      {v.deleteAfter && (
+                        <div className="flex items-center gap-1.5 text-[11px] text-amber-600">
+                          <Clock size={11} /> Auto-removes {new Date(v.deleteAfter).toLocaleDateString()}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        )}
+
         {/* Shipping address */}
         {order.shippingAddress && (
           <Card className="p-5">
@@ -912,6 +1062,20 @@ export default function OrderDetailPage() {
         {confirmUi}
     </div>
   );
+}
+
+function formatDuration(sec: number): string {
+  if (!Number.isFinite(sec) || sec <= 0) return '0s';
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
 function InfoCard({ label, value, sub }: { label: string; value: string; sub?: string }) {

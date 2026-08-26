@@ -1,11 +1,15 @@
 const { Router } = require('express');
+const { randomUUID } = require('crypto');
 const { getOrders, getOrder, getOrderStats, createOrder, updateOrderStatus, cancelOrder } = require('../controllers/order.controller');
 const {
-  authenticate, requireTenant, requirePermission, enforceLimit,
+  authenticate, requireTenant, requirePermission, requireFeature, enforceLimit,
 } = require('../middleware/auth.middleware');
 const { requestReviewForOrder, processReviewQueue, REVIEW_DELAY_HOURS } = require('../services/review.service');
 const { rankWarehouses, pickBestWarehouse } = require('../services/routing.service');
 const { scoreAndPersist } = require('../services/rto.service');
+const { VIDEO_TYPES, RETENTION_DAYS, stampRetentionOnDelivery } = require('../services/vms.service');
+const { putObject, deleteObject } = require('../services/storage.service');
+const db = require('../utils/db');
 const prisma = require('../utils/prisma');
 
 const router = Router();
@@ -247,6 +251,142 @@ router.patch('/:id/warehouse', requirePermission('orders.update'), async (req, r
       data: { warehouseId: targetId },
     });
     res.json({ order: updated, reason });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Video Management (VMS) — packing/dispatch videos on an order ─────────────
+// Plan-gated: requireFeature('vms'). Kartriq stores the video URL + metadata,
+// not the bytes (the client uploads to object storage and posts us the URL).
+// Retention is handled by vms.service — clips are pruned RETENTION_DAYS after
+// the order is delivered, unless a return/dispute is still open.
+
+// List the videos on an order (newest first).
+router.get('/:id/videos', requirePermission('orders.read'), requireFeature('vms'), async (req, res) => {
+  try {
+    const order = await prisma.order.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const videos = await db('order_videos')
+      .where({ orderId: order.id, tenantId: req.tenant.id, status: 'ACTIVE' })
+      .orderBy('createdAt', 'desc');
+    res.json({ videos, total: videos.length, retentionDays: RETENTION_DAYS });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Attach a video to an order. Body: { url, type?, storageKey?, thumbnailUrl?,
+// sizeBytes?, durationSec?, capturedAt? }. If the order is already delivered,
+// the retention clock is stamped immediately.
+router.post('/:id/videos', requirePermission('orders.update'), requireFeature('vms'), async (req, res) => {
+  try {
+    const { url, type, storageKey, thumbnailUrl, sizeBytes, durationSec, capturedAt } = req.body || {};
+    if (!url || typeof url !== 'string') return res.status(400).json({ error: 'A video url is required' });
+    const vtype = VIDEO_TYPES.includes(String(type || '').toUpperCase()) ? String(type).toUpperCase() : 'PACKING';
+
+    const order = await prisma.order.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const now = new Date();
+    // Delivered already? Stamp retention now so it can't linger unbounded.
+    let deleteAfter = null;
+    if (String(order.status).toUpperCase() === 'DELIVERED') {
+      const base = order.deliveredAt ? new Date(order.deliveredAt) : now;
+      deleteAfter = new Date(base.getTime() + RETENTION_DAYS * 86400000);
+    }
+
+    const row = {
+      id: randomUUID(),
+      tenantId: req.tenant.id,
+      orderId: order.id,
+      orderNumber: order.orderNumber || null,
+      type: vtype,
+      url,
+      storageKey: storageKey || null,
+      thumbnailUrl: thumbnailUrl || null,
+      sizeBytes: Number.isFinite(Number(sizeBytes)) ? Math.round(Number(sizeBytes)) : null,
+      durationSec: Number.isFinite(Number(durationSec)) ? Math.round(Number(durationSec)) : null,
+      status: 'ACTIVE',
+      capturedAt: capturedAt ? new Date(capturedAt) : now,
+      deleteAfter,
+      uploadedById: req.user?.id || null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db('order_videos').insert(row);
+    res.status(201).json(row);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Upload a video's bytes directly (dev-friendly path). Body: { dataUrl, type?,
+// durationSec?, capturedAt? } where dataUrl is a base64 data URI. The bytes go
+// to object storage; only the resulting URL + metadata are stored on the row.
+// A dedicated large-body parser is mounted for this path in index.js.
+const MAX_VIDEO_BYTES = 60 * 1024 * 1024; // 60 MB
+router.post('/:id/videos/upload', requirePermission('orders.update'), requireFeature('vms'), async (req, res) => {
+  try {
+    const { dataUrl, type, durationSec, capturedAt } = req.body || {};
+    if (!dataUrl || typeof dataUrl !== 'string') return res.status(400).json({ error: 'A video file (dataUrl) is required' });
+    const m = /^data:([^;]+);base64,(.+)$/s.exec(dataUrl);
+    if (!m) return res.status(400).json({ error: 'Invalid video data' });
+    const mime = m[1];
+    if (!/^video\//i.test(mime)) return res.status(400).json({ error: 'File must be a video' });
+    const buffer = Buffer.from(m[2], 'base64');
+    if (!buffer.length) return res.status(400).json({ error: 'Empty video file' });
+    if (buffer.length > MAX_VIDEO_BYTES) return res.status(413).json({ error: 'Video is too large (max 60 MB). Keep packing clips short.' });
+
+    const vtype = VIDEO_TYPES.includes(String(type || '').toUpperCase()) ? String(type).toUpperCase() : 'PACKING';
+    const order = await prisma.order.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const stored = await putObject({ buffer, mime });
+
+    const now = new Date();
+    let deleteAfter = null;
+    if (String(order.status).toUpperCase() === 'DELIVERED') {
+      const base = order.deliveredAt ? new Date(order.deliveredAt) : now;
+      deleteAfter = new Date(base.getTime() + RETENTION_DAYS * 86400000);
+    }
+
+    const row = {
+      id: randomUUID(),
+      tenantId: req.tenant.id,
+      orderId: order.id,
+      orderNumber: order.orderNumber || null,
+      type: vtype,
+      url: stored.url,
+      storageKey: stored.storageKey,
+      thumbnailUrl: null,
+      sizeBytes: stored.sizeBytes,
+      durationSec: Number.isFinite(Number(durationSec)) ? Math.round(Number(durationSec)) : null,
+      status: 'ACTIVE',
+      capturedAt: capturedAt ? new Date(capturedAt) : now,
+      deleteAfter,
+      uploadedById: req.user?.id || null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db('order_videos').insert(row);
+    res.status(201).json(row);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete a video now (manual removal). Best-effort removes the stored object,
+// then hard-deletes the row.
+router.delete('/:id/videos/:videoId', requirePermission('orders.update'), requireFeature('vms'), async (req, res) => {
+  try {
+    const video = await db('order_videos')
+      .where({ id: req.params.videoId, orderId: req.params.id, tenantId: req.tenant.id })
+      .first();
+    if (!video) return res.status(404).json({ error: 'Video not found' });
+    await deleteObject(video.storageKey);
+    await db('order_videos').where({ id: video.id }).del();
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

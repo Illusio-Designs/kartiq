@@ -22,6 +22,7 @@ const {
   pushInventoryToChannel,
 } = require('../services/channel.service');
 const { processReviewQueue } = require('../services/review.service');
+const { pruneExpiredVideos } = require('../services/vms.service');
 // Wallet auto-topup is intentionally disabled — wallet is for ad-hoc PAYG
 // overage funding, not a recurring autopay surface. Saved cards still drive
 // subscription renewal (see billing.job.js → autoRenewSubscription).
@@ -235,6 +236,7 @@ async function runAllJobs() {
     await safe('pushInventoryToAll', pushInventoryToAll),
     await safe('pollShipmentStatus', pollShipmentStatus),
     await safe('processReviewQueue', () => processReviewQueue({})),
+    await safe('pruneExpiredVideos', () => pruneExpiredVideos({})),
     // Wallet auto-topup is intentionally disabled (see the commented import
     // above) — no runAutopayJob call here. Referencing the undefined symbol
     // threw a ReferenceError that aborted the entire cron run.
@@ -301,6 +303,7 @@ function start() {
   const inventoryInterval = parseMinutes(process.env.CRON_INVENTORY_MIN, 15);
   const trackingInterval  = parseMinutes(process.env.CRON_TRACKING_MIN, 10);
   const reviewInterval    = parseMinutes(process.env.CRON_REVIEW_MIN, 60);
+  const videoPruneInterval = parseMinutes(process.env.CRON_VIDEO_PRUNE_MIN, 360); // every 6h
 
   logger.info({ detail: {
     orderSyncMin: orderSyncInterval,
@@ -308,6 +311,7 @@ function start() {
     inventoryMin: inventoryInterval,
     trackingMin: trackingInterval,
     reviewMin: reviewInterval,
+    videoPruneMin: videoPruneInterval,
   } }, '[cron] scheduling:');
 
   _intervals.push(
@@ -315,6 +319,7 @@ function start() {
     setInterval(guarded('pushInventoryToAll', pushInventoryToAll), minutes(inventoryInterval)),
     setInterval(guarded('pollShipmentStatus', pollShipmentStatus), minutes(trackingInterval)),
     setInterval(guarded('processReviewQueue', () => processReviewQueue({})), minutes(reviewInterval)),
+    setInterval(guarded('pruneExpiredVideos', () => pruneExpiredVideos({})), minutes(videoPruneInterval)),
     // No wallet-autopay setInterval — wallet is manual top-up only.
   );
 

@@ -125,6 +125,17 @@ app.use((req, res, next) => {
   });
   next();
 });
+// Video uploads (VMS) carry a base64 data URI that exceeds the default 10mb
+// JSON cap, so a larger parser is mounted for just that route BEFORE the global
+// one. express.json sets req._body once parsed, so the global parser below then
+// no-ops for this path rather than re-reading (and rejecting) the stream.
+const largeJson = express.json({ limit: '85mb' });
+app.use((req, res, next) => {
+  if (req.method === 'POST' && /\/orders\/[^/]+\/videos\/upload\/?$/.test(req.path)) {
+    return largeJson(req, res, next);
+  }
+  next();
+});
 app.use(express.json({
   limit: '10mb',
   // Stash the unparsed bytes so HMAC verification on payment webhooks can
@@ -136,6 +147,13 @@ app.use(express.json({
   },
 }));
 app.use(express.urlencoded({ extended: true }));
+
+// Serve locally-stored uploads (VMS videos on the `local` storage driver).
+// In production with STORAGE_DRIVER=s3 these are served by S3/CDN instead.
+app.use('/uploads', express.static(
+  process.env.STORAGE_LOCAL_DIR || require('path').join(process.cwd(), 'uploads'),
+  { maxAge: '7d', fallthrough: true },
+));
 
 // ── Health checks ─────────────────────────────────────
 // Mounted BEFORE the rate limiter and auto-audit so probe traffic
