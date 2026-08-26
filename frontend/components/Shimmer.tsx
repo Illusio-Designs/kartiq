@@ -122,6 +122,34 @@ export function StatsSkeleton({ count = 4 }: { count?: number }) {
   );
 }
 
+/**
+ * Stat-row skeleton — mirrors the shared <StatRow> exactly: a responsive grid of
+ * h-16 cards, each with a 36px icon tile on the left and a value+label column.
+ * Use this (not StatsSkeleton) as the loading state on any page whose real stats
+ * render through <StatRow>, so the layout doesn't jump when data arrives.
+ */
+export function StatRowSkeleton({ count = 4 }: { count?: number }) {
+  const n = Math.min(count, 6);
+  const lg: Record<number, string> = {
+    2: 'lg:grid-cols-2', 3: 'lg:grid-cols-3', 4: 'lg:grid-cols-4', 5: 'lg:grid-cols-5', 6: 'lg:grid-cols-6',
+  };
+  return (
+    <ShimmerTheme>
+      <div className={`grid grid-cols-2 sm:grid-cols-3 gap-3 ${lg[n] || 'lg:grid-cols-4'}`}>
+        {Array.from({ length: count }).map((_, i) => (
+          <div key={i} className="flex items-center gap-3 px-4 h-16 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm">
+            <Skeleton width={36} height={36} borderRadius={12} />
+            <div className="flex-1">
+              <Skeleton width={44} height={20} borderRadius={6} />
+              <Skeleton width="70%" height={10} borderRadius={6} className="mt-1.5" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </ShimmerTheme>
+  );
+}
+
 /** Section skeleton — full section placeholder */
 export function SectionSkeleton() {
   return (

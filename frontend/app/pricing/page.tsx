@@ -5,24 +5,8 @@ import { useState, useEffect } from 'react';
 import { PublicLayout, usePublicLoading } from '@/components/layout/PublicLayout';
 import { CheckCircle2, Sparkles, ArrowRight, X } from 'lucide-react';
 import { planApi } from '@/lib/api';
+import { FEATURE_LABELS } from '@/lib/planFeatures';
 import { useDemoTrigger } from '@/components/public/DemoTrigger';
-
-// ── Feature label catalog (mirrors backend Plan.features keys) ──────
-const FEATURE_LABELS: Record<string, string> = {
-  returns: 'Returns management',
-  vms: 'VMS – Video Management Solution',
-  paymentReconciliation: 'Payment Reconciliation',
-  mobileApp: 'Mobile App',
-  purchaseManagement: 'Purchase Management',
-  barcoding: 'Barcoding',
-  inwardLogistics: 'Inward Logistics',
-  customReports: 'Customized reports',
-  apiIntegration: 'Custom / API Integration',
-  advancedWarehouseOps: 'Advanced warehouse ops (FIFO, Cycle count, Handheld)',
-  vendorManagement: 'Vendor Management',
-  omniChannel: 'Omni Channel',
-  erpIntegration: 'ERP Integration',
-};
 
 function planToView(p: any) {
   const features: string[] = [];

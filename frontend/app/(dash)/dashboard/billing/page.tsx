@@ -6,9 +6,10 @@ import { billingApi, planApi, paymentApi } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 import { track, upgradeSession } from '@/lib/analytics';
 import {
-  CheckCircle2, AlertCircle, Zap, Crown, Sparkles, X, Wallet, Plus, Settings2,
+  CheckCircle2, AlertCircle, Zap, Crown, Sparkles, Wallet, Plus, Settings2,
   Package, Users, Building2, ShoppingBag, Plug, Activity, CreditCard,
 } from 'lucide-react';
+import { planLimits, planFeatureLines } from '@/lib/planFeatures';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -611,26 +612,44 @@ export default function BillingPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {plans.map((p: any) => {
               const current = p.code === plan.code;
-              const features = Object.entries(p.features || {});
+              const isEnterprise = p.code === 'ENTERPRISE';
+              const limits = planLimits(p);
+              const featureLines = planFeatureLines(p);
+              const included = featureLines.filter((f) => f.included);
               return (
-                <Card key={p.code} className={`p-5 ${current ? 'border-emerald-500 ring-1 ring-emerald-500 bg-emerald-50/60' : ''}`}>
-                  <div className="flex items-center justify-between">
+                <Card key={p.code} className={`p-5 flex flex-col ${current ? 'border-emerald-500 ring-1 ring-emerald-500 bg-emerald-50/60' : ''}`}>
+                  <div className="flex items-center justify-between gap-2">
                     <div className="font-bold text-lg text-slate-900">{p.name}</div>
                     {current && <Badge variant="emerald">Current</Badge>}
                   </div>
-                  <div className="text-2xl font-bold mt-2 text-slate-900">₹{Number(p.monthlyPrice).toLocaleString()}<span className="text-xs text-slate-500">/mo</span></div>
-                  <div className="text-xs text-slate-500 mt-2 space-y-1">
-                    <div>{p.maxFacilities ?? '∞'} facilities · {p.maxSkus ? p.maxSkus.toLocaleString() : '∞'} SKUs</div>
-                    <div>{p.maxUserRoles ?? '∞'} roles · {p.maxUsers ?? '∞'} users</div>
+                  {p.tagline && <p className="text-xs text-slate-500 mt-1 leading-snug">{p.tagline}</p>}
+                  <div className="text-2xl font-bold mt-2.5 text-slate-900">
+                    {isEnterprise ? 'Custom' : <>₹{Number(p.monthlyPrice).toLocaleString()}<span className="text-xs font-normal text-slate-500">/mo</span></>}
                   </div>
-                  <ul className="text-xs mt-3 space-y-1.5">
-                    {features.slice(0, 6).map(([k, v]) => (
-                      <li key={k} className="flex items-center gap-1.5">
-                        {v ? <CheckCircle2 size={12} className="text-emerald-600" /> : <X size={12} className="text-slate-300" />}
-                        <span className={v ? 'text-slate-700' : 'text-slate-400'}>{k}</span>
+
+                  {/* Limits — a labelled grid, not a raw dump */}
+                  <dl className="grid grid-cols-2 gap-x-3 gap-y-2 mt-4 pt-4 border-t border-slate-100">
+                    {limits.map((l) => (
+                      <div key={l.label} className="min-w-0">
+                        <dt className="text-[10px] uppercase tracking-wide text-slate-400 font-bold truncate">{l.label}</dt>
+                        <dd className="text-sm font-bold text-slate-900 tabular-nums truncate">{l.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+
+                  {/* Included features — friendly labels, tier tags, no raw keys */}
+                  <ul className="text-xs mt-4 space-y-1.5 flex-1">
+                    {included.map((f) => (
+                      <li key={f.key} className="flex items-start gap-1.5">
+                        <CheckCircle2 size={13} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+                        <span className="text-slate-700">
+                          {f.label}
+                          {f.tag && <span className="ml-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">{f.tag}</span>}
+                        </span>
                       </li>
                     ))}
                   </ul>
+
                   <Button
                     variant="primary"
                     fullWidth
@@ -638,7 +657,7 @@ export default function BillingPage() {
                     disabled={current || !canManage || loading}
                     onClick={() => change(p.code)}
                   >
-                    {current ? 'Active' : 'Switch'}
+                    {current ? 'Active' : isEnterprise ? 'Contact sales' : 'Switch'}
                   </Button>
                 </Card>
               );
