@@ -12,9 +12,10 @@ import {
   Checkbox, SearchField, Popover, BulkActionBar, DensityToggle, Dropdown, useConfirm,
 } from '@/components/ui';
 import type { Density } from '@/components/ui';
-import { Plus, Package, RefreshCw, CheckCircle2, XCircle, Boxes, Layers, AlertTriangle, Ban, Tag, SearchX, ListFilter, ArrowUpDown, Bookmark, Download, SlidersHorizontal, Trash2, Send, Eye, EyeOff, X, ArrowUp, ArrowDown, ChevronsUpDown, Upload } from 'lucide-react';
+import { Plus, Package, RefreshCw, CheckCircle2, XCircle, Boxes, Layers, AlertTriangle, Ban, Tag, SearchX, ListFilter, ArrowUpDown, Bookmark, Download, SlidersHorizontal, Trash2, Send, Eye, EyeOff, X, ArrowUp, ArrowDown, ChevronsUpDown, Upload, MoreHorizontal } from 'lucide-react';
 import { ProductCardSkeleton } from '@/components/Shimmer';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 
 // Stock status from aggregated available quantity. Low threshold is a simple
@@ -50,6 +51,7 @@ const PRODUCT_COLUMNS: { key: string; label: string; sortable?: boolean; optiona
   { key: 'variants',  label: 'Variants',  optional: true, align: 'center' },
   { key: 'price',     label: 'Price',     sortable: true, align: 'right' },
   { key: 'available', label: 'Available', sortable: true, align: 'right' },
+  { key: 'warehouse', label: 'Warehouse', optional: true },
   { key: 'status',    label: 'Status',    optional: true },
   { key: 'channels',  label: 'Channels',  optional: true },
 ];
@@ -65,12 +67,14 @@ const PRODUCT_CSV: Record<string, (p: any) => string> = {
   variants:  (p) => String(p.variants?.length || 0),
   price:     (p) => String(p.variants?.[0]?.sellingPrice ?? ''),
   available: (p) => String(p.stockAvailable ?? 0),
+  warehouse: (p) => (p.warehouses || []).map((w: any) => `${w.name} (${w.available})`).join('; '),
   status:    (p) => stockStatus(p),
   channels:  (p) => (p.channels || []).join(' '),
 };
 
 export default function ProductsPage() {
   const qc = useQueryClient();
+  const router = useRouter();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [syncingId, setSyncingId] = useState<string | null>(null);
@@ -280,6 +284,22 @@ export default function ProductsPage() {
           <td key={key} className="px-3 py-2.5 text-right">
             <span className={`font-bold tabular-nums ${st === 'out' ? 'text-rose-600' : st === 'low' ? 'text-amber-600' : 'text-slate-900'}`}>{Number(p.stockAvailable ?? 0)}</span>
             <span className="text-[10px] text-slate-400 ml-1">units</span>
+          </td>
+        );
+      }
+      case 'warehouse': {
+        const whs: any[] = p.warehouses || [];
+        if (!whs.length) return <td key={key} className="px-3 py-2.5 text-slate-300 text-xs">—</td>;
+        const primary = whs[0];
+        return (
+          <td key={key} className="px-3 py-2.5 whitespace-nowrap">
+            <Tooltip content={whs.map((w) => `${w.name}: ${w.available}`).join(' · ')}>
+              <span className="inline-flex items-center gap-1.5 text-xs text-slate-600">
+                <Boxes size={12} className="text-slate-400 flex-shrink-0" />
+                <span className="font-medium">{primary.name}</span>
+                {whs.length > 1 && <span className="text-slate-400">+{whs.length - 1}</span>}
+              </span>
+            </Tooltip>
           </td>
         );
       }
@@ -532,20 +552,20 @@ export default function ProductsPage() {
                         <td className="px-3 py-2.5"><Checkbox checked={selected.has(p.id)} onCheckedChange={() => toggleOne(p.id)} /></td>
                         {visibleColumns.map((c) => renderProductCell(p, c.key))}
                         <td className="px-3 py-2.5">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <Tooltip content="Adjust stock">
-                              <Button variant="outline" size="sm" leftIcon={<Boxes size={12} />} onClick={() => setAdjustProduct(p)}>Stock</Button>
-                            </Tooltip>
-                            <Tooltip content="Push this product to all connected channels">
-                              <Button variant="outline" size="icon" loading={syncingId === p.id} onClick={() => syncMutation.mutate(p.id)}>
-                                <RefreshCw size={13} />
-                              </Button>
-                            </Tooltip>
-                            <Tooltip content="View product">
-                              <Link href={`/products/${p.id}`}>
-                                <Button variant="outline" size="icon"><Eye size={13} /></Button>
-                              </Link>
-                            </Tooltip>
+                          <div className="flex items-center justify-end">
+                            <Dropdown
+                              align="right"
+                              trigger={
+                                <Button variant="outline" size="icon" aria-label="Actions">
+                                  {syncingId === p.id ? <RefreshCw size={13} className="animate-spin" /> : <MoreHorizontal size={14} />}
+                                </Button>
+                              }
+                              items={[
+                                { label: 'Adjust stock', icon: <Boxes size={14} />, onClick: () => setAdjustProduct(p) },
+                                { label: 'Push to channels', icon: <RefreshCw size={14} />, onClick: () => syncMutation.mutate(p.id) },
+                                { label: 'View product', icon: <Eye size={14} />, onClick: () => router.push(`/products/${p.id}`) },
+                              ]}
+                            />
                           </div>
                         </td>
                       </tr>

@@ -59,7 +59,7 @@ export default function ProductDetailPage() {
 
   return (
     <>
-      <div className="space-y-5 animate-slide-up max-w-4xl">
+      <div className="space-y-5 animate-slide-up">
         <div className="flex items-center justify-between">
           <Link href="/products" className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-800">
             <ArrowLeft size={15} /> Back to Catalog

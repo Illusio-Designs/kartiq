@@ -51,7 +51,7 @@ const getProducts = async (req, res) => {
     const tId = tenantId(req);
     const ids = products.map((p) => p.id);
     if (ids.length) {
-      const [stockRows, chanRows] = await Promise.all([
+      const [stockRows, chanRows, whRows] = await Promise.all([
         db('inventory_items')
           .whereIn('productId', ids).andWhere('tenantId', tId)
           .groupBy('productId')
@@ -64,15 +64,30 @@ const getProducts = async (req, res) => {
           .whereIn('cl.productId', ids).andWhere('cl.tenantId', tId).andWhere('cl.isActive', true)
           .select('cl.productId as productId', 'c.type as type')
           .catch(() => []),
+        // Per-warehouse stock so the catalog can show WHERE a product's stock
+        // lives (not just an aggregate). One row per (product, warehouse).
+        db('inventory_items as ii')
+          .join('warehouses as w', 'w.id', 'ii.warehouseId')
+          .whereIn('ii.productId', ids).andWhere('ii.tenantId', tId)
+          .groupBy('ii.productId', 'w.id', 'w.name')
+          .select('ii.productId as productId', 'w.name as warehouseName')
+          .sum({ available: 'ii.quantityAvailable' })
+          .catch(() => []),
       ]);
       const stockBy = {};
       for (const r of stockRows) stockBy[r.productId] = { available: Number(r.available || 0), onHand: Number(r.onHand || 0) };
       const chanBy = {};
       for (const r of chanRows) { (chanBy[r.productId] = chanBy[r.productId] || new Set()).add(r.type); }
+      const whBy = {};
+      for (const r of whRows) {
+        (whBy[r.productId] = whBy[r.productId] || []).push({ name: r.warehouseName, available: Number(r.available || 0) });
+      }
       for (const p of products) {
         p.stockAvailable = stockBy[p.id]?.available ?? 0;
         p.stockOnHand = stockBy[p.id]?.onHand ?? 0;
         p.channels = chanBy[p.id] ? [...chanBy[p.id]] : [];
+        // Warehouses holding this product, most stock first.
+        p.warehouses = (whBy[p.id] || []).sort((a, b) => b.available - a.available);
       }
     }
     res.json({ products, total, page: Number(page), limit: Number(limit) });
