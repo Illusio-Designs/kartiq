@@ -25,11 +25,32 @@ export function Tooltip({ content, children, side = 'top', delay = 150, classNam
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const [mounted, setMounted] = useState(false);
+  // Shift keeps the tooltip inside the viewport; `positioned` hides it for the
+  // one frame between first paint and the clamp so it never flashes off-screen.
+  const [shift, setShift] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
+  const [positioned, setPositioned] = useState(false);
   const wrapperRef = useRef<HTMLSpanElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const tipId = useId();
 
   useEffect(() => setMounted(true), []);
+
+  // After the tooltip renders, measure it and nudge it back inside the viewport
+  // (an 8px margin) so trigger buttons near the screen edge aren't clipped.
+  useEffect(() => {
+    if (!open || !coords || !tipRef.current) return;
+    const r = tipRef.current.getBoundingClientRect();
+    const m = 8;
+    let dx = 0;
+    let dy = 0;
+    if (r.left < m) dx = m - r.left;
+    else if (r.right > window.innerWidth - m) dx = window.innerWidth - m - r.right;
+    if (r.top < m) dy = m - r.top;
+    else if (r.bottom > window.innerHeight - m) dy = window.innerHeight - m - r.bottom;
+    setShift({ dx, dy });
+    setPositioned(true);
+  }, [open, coords]);
 
   const computePosition = () => {
     if (!wrapperRef.current) return null;
@@ -53,6 +74,9 @@ export function Tooltip({ content, children, side = 'top', delay = 150, classNam
     timerRef.current = setTimeout(() => {
       const pos = computePosition();
       if (pos) {
+        // Reset the clamp so the effect measures the fresh, unshifted position.
+        setShift({ dx: 0, dy: 0 });
+        setPositioned(false);
         setCoords(pos);
         setOpen(true);
       }
@@ -95,14 +119,16 @@ export function Tooltip({ content, children, side = 'top', delay = 150, classNam
 
       {mounted && open && coords && createPortal(
         <div
+          ref={tipRef}
           id={tipId}
           role="tooltip"
           style={{
             position: 'fixed',
-            top: coords.top,
-            left: coords.left,
+            top: coords.top + shift.dy,
+            left: coords.left + shift.dx,
             zIndex: 9999,
             pointerEvents: 'none',
+            opacity: positioned ? undefined : 0,
           }}
           className={cn(
             'px-2.5 py-1.5 text-[11px] font-semibold text-white bg-[#0B1220] rounded-md shadow-xl',
