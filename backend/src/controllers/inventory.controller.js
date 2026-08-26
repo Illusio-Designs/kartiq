@@ -8,7 +8,9 @@ const adjustSchema = z.object({
   warehouseId: z.string(),
   variantId: z.string(),
   quantity: z.number(),
-  type: z.enum(['INBOUND', 'OUTBOUND', 'ADJUSTMENT']),
+  // SET writes the on-hand quantity to an absolute value (used by the Inventory
+  // page's inline "set stock"); the others apply a delta.
+  type: z.enum(['INBOUND', 'OUTBOUND', 'ADJUSTMENT', 'SET']),
   notes: z.string().optional(),
 });
 
@@ -61,24 +63,35 @@ const adjustInventory = async (req, res) => {
 
     await prisma.$transaction(async (tx) => {
       const existing = beforeRow;
-      const qty = data.type === 'OUTBOUND' ? -Math.abs(data.quantity) : Math.abs(data.quantity);
 
-      if (existing) {
-        await tx.inventoryItem.update({
-          where: { warehouseId_variantId: { warehouseId: data.warehouseId, variantId: data.variantId } },
-          data: { quantityOnHand: { increment: qty }, quantityAvailable: { increment: qty } },
-        });
+      if (data.type === 'SET') {
+        // Absolute set: on-hand becomes the given value; available preserves any
+        // existing reservation (available = onHand − reserved, floored at 0).
+        const target = Math.max(0, Math.round(data.quantity));
+        const reserved = existing?.quantityReserved ?? 0;
+        const available = Math.max(0, target - reserved);
+        if (existing) {
+          await tx.inventoryItem.update({
+            where: { warehouseId_variantId: { warehouseId: data.warehouseId, variantId: data.variantId } },
+            data: { quantityOnHand: target, quantityAvailable: available },
+          });
+        } else {
+          await tx.inventoryItem.create({
+            data: { tenantId, warehouseId: data.warehouseId, variantId: data.variantId, productId: variant.productId, quantityOnHand: target, quantityAvailable: target },
+          });
+        }
       } else {
-        await tx.inventoryItem.create({
-          data: {
-            tenantId,
-            warehouseId: data.warehouseId,
-            variantId: data.variantId,
-            productId: variant.productId,
-            quantityOnHand: Math.max(0, qty),
-            quantityAvailable: Math.max(0, qty),
-          },
-        });
+        const qty = data.type === 'OUTBOUND' ? -Math.abs(data.quantity) : Math.abs(data.quantity);
+        if (existing) {
+          await tx.inventoryItem.update({
+            where: { warehouseId_variantId: { warehouseId: data.warehouseId, variantId: data.variantId } },
+            data: { quantityOnHand: { increment: qty }, quantityAvailable: { increment: qty } },
+          });
+        } else {
+          await tx.inventoryItem.create({
+            data: { tenantId, warehouseId: data.warehouseId, variantId: data.variantId, productId: variant.productId, quantityOnHand: Math.max(0, qty), quantityAvailable: Math.max(0, qty) },
+          });
+        }
       }
 
       await tx.stockMovement.create({
@@ -163,4 +176,42 @@ const getStockMovements = async (req, res) => {
   }
 };
 
-module.exports = { getInventory, adjustInventory, getLowStockItems, getStockMovements };
+// Inventory KPI totals for the Inventory page stat row. Optionally scoped to
+// one warehouse (?warehouseId=). Aggregated in SQL, not in memory.
+const db = require('../utils/db');
+const getInventoryStats = async (req, res) => {
+  try {
+    const tId = tid(req);
+    const whId = req.query.warehouseId ? String(req.query.warehouseId) : null;
+    const base = () => {
+      const q = db('inventory_items').where({ tenantId: tId });
+      if (whId) q.andWhere({ warehouseId: whId });
+      return q;
+    };
+    const [agg] = await base()
+      .select(
+        db.raw('COUNT(*) as skus'),
+        db.raw('COALESCE(SUM(quantityOnHand),0) as onHand'),
+        db.raw('COALESCE(SUM(quantityAvailable),0) as available'),
+        db.raw('COALESCE(SUM(quantityReserved),0) as reserved'),
+        db.raw('SUM(CASE WHEN quantityAvailable <= ? THEN 1 ELSE 0 END) as lowStock', [LOW_STOCK_THRESHOLD]),
+        db.raw('SUM(CASE WHEN quantityAvailable <= 0 THEN 1 ELSE 0 END) as outOfStock'),
+      )
+      .catch(() => [{}]);
+    const warehouses = await db('warehouses').where({ tenantId: tId, isActive: true }).count({ c: 'id' }).first().catch(() => ({ c: 0 }));
+    res.json({
+      skus: Number(agg?.skus || 0),
+      onHand: Number(agg?.onHand || 0),
+      available: Number(agg?.available || 0),
+      reserved: Number(agg?.reserved || 0),
+      lowStock: Number(agg?.lowStock || 0),
+      outOfStock: Number(agg?.outOfStock || 0),
+      warehouses: Number(warehouses?.c || 0),
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Failed to fetch inventory stats' });
+  }
+};
+
+module.exports = { getInventory, getInventoryStats, adjustInventory, getLowStockItems, getStockMovements };

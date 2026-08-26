@@ -442,6 +442,7 @@ export const productApi = {
 
 export const inventoryApi = {
   list: (params?: any) => api.get('/inventory', { params }),
+  stats: (params?: { warehouseId?: string }) => api.get('/inventory/stats', { params }),
   lowStock: () => api.get('/inventory/low-stock'),
   movements: (params?: any) => api.get('/inventory/movements', { params }),
   adjust: (data: any) => api.post('/inventory/adjust', data),
