@@ -46,7 +46,7 @@ const generateOrderNumber = () => `ORD-${Date.now()}-${Math.floor(Math.random() 
 
 const getOrders = async (req, res) => {
   try {
-    const { page = '1', limit = '20', status, channelId, search, risk, needsApproval, fulfillment, completeness, dateFrom, dateTo } = req.query;
+    const { page = '1', limit = '20', status, channelId, search, risk, needsApproval, fulfillment, completeness, dateFrom, dateTo, source } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
     // Knex-backed Prisma shim — unknown columns pass through to SQL directly
     const where = { tenantId: tid(req) };
@@ -70,6 +70,10 @@ const getOrders = async (req, res) => {
       where.fulfillmentType = types.length > 1 ? { in: types } : types[0];
     }
     if (completeness) where.dataCompleteness = String(completeness).toUpperCase();
+    // Order source: auto-synced orders carry a channelOrderId from the
+    // marketplace; manually-created orders don't.
+    if (source === 'auto') where.channelOrderId = { not: null };
+    else if (source === 'manual') where.channelOrderId = null;
 
     const [orders, total] = await Promise.all([
       prisma.order.findMany({

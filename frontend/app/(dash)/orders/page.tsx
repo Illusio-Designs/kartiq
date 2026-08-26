@@ -147,12 +147,24 @@ const SHIPPED_OR_TERMINAL = new Set([
 const showsNeedsReview = (o: any): boolean =>
   !!o.needsApproval && !SHIPPED_OR_TERMINAL.has(String(o.status || '').toUpperCase());
 
-type FulfillmentTab = 'all' | 'auto' | 'manual';
-const FULFILLMENT_PARAM: Record<FulfillmentTab, string | undefined> = {
+// Order SOURCE — where the order came from. Auto-synced orders were pulled
+// from a marketplace (they carry a channelOrderId); manual orders were created
+// by hand in Kartriq. This is a different axis from fulfillment (who ships it):
+// e.g. an Amazon MFN order is auto-synced but self-fulfilled.
+type SourceTab = 'all' | 'auto' | 'manual';
+const SOURCE_PARAM: Record<SourceTab, string | undefined> = {
   all: undefined,
-  auto: 'CHANNEL,DROPSHIP',
-  manual: 'SELF',
+  auto: 'auto',
+  manual: 'manual',
 };
+
+// Fulfillment-type filter (who ships the order) — lives in the Filters drawer.
+const FULFILLMENT_OPTIONS = [
+  { value: '', label: 'All fulfillment' },
+  { value: 'CHANNEL', label: 'Channel-fulfilled (FBA)' },
+  { value: 'SELF', label: 'Self-fulfilled (MFN)' },
+  { value: 'DROPSHIP', label: 'Dropship' },
+];
 
 export default function OrdersPage() {
   const qc = useQueryClient();
@@ -161,7 +173,8 @@ export default function OrdersPage() {
   const [status, setStatus] = useState('');
   const [risk, setRisk] = useState('');
   const [channelId, setChannelId] = useState('');
-  const [fulfillmentTab, setFulfillmentTab] = useState<FulfillmentTab>('all');
+  const [source, setSource] = useState<SourceTab>('all');
+  const [fulfillment, setFulfillment] = useState('');
   const [reviewResult, setReviewResult] = useState<{ id: string; type: 'success' | 'error'; message: string } | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
@@ -232,7 +245,7 @@ export default function OrdersPage() {
   const visibleColumns = ORDER_COLUMNS.filter((c) => !hiddenCols.has(c.key));
 
   const { data, isLoading } = useQuery({
-    queryKey: ['orders', page, pageSize, status, risk, channelId, fulfillmentTab, dateFrom, dateTo],
+    queryKey: ['orders', page, pageSize, status, risk, channelId, source, fulfillment, dateFrom, dateTo],
     queryFn: () => orderApi.list({
       page,
       limit: pageSize,
@@ -241,7 +254,8 @@ export default function OrdersPage() {
       needsApproval: risk === 'APPROVAL' ? 'true' : undefined,
       // Server-side channel filter — the orders controller accepts `channelId`.
       channelId: channelId || undefined,
-      fulfillment: FULFILLMENT_PARAM[fulfillmentTab],
+      fulfillment: fulfillment || undefined,
+      source: SOURCE_PARAM[source],
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
     }).then(r => r.data),
@@ -282,7 +296,7 @@ export default function OrdersPage() {
   }, [searchedOrders, sortKey, sortDir]);
 
   // ── Selection (bulk actions) ──
-  useEffect(() => { setSelected(new Set()); }, [page, status, risk, channelId, fulfillmentTab, dateFrom, dateTo]);
+  useEffect(() => { setSelected(new Set()); }, [page, status, risk, channelId, source, fulfillment, dateFrom, dateTo]);
   const allSelected = sortedOrders.length > 0 && sortedOrders.every((o: any) => selected.has(o.id));
   const toggleAll = () => {
     setSelected((prev) => {
@@ -295,7 +309,8 @@ export default function OrdersPage() {
   };
 
   // ── Active filters (popover count + removable chips) ──
-  const activeFilterCount = (status ? 1 : 0) + (risk ? 1 : 0) + (channelId ? 1 : 0) + ((dateFrom || dateTo) ? 1 : 0);
+  const activeFilterCount = (status ? 1 : 0) + (risk ? 1 : 0) + (channelId ? 1 : 0) + (fulfillment ? 1 : 0) + ((dateFrom || dateTo) ? 1 : 0);
+  const fulfillmentLabel = FULFILLMENT_OPTIONS.find((f) => f.value === fulfillment)?.label;
   const statusLabel = STATUSES.find((s) => s.value === status)?.label;
   const riskLabel = RISK_FILTERS.find((r) => r.value === risk)?.label;
   const channelLabel = channels.find((c) => c.id === channelId)?.name;
@@ -304,10 +319,11 @@ export default function OrdersPage() {
     status ? { key: 'status', label: `Status: ${statusLabel}`, clear: () => { setStatus(''); setPage(1); } } : null,
     risk ? { key: 'risk', label: `Risk: ${riskLabel}`, clear: () => { setRisk(''); setPage(1); } } : null,
     channelId ? { key: 'channel', label: `Channel: ${channelLabel || '—'}`, clear: () => { setChannelId(''); setPage(1); } } : null,
+    fulfillment ? { key: 'fulfillment', label: `Fulfillment: ${fulfillmentLabel}`, clear: () => { setFulfillment(''); setPage(1); } } : null,
     (dateFrom || dateTo) ? { key: 'date', label: dateLabel, clear: () => { setDateFrom(''); setDateTo(''); setPage(1); } } : null,
     search ? { key: 'search', label: `“${search}”`, clear: () => setSearch('') } : null,
   ].filter(Boolean) as { key: string; label: string; clear: () => void }[];
-  const clearFilters = () => { setStatus(''); setRisk(''); setChannelId(''); setDateFrom(''); setDateTo(''); setSearch(''); setPage(1); };
+  const clearFilters = () => { setStatus(''); setRisk(''); setChannelId(''); setFulfillment(''); setDateFrom(''); setDateTo(''); setSearch(''); setPage(1); };
 
   // Export a set of rows (visible columns) to CSV.
   const exportRows = (rows: any[]) => {
@@ -605,14 +621,15 @@ export default function OrdersPage() {
               </div>
             </div>
 
-            {/* Fulfillment tabs */}
-            <Tabs<FulfillmentTab>
-              value={fulfillmentTab}
-              onChange={(k) => { setFulfillmentTab(k); setPage(1); }}
+            {/* Source tabs — auto-synced (from a marketplace) vs manual (created
+                here). Both update together on sync since it's one data source. */}
+            <Tabs<SourceTab>
+              value={source}
+              onChange={(k) => { setSource(k); setPage(1); }}
               items={[
-                { key: 'all',    label: 'All Orders',    icon: <Layers size={14} /> },
-                { key: 'auto',   label: 'Auto Fulfill',  icon: <Zap size={14} /> },
-                { key: 'manual', label: 'Manual',        icon: <Hand size={14} /> },
+                { key: 'all',    label: 'All Orders',   icon: <Layers size={14} /> },
+                { key: 'auto',   label: 'Auto-synced',  icon: <Zap size={14} /> },
+                { key: 'manual', label: 'Manual',       icon: <Hand size={14} /> },
               ]}
             />
 
@@ -631,7 +648,7 @@ export default function OrdersPage() {
                 align="right"
                 trigger={<Button variant="ghost" size="sm" leftIcon={<Bookmark size={14} />}>Views</Button>}
                 items={[
-                  { label: 'All orders', icon: <Layers size={14} />, onClick: () => { clearFilters(); setFulfillmentTab('all'); } },
+                  { label: 'All orders', icon: <Layers size={14} />, onClick: () => { clearFilters(); setSource('all'); } },
                   { label: 'Needs shipping', icon: <Truck size={14} />, onClick: () => { setStatus('PROCESSING'); setRisk(''); setPage(1); } },
                   { label: 'High risk', icon: <AlertTriangle size={14} />, onClick: () => { setRisk('HIGH'); setPage(1); } },
                   { label: 'Needs review', icon: <Star size={14} />, onClick: () => { setRisk('APPROVAL'); setPage(1); } },
@@ -889,6 +906,14 @@ export default function OrdersPage() {
             onChange={(v) => { setChannelId(v); setPage(1); }}
             options={[{ value: '', label: 'All channels' }, ...channels.map((c) => ({ value: c.id, label: c.name }))]}
             placeholder="All channels"
+          />
+          <Select
+            label="Fulfillment"
+            fullWidth
+            value={fulfillment}
+            onChange={(v) => { setFulfillment(v); setPage(1); }}
+            options={FULFILLMENT_OPTIONS}
+            placeholder="All fulfillment"
           />
           <div>
             <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Date range</label>
