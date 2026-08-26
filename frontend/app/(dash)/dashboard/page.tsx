@@ -66,7 +66,7 @@ export default function DashboardPage() {
   const CHART_DATA = data?.revenueByMonth || [];
 
   return (
-    <div className="space-y-5 animate-slide-up max-w-[1400px] mx-auto">
+    <div className="space-y-5 animate-slide-up">
         {/* ── Slim header: welcome subtitle + date picker (no big gradient h1) ── */}
         <PageHeader
           title="Dashboard"

@@ -115,6 +115,28 @@ const riskVariant = (l?: string) => {
   return 'slate' as const;
 };
 
+// Colour the order-status badge by its lifecycle stage instead of leaving
+// everything but DELIVERED/CANCELLED grey.
+const orderStatusVariant = (s?: string): 'emerald' | 'blue' | 'violet' | 'amber' | 'rose' | 'slate' => {
+  switch (String(s || '').toUpperCase()) {
+    case 'DELIVERED': return 'emerald';
+    case 'SHIPPED':
+    case 'PARTIALLY_SHIPPED':
+    case 'OUT_FOR_DELIVERY': return 'blue';
+    case 'PROCESSING':
+    case 'CONFIRMED':
+    case 'PACKED': return 'violet';
+    case 'PENDING':
+    case 'UNSHIPPED':
+    case 'ON_HOLD': return 'amber';
+    case 'CANCELLED':
+    case 'RETURNED':
+    case 'REFUNDED':
+    case 'FAILED': return 'rose';
+    default: return 'slate';
+  }
+};
+
 type FulfillmentTab = 'all' | 'auto' | 'manual';
 const FULFILLMENT_PARAM: Record<FulfillmentTab, string | undefined> = {
   all: undefined,
@@ -454,7 +476,7 @@ export default function OrdersPage() {
             {o.needsApproval ? (
               <Badge variant="rose" dot>NEEDS REVIEW</Badge>
             ) : (
-              <Badge variant={o.status === 'DELIVERED' ? 'emerald' : o.status === 'CANCELLED' ? 'rose' : 'slate'}>{o.status}</Badge>
+              <Badge variant={orderStatusVariant(o.status)}>{o.status}</Badge>
             )}
           </td>
         );
@@ -798,7 +820,7 @@ export default function OrdersPage() {
                     <div className="text-xs text-slate-500 truncate">{o.customer?.name} · {o.channel?.name}</div>
                     <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                       <Badge variant={fulVariant} dot>{fulLabel}</Badge>
-                      <Badge variant={o.status === 'DELIVERED' ? 'emerald' : o.status === 'CANCELLED' ? 'rose' : 'slate'}>{o.status}</Badge>
+                      <Badge variant={orderStatusVariant(o.status)}>{o.status}</Badge>
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0">

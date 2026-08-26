@@ -213,7 +213,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         <div className="flex-1 p-4 sm:p-5 lg:p-6 xl:p-8 animate-fade-in flex flex-col">
           {/* One shared content width for EVERY dashboard page — centered and
               capped so pages line up instead of each choosing their own max-w. */}
-          <div className="w-full max-w-screen-2xl mx-auto flex flex-1 flex-col">
+          <div className="w-full max-w-[1400px] mx-auto flex flex-1 flex-col">
             <Breadcrumbs />
             <BillingLock>{children}</BillingLock>
           </div>

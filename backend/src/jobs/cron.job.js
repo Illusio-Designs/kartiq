@@ -73,6 +73,53 @@ async function syncChannelOrders() {
   return results;
 }
 
+// ── 1b. Fast, near-real-time order sync ─────────────────────────────────────
+// Runs on a tight cadence (default every 1 min) and fetches ONLY what changed
+// since the previous fast pass — new orders and updates to existing ones — NOT
+// the whole history and NOT a fixed window re-pulled every minute. It keeps a
+// per-channel in-memory cursor (the time of the last successful fast pass) and
+// asks Amazon for orders LastUpdatedAfter that cursor, minus a small safety
+// overlap for clock skew. First run (or after a restart) falls back to a short
+// window. It does NOT touch lastSyncAt/syncError — the full 5-min sync owns
+// that. Disable with CRON_FAST_ORDER_SYNC_MIN=0.
+const _fastCursor = new Map(); // channelId -> Date of last successful fast pass
+async function syncRecentOrders() {
+  const firstWindowMs = Number(process.env.FAST_ORDER_WINDOW_MIN || 15) * 60 * 1000;
+  const overlapMs = 2 * 60 * 1000; // re-scan the last ~2 min so nothing slips the boundary
+  const channels = await prisma.channel.findMany({
+    where: { isActive: true },
+    include: { tenant: { select: { status: true } } },
+  });
+
+  const results = { channelsProcessed: 0, ordersImported: 0, errors: [] };
+  for (const ch of channels) {
+    if (ch.tenant?.status === 'SUSPENDED' || ch.tenant?.status === 'CANCELLED') continue;
+    let adapter;
+    try { adapter = getAdapter(ch); } catch { continue; }
+    if (typeof adapter.fetchOrders !== 'function') continue;
+
+    const startedAt = new Date();
+    const last = _fastCursor.get(ch.id);
+    // Only new + recently-changed orders since the last pass (with overlap);
+    // on the very first pass, a short catch-up window.
+    const since = last ? new Date(last.getTime() - overlapMs) : new Date(Date.now() - firstWindowMs);
+
+    try {
+      const raw = await adapter.fetchOrders({ since });
+      if (Array.isArray(raw) && raw.length) {
+        const res = await importOrders(ch.id, raw, { tenantId: ch.tenantId });
+        results.ordersImported += res.imported;
+      }
+      _fastCursor.set(ch.id, startedAt); // advance the cursor only on success
+      results.channelsProcessed++;
+    } catch (err) {
+      // Don't advance the cursor — the next pass retries from the same point.
+      results.errors.push(`${ch.name} (${ch.type}): ${err.message}`);
+    }
+  }
+  return results;
+}
+
 // ── 2. Push current inventory levels to every active channel ────────────────
 async function pushInventoryToAll() {
   const channels = await prisma.channel.findMany({
@@ -187,12 +234,14 @@ function start() {
 
   const minutes = (n) => n * 60 * 1000;
   const orderSyncInterval = Number(process.env.CRON_ORDER_SYNC_MIN || 5);
+  const fastOrderInterval = Number(process.env.CRON_FAST_ORDER_SYNC_MIN ?? 1); // 0 disables
   const inventoryInterval = Number(process.env.CRON_INVENTORY_MIN || 15);
   const trackingInterval  = Number(process.env.CRON_TRACKING_MIN || 10);
   const reviewInterval    = Number(process.env.CRON_REVIEW_MIN || 60);
 
   logger.info({ detail: {
     orderSyncMin: orderSyncInterval,
+    fastOrderSyncMin: fastOrderInterval,
     inventoryMin: inventoryInterval,
     trackingMin: trackingInterval,
     reviewMin: reviewInterval,
@@ -205,6 +254,13 @@ function start() {
     setInterval(() => processReviewQueue({}).catch((e) => console.error('[cron] processReviewQueue:', e.message)), minutes(reviewInterval)),
     // No wallet-autopay setInterval — wallet is manual top-up only.
   );
+
+  // Fast, near-real-time order pass — only new + changed orders each minute.
+  if (fastOrderInterval > 0) {
+    _intervals.push(
+      setInterval(() => syncRecentOrders().catch((e) => console.error('[cron] syncRecentOrders:', e.message)), minutes(fastOrderInterval)),
+    );
+  }
 }
 
 function stop() {
