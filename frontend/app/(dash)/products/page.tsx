@@ -541,7 +541,11 @@ export default function ProductsPage() {
                                 <RefreshCw size={13} />
                               </Button>
                             </Tooltip>
-                            <Link href={`/products/${p.id}`} className="text-xs font-bold text-emerald-600 hover:text-emerald-700 px-1">View</Link>
+                            <Tooltip content="View product">
+                              <Link href={`/products/${p.id}`}>
+                                <Button variant="outline" size="icon"><Eye size={13} /></Button>
+                              </Link>
+                            </Tooltip>
                           </div>
                         </td>
                       </tr>
