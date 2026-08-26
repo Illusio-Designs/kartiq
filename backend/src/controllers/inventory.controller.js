@@ -16,12 +16,26 @@ const adjustSchema = z.object({
 
 const tid = (req) => req.tenant.id;
 
+// Real (self-managed) warehouse ids for a tenant — excludes the virtual Amazon
+// FBA facility, whose stock is Amazon-owned and read-only. Inventory management
+// is only ever for the seller's own warehouses.
+async function realWarehouseIds(tenantId) {
+  const whs = await prisma.warehouse.findMany({ where: { tenantId, isVirtual: false }, select: { id: true } });
+  return whs.map((w) => w.id);
+}
+
 const getInventory = async (req, res) => {
   try {
     const { warehouseId, lowStock, page = '1', limit = '20' } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
     const where = { tenantId: tid(req) };
-    if (warehouseId) where.warehouseId = String(warehouseId);
+    if (warehouseId) {
+      where.warehouseId = String(warehouseId);
+    } else {
+      // Default view = self stock only (never the pooled Amazon FBA facility).
+      const realIds = await realWarehouseIds(tid(req));
+      where.warehouseId = { in: realIds.length ? realIds : ['__none__'] };
+    }
     if (lowStock === 'true') where.quantityAvailable = { lte: 10 };
 
     const items = await prisma.inventoryItem.findMany({
@@ -183,9 +197,13 @@ const getInventoryStats = async (req, res) => {
   try {
     const tId = tid(req);
     const whId = req.query.warehouseId ? String(req.query.warehouseId) : null;
+    // Self stock only unless a specific warehouse is requested — exclude the
+    // read-only Amazon FBA facility from the aggregate.
+    const realIds = whId ? null : await realWarehouseIds(tId);
     const base = () => {
       const q = db('inventory_items').where({ tenantId: tId });
       if (whId) q.andWhere({ warehouseId: whId });
+      else q.whereIn('warehouseId', realIds.length ? realIds : ['__none__']);
       return q;
     };
     const [agg] = await base()
@@ -198,7 +216,7 @@ const getInventoryStats = async (req, res) => {
         db.raw('SUM(CASE WHEN quantityAvailable <= 0 THEN 1 ELSE 0 END) as outOfStock'),
       )
       .catch(() => [{}]);
-    const warehouses = await db('warehouses').where({ tenantId: tId, isActive: true }).count({ c: 'id' }).first().catch(() => ({ c: 0 }));
+    const warehouses = await db('warehouses').where({ tenantId: tId, isActive: true, isVirtual: false }).count({ c: 'id' }).first().catch(() => ({ c: 0 }));
     res.json({
       skus: Number(agg?.skus || 0),
       onHand: Number(agg?.onHand || 0),

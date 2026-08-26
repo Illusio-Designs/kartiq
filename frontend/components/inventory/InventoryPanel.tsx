@@ -27,14 +27,22 @@ export function InventoryPanel() {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [warehouseId, setWarehouseId] = useState('');
-  const [lowOnly, setLowOnly] = useState(false);
+  // Seed "low stock only" from ?lowStock=true so the low-stock notification
+  // deep-links straight to the filtered view.
+  const [lowOnly, setLowOnly] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return new URLSearchParams(window.location.search).get('lowStock') === 'true';
+  });
   const [search, setSearch] = useState('');
 
   const { data: warehousesData } = useQuery({
     queryKey: ['warehouses'],
     queryFn: () => warehouseApi.list().then((r) => r.data),
   });
-  const warehouses: any[] = Array.isArray(warehousesData) ? warehousesData : (warehousesData?.warehouses || []);
+  // Only self-managed warehouses — the pooled Amazon FBA facility is
+  // Amazon-owned and read-only, so it never appears in the stock picker.
+  const warehouses: any[] = (Array.isArray(warehousesData) ? warehousesData : (warehousesData?.warehouses || []))
+    .filter((w: any) => !w.isVirtual && w.externalSource !== 'AMAZON_FBA');
 
   const { data: statsData } = useQuery({
     queryKey: ['inventory-stats', warehouseId],
