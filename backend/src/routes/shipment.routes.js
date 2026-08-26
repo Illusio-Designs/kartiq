@@ -13,7 +13,7 @@ const SHIPMENT_STATUSES = ['PENDING', 'PICKED_UP', 'IN_TRANSIT', 'OUT_FOR_DELIVE
 const createSchema = z.object({
   orderId:        z.string().min(1),
   trackingNumber: z.string().max(100).optional(),
-  courierName:    z.string().max(100).optional(),
+  courierName:    z.string().min(1).max(100),
   weight:         z.number().positive().optional(),
   charges:        z.number().min(0).optional(),
   trackingUrl:    z.string().url().optional(),

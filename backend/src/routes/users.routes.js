@@ -26,6 +26,20 @@ function inviteUrl(token) {
   return `${base}/accept-invite?token=${encodeURIComponent(token)}`;
 }
 
+// Keep only roleIds that actually belong to this tenant. Without this a
+// tenant admin could attach a role from another tenant (leaking its
+// permissions) by passing a guessed/leaked roleId. Mirrors the
+// assertSameTenantPair guard in role.routes.js.
+async function filterTenantRoleIds(req, roleIds) {
+  const ids = (Array.isArray(roleIds) ? roleIds : []).filter(Boolean);
+  if (!ids.length) return [];
+  const owned = await prisma.tenantRole.findMany({
+    where: { id: { in: ids }, tenantId: req.tenant.id },
+    select: { id: true },
+  });
+  return owned.map((r) => r.id);
+}
+
 // List users in the tenant + any platform admins (who can impersonate the tenant).
 // Platform admins are surfaced so tenant admins know who has cross-tenant access.
 router.get('/', requirePermission('users.read'), async (req, res) => {
@@ -104,9 +118,10 @@ router.post('/',
         },
         select: { id: true, name: true, email: true, createdAt: true, isActive: true },
       });
-      if (roleIds.length) {
+      const safeRoleIds = await filterTenantRoleIds(req, roleIds);
+      if (safeRoleIds.length) {
         await prisma.userRole.createMany({
-          data: roleIds.map((rid) => ({ userId: user.id, roleId: rid })),
+          data: safeRoleIds.map((rid) => ({ userId: user.id, roleId: rid })),
           skipDuplicates: true,
         });
       }
@@ -194,10 +209,11 @@ router.put('/:id', requirePermission('users.update'), async (req, res) => {
     },
   });
   if (Array.isArray(roleIds)) {
+    const safeRoleIds = await filterTenantRoleIds(req, roleIds);
     await prisma.userRole.deleteMany({ where: { userId: user.id } });
-    if (roleIds.length) {
+    if (safeRoleIds.length) {
       await prisma.userRole.createMany({
-        data: roleIds.map((rid) => ({ userId: user.id, roleId: rid })),
+        data: safeRoleIds.map((rid) => ({ userId: user.id, roleId: rid })),
         skipDuplicates: true,
       });
     }

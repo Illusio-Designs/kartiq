@@ -231,6 +231,14 @@ router.patch('/:id/warehouse', requirePermission('orders.update'), async (req, r
       if (!best) return res.status(400).json({ error: 'No eligible warehouse' });
       targetId = best.warehouseId;
       reason = `auto \u00B7 ${best.reason}`;
+    } else {
+      // Manual assignment: verify the warehouse belongs to this tenant before
+      // writing it, so a leaked/guessed id can't attach a foreign warehouse.
+      if (!targetId) return res.status(400).json({ error: 'warehouseId is required' });
+      const warehouse = await prisma.warehouse.findFirst({
+        where: { id: targetId, tenantId: req.tenant.id },
+      });
+      if (!warehouse) return res.status(404).json({ error: 'Warehouse not found' });
     }
     if (!targetId) return res.status(400).json({ error: 'warehouseId is required' });
 

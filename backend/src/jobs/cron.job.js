@@ -34,6 +34,7 @@ async function syncChannelOrders() {
   const channels = await prisma.channel.findMany({
     where: { isActive: true },
     include: { tenant: { select: { status: true } } },
+    take: 500, // cap unbounded cross-tenant scan (repo rule: bounded queries)
   });
 
   const results = { channelsProcessed: 0, ordersImported: 0, errors: [] };
@@ -89,6 +90,7 @@ async function syncRecentOrders() {
   const channels = await prisma.channel.findMany({
     where: { isActive: true },
     include: { tenant: { select: { status: true } } },
+    take: 500, // cap unbounded cross-tenant scan (repo rule: bounded queries)
   });
 
   const results = { channelsProcessed: 0, ordersImported: 0, errors: [] };
@@ -125,6 +127,7 @@ async function pushInventoryToAll() {
   const channels = await prisma.channel.findMany({
     where: { isActive: true },
     include: { tenant: { select: { status: true } } },
+    take: 500, // cap unbounded cross-tenant scan (repo rule: bounded queries)
   });
 
   const results = { channelsProcessed: 0, skusUpdated: 0, errors: [] };
@@ -148,11 +151,32 @@ async function pushInventoryToAll() {
   return results;
 }
 
+// Valid order-status enum values (mirrors the DB enum). A raw courier status
+// string must never be written into this column — map it first.
+const ORDER_STATUSES = ['PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED'];
+
+// Map a free-form courier status string (e.g. "In Transit", "Out for Delivery",
+// "RTO Initiated") onto a valid order-status enum value. Returns null for
+// unknown strings so the caller skips the write rather than corrupting the enum.
+function mapCourierStatus(raw) {
+  if (raw == null) return null;
+  const upper = String(raw).toUpperCase();
+  if (ORDER_STATUSES.includes(upper)) return upper; // adapter already gave an enum value
+  const s = upper.toLowerCase();
+  if (s.includes('rto') || s.includes('return')) return 'RETURNED';
+  if (s.includes('cancel')) return 'CANCELLED';
+  if (s.includes('out for delivery')) return 'SHIPPED'; // check before 'deliver'
+  if (s.includes('deliver')) return 'DELIVERED';
+  if (s.includes('transit') || s.includes('shipped') || s.includes('dispatch')) return 'SHIPPED';
+  return null;
+}
+
 // ── 3. Poll tracking status for shipments that are in transit ───────────────
 async function pollShipmentStatus() {
   const results = { shipmentsChecked: 0, statusChanges: 0, delivered: 0, errors: [] };
 
-  // Find orders that were shipped but not yet delivered, with an AWB
+  // Find orders that were shipped but not yet delivered, with an AWB.
+  // Oldest-updated first so a large backlog can't starve stale shipments.
   const orders = await prisma.order.findMany({
     where: {
       status: { in: ['SHIPPED', 'PROCESSING'] },
@@ -160,6 +184,7 @@ async function pollShipmentStatus() {
       channelId: { not: null },
     },
     include: { channel: true },
+    orderBy: { updatedAt: 'asc' },
     take: 200,
   });
 
@@ -173,7 +198,10 @@ async function pollShipmentStatus() {
       if (!status) continue;
       results.shipmentsChecked++;
 
-      const newOrderStatus = status.status || status.orderStatus;
+      // Adapters return { currentStatus }; keep legacy fallbacks. Always map
+      // the raw courier string to a valid enum before writing.
+      const rawStatus = status.currentStatus || status.status || status.orderStatus;
+      const newOrderStatus = mapCourierStatus(rawStatus);
       if (newOrderStatus && newOrderStatus !== order.status) {
         const update = { status: newOrderStatus };
         if (newOrderStatus === 'DELIVERED') {
@@ -217,27 +245,62 @@ async function runAllJobs() {
 }
 
 // In-process scheduler — kicks off intervals when the backend boots.
-// Guarded so multi-instance deployments don't double-run (set CRON_LEADER=true on one node).
+//
+// Leader election is OPT-IN and fail-safe: in a multi-instance deployment the
+// schedulers run ONLY on the node explicitly marked leader (CRON_LEADER=true),
+// so N replicas don't each duplicate every job. Any other CRON_LEADER value
+// (e.g. 'false') means "not leader" and skips. When CRON_LEADER is unset we
+// assume a single instance (dev / one-box prod) and run — unless CRON_ENABLED
+// is set to 'false' to force the schedulers off. This keeps local dev working
+// out of the box while preventing accidental N-instance duplication in a fleet.
 let _started = false;
 const _intervals = [];
+
+// Per-job re-entrancy guard: if a job's previous tick is still running when the
+// next interval fires, skip this tick rather than piling on a second copy.
+const _inFlight = new Set();
+function guarded(name, fn) {
+  return async () => {
+    if (_inFlight.has(name)) {
+      console.log(`[cron] ${name} still running — skipping this tick`);
+      return;
+    }
+    _inFlight.add(name);
+    try { await fn(); }
+    catch (e) { console.error(`[cron] ${name}:`, e.message); }
+    finally { _inFlight.delete(name); }
+  };
+}
+
+// Parse a minutes env var, falling back to `def` when missing or non-numeric
+// (a NaN interval makes setInterval busy-loop). `allowZero` lets a job opt out.
+function parseMinutes(raw, def, allowZero = false) {
+  const n = Number(raw);
+  if (Number.isFinite(n) && (n > 0 || (allowZero && n === 0))) return n;
+  return def;
+}
+
 function start() {
   if (_started) return;
   if (process.env.DISABLE_CRON === 'true') {
     logger.info('[cron] DISABLED via DISABLE_CRON=true');
     return;
   }
-  if (process.env.CRON_LEADER === 'false') {
-    console.log('[cron] skipped (CRON_LEADER=false)');
+  const leader = process.env.CRON_LEADER;
+  const isLeader = leader === 'true';
+  const singleInstance = (leader === undefined || leader === '') && process.env.CRON_ENABLED !== 'false';
+  if (!isLeader && !singleInstance) {
+    console.log(`[cron] skipped (not leader; CRON_LEADER=${leader ?? 'unset'}, CRON_ENABLED=${process.env.CRON_ENABLED ?? 'unset'})`);
     return;
   }
   _started = true;
 
   const minutes = (n) => n * 60 * 1000;
-  const orderSyncInterval = Number(process.env.CRON_ORDER_SYNC_MIN || 5);
-  const fastOrderInterval = Number(process.env.CRON_FAST_ORDER_SYNC_MIN ?? 1); // 0 disables
-  const inventoryInterval = Number(process.env.CRON_INVENTORY_MIN || 15);
-  const trackingInterval  = Number(process.env.CRON_TRACKING_MIN || 10);
-  const reviewInterval    = Number(process.env.CRON_REVIEW_MIN || 60);
+  const orderSyncInterval = parseMinutes(process.env.CRON_ORDER_SYNC_MIN, 5);
+  const fastOrderInterval = parseMinutes(process.env.CRON_FAST_ORDER_SYNC_MIN ?? 1, 1, true); // 0 disables
+  const inventoryInterval = parseMinutes(process.env.CRON_INVENTORY_MIN, 15);
+  const trackingInterval  = parseMinutes(process.env.CRON_TRACKING_MIN, 10);
+  const reviewInterval    = parseMinutes(process.env.CRON_REVIEW_MIN, 60);
 
   logger.info({ detail: {
     orderSyncMin: orderSyncInterval,
@@ -248,17 +311,17 @@ function start() {
   } }, '[cron] scheduling:');
 
   _intervals.push(
-    setInterval(() => syncChannelOrders().catch((e) => console.error('[cron] syncChannelOrders:', e.message)), minutes(orderSyncInterval)),
-    setInterval(() => pushInventoryToAll().catch((e) => console.error('[cron] pushInventoryToAll:', e.message)), minutes(inventoryInterval)),
-    setInterval(() => pollShipmentStatus().catch((e) => console.error('[cron] pollShipmentStatus:', e.message)), minutes(trackingInterval)),
-    setInterval(() => processReviewQueue({}).catch((e) => console.error('[cron] processReviewQueue:', e.message)), minutes(reviewInterval)),
+    setInterval(guarded('syncChannelOrders', syncChannelOrders), minutes(orderSyncInterval)),
+    setInterval(guarded('pushInventoryToAll', pushInventoryToAll), minutes(inventoryInterval)),
+    setInterval(guarded('pollShipmentStatus', pollShipmentStatus), minutes(trackingInterval)),
+    setInterval(guarded('processReviewQueue', () => processReviewQueue({})), minutes(reviewInterval)),
     // No wallet-autopay setInterval — wallet is manual top-up only.
   );
 
   // Fast, near-real-time order pass — only new + changed orders each minute.
   if (fastOrderInterval > 0) {
     _intervals.push(
-      setInterval(() => syncRecentOrders().catch((e) => console.error('[cron] syncRecentOrders:', e.message)), minutes(fastOrderInterval)),
+      setInterval(guarded('syncRecentOrders', syncRecentOrders), minutes(fastOrderInterval)),
     );
   }
 }

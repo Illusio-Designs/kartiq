@@ -1,14 +1,22 @@
 const { Router } = require('express');
 const prisma = require('../utils/prisma');
-const { authenticate, requireTenant } = require('../middleware/auth.middleware');
+const { authenticate, requireTenant, requirePermission } = require('../middleware/auth.middleware');
 const { audit } = require('../services/audit.service');
 const { notifyAdmins, notifyUser } = require('../services/notifications.service');
 
 const router = Router();
 router.use(authenticate, requireTenant);
 
+// The permission catalog (see backend/src/scripts/seed.js MODULES) has no
+// dedicated `support.*` module, so support-ticket access is gated on the
+// closest existing real codes: `settings.read` to view, `settings.update`
+// to create/reply/close. Without these guards any authenticated tenant user
+// could read and close the whole tenant's tickets.
+const canViewTickets = requirePermission('settings.read');
+const canManageTickets = requirePermission('settings.update');
+
 // List my tenant's tickets
-router.get('/', async (req, res) => {
+router.get('/', canViewTickets, async (req, res) => {
   const tickets = await prisma.supportTicket.findMany({
     where: { tenantId: req.tenant.id },
     orderBy: { updatedAt: 'desc' },
@@ -21,7 +29,7 @@ router.get('/', async (req, res) => {
 });
 
 // Get a single ticket with its full thread
-router.get('/:id', async (req, res) => {
+router.get('/:id', canViewTickets, async (req, res) => {
   const ticket = await prisma.supportTicket.findFirst({
     where: { id: req.params.id, tenantId: req.tenant.id },
     include: { messages: { orderBy: { createdAt: 'asc' } } },
@@ -31,7 +39,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Open a ticket
-router.post('/', async (req, res) => {
+router.post('/', canManageTickets, async (req, res) => {
   try {
     const { subject, priority = 'NORMAL', body, category } = req.body;
     if (!subject || !body) return res.status(400).json({ error: 'subject and body are required' });
@@ -73,7 +81,7 @@ router.post('/', async (req, res) => {
 });
 
 // Tenant reply
-router.post('/:id/reply', async (req, res) => {
+router.post('/:id/reply', canManageTickets, async (req, res) => {
   const ticket = await prisma.supportTicket.findFirst({
     where: { id: req.params.id, tenantId: req.tenant.id },
   });
@@ -113,7 +121,7 @@ router.post('/:id/reply', async (req, res) => {
 });
 
 // Close my own ticket
-router.post('/:id/close', async (req, res) => {
+router.post('/:id/close', canManageTickets, async (req, res) => {
   const ticket = await prisma.supportTicket.findFirst({
     where: { id: req.params.id, tenantId: req.tenant.id },
   });

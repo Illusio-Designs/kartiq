@@ -51,6 +51,65 @@ const assignPlanSchema = z.object({
   payAsYouGo: z.boolean().optional(),
 });
 
+// Whitelist the real `blog_posts` columns so a raw body can't mass-assign
+// or blow up on NOT NULL. `tags` is a NOT NULL json column — defaulted to []
+// on create. Partial variant used for updates.
+const blogPostSchema = z.object({
+  slug: z.string().min(1).max(191),
+  title: z.string().min(1).max(191),
+  content: z.string().min(1),
+  tags: z.any().optional(),
+  excerpt: z.string().nullable().optional(),
+  coverImage: z.string().nullable().optional(),
+  authorName: z.string().max(191).nullable().optional(),
+  status: z.enum(['DRAFT', 'PUBLISHED', 'ARCHIVED']).optional(),
+  publishedAt: z.string().datetime().nullable().optional(),
+  metaTitle: z.string().max(191).nullable().optional(),
+  metaDescription: z.string().nullable().optional(),
+  metaKeywords: z.string().nullable().optional(),
+  ogImage: z.string().nullable().optional(),
+  canonicalUrl: z.string().max(191).nullable().optional(),
+});
+const blogPostPartial = blogPostSchema.partial();
+
+// Whitelist the real `public_content` columns. `data` is a NOT NULL json
+// column — defaulted to {} on create.
+const publicContentSchema = z.object({
+  type: z.string().min(1).max(191),
+  slug: z.string().max(191).nullable().optional(),
+  title: z.string().min(1).max(191),
+  subtitle: z.string().nullable().optional(),
+  body: z.string().nullable().optional(),
+  image: z.string().nullable().optional(),
+  icon: z.string().max(191).nullable().optional(),
+  category: z.string().max(191).nullable().optional(),
+  href: z.string().max(191).nullable().optional(),
+  sortOrder: z.number().int().optional(),
+  data: z.any().optional(),
+  isActive: z.boolean().optional(),
+});
+const publicContentPartial = publicContentSchema.partial();
+
+// Whitelist the real `seo_settings` columns for the upsert handler.
+const seoSettingSchema = z.object({
+  path: z.string().min(1).max(191),
+  title: z.string().max(191).optional(),
+  description: z.string().nullable().optional(),
+  keywords: z.string().nullable().optional(),
+  ogTitle: z.string().max(191).nullable().optional(),
+  ogDescription: z.string().nullable().optional(),
+  ogImage: z.string().nullable().optional(),
+  twitterCard: z.string().max(191).nullable().optional(),
+  canonicalUrl: z.string().max(191).nullable().optional(),
+  robots: z.string().max(191).optional(),
+  schemaJsonLd: z.string().nullable().optional(),
+});
+
+// Support-ticket status enum (see `support_tickets` in schema.sql.js).
+const ticketStatusSchema = z.object({
+  status: z.enum(['OPEN', 'PENDING', 'RESOLVED', 'CLOSED']),
+});
+
 // ── CRON TRIGGERS (manual runs for debugging) ──────────────────────────
 router.post('/cron/run', async (_req, res) => {
   try { res.json(await cronJob.runAllJobs()); }
@@ -248,16 +307,25 @@ router.get('/blog', async (_req, res) => {
 
 router.post('/blog', async (req, res) => {
   try {
-    const post = await prisma.blogPost.create({ data: req.body });
+    const data = blogPostSchema.parse(req.body);
+    if (data.tags === undefined) data.tags = []; // NOT NULL json column
+    const post = await prisma.blogPost.create({ data });
     res.status(201).json(post);
-  } catch (e) { res.status(400).json({ error: e.message }); }
+  } catch (e) {
+    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
+    res.status(400).json({ error: e.message });
+  }
 });
 
 router.put('/blog/:id', async (req, res) => {
   try {
-    const post = await prisma.blogPost.update({ where: { id: req.params.id }, data: req.body });
+    const data = blogPostPartial.parse(req.body);
+    const post = await prisma.blogPost.update({ where: { id: req.params.id }, data });
     res.json(post);
-  } catch (e) { res.status(400).json({ error: e.message }); }
+  } catch (e) {
+    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
+    res.status(400).json({ error: e.message });
+  }
 });
 
 router.delete('/blog/:id', async (req, res) => {
@@ -272,14 +340,18 @@ router.get('/seo', async (_req, res) => {
 });
 
 router.put('/seo', async (req, res) => {
-  const { path, ...rest } = req.body;
-  if (!path) return res.status(400).json({ error: 'path required' });
-  const seo = await prisma.seoSetting.upsert({
-    where: { path },
-    update: rest,
-    create: { path, ...rest, title: rest.title || path },
-  });
-  res.json(seo);
+  try {
+    const { path, ...rest } = seoSettingSchema.parse(req.body);
+    const seo = await prisma.seoSetting.upsert({
+      where: { path },
+      update: rest,
+      create: { path, ...rest, title: rest.title || path },
+    });
+    res.json(seo);
+  } catch (e) {
+    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
+    res.status(400).json({ error: e.message });
+  }
 });
 
 router.delete('/seo/:id', async (req, res) => {
@@ -453,19 +525,28 @@ router.get('/content', async (req, res) => {
 
 router.post('/content', async (req, res) => {
   try {
-    const item = await prisma.publicContent.create({ data: req.body });
+    const data = publicContentSchema.parse(req.body);
+    if (data.data === undefined) data.data = {}; // NOT NULL json column
+    const item = await prisma.publicContent.create({ data });
     res.status(201).json(item);
-  } catch (e) { res.status(400).json({ error: e.message }); }
+  } catch (e) {
+    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
+    res.status(400).json({ error: e.message });
+  }
 });
 
 router.put('/content/:id', async (req, res) => {
   try {
+    const data = publicContentPartial.parse(req.body);
     const item = await prisma.publicContent.update({
       where: { id: req.params.id },
-      data: req.body,
+      data,
     });
     res.json(item);
-  } catch (e) { res.status(400).json({ error: e.message }); }
+  } catch (e) {
+    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
+    res.status(400).json({ error: e.message });
+  }
 });
 
 router.delete('/content/:id', async (req, res) => {
@@ -576,11 +657,19 @@ router.post('/tickets/:id/reply', async (req, res) => {
 });
 
 router.put('/tickets/:id/status', async (req, res) => {
-  const t = await prisma.supportTicket.update({
-    where: { id: req.params.id },
-    data: { status: req.body.status },
-  });
-  res.json(t);
+  try {
+    const { status } = ticketStatusSchema.parse(req.body);
+    const existing = await prisma.supportTicket.findFirst({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Ticket not found' });
+    const t = await prisma.supportTicket.update({
+      where: { id: req.params.id },
+      data: { status },
+    });
+    res.json(t);
+  } catch (e) {
+    if (e instanceof z.ZodError) return res.status(400).json({ error: e.errors });
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── AUDIT LOG (platform-wide) ───────────────────────────

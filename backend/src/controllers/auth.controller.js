@@ -10,7 +10,6 @@ const registerSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
   password: z.string().min(6),
-  role: z.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'STAFF', 'ACCOUNTANT']).optional(),
 });
 
 const loginSchema = z.object({
@@ -57,7 +56,7 @@ const register = async (req, res) => {
 
     const hashed = await bcrypt.hash(data.password, 12);
     const user = await prisma.user.create({
-      data: { ...data, password: hashed, provider: 'LOCAL' },
+      data: { ...data, password: hashed, provider: 'LOCAL', role: 'STAFF' },
       select: { id: true, name: true, email: true, role: true, createdAt: true },
     });
     res.status(201).json({ message: 'User created', user });

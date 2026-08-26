@@ -863,7 +863,11 @@ class AmazonAdapter {
         country: o.ShippingAddress?.CountryCode,
       },
       items: [], // Requires separate call to getOrderItems endpoint
-      subtotal: parseFloat(o.OrderTotal?.Amount || 0),
+      // OrderTotal is the GROSS total (items + tax + shipping). Using it as the
+      // subtotal overstates the item subtotal whenever the per-order item pull
+      // is throttled/fails and never gets corrected. Default to null ("unknown")
+      // — the accurate subtotal is filled in once getOrderItems succeeds.
+      subtotal: null,
       shippingCharge: 0,
       tax: 0,
       total: parseFloat(o.OrderTotal?.Amount || 0),

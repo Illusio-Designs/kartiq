@@ -101,6 +101,22 @@ async function initDb() {
     // the topbar drawers can ask only for what's relevant to them.
     { table: 'help_faqs',          column: 'audience', ddl: "VARCHAR(16) NOT NULL DEFAULT 'all'" },
     { table: 'changelog_entries',  column: 'audience', ddl: "VARCHAR(16) NOT NULL DEFAULT 'all'" },
+
+    // Shipment tracking URL — the shipment create route accepts trackingUrl
+    // alongside the trackingNumber/courier.
+    { table: 'shipments', column: 'trackingUrl', ddl: 'VARCHAR(512) DEFAULT NULL' },
+
+    // Warehouse routing + contact fields. routingPriority is read by
+    // routing.service.js (lower = preferred); phone/email are accepted on
+    // warehouse create and rendered in the UI.
+    { table: 'warehouses', column: 'routingPriority', ddl: 'INT NOT NULL DEFAULT 100' },
+    { table: 'warehouses', column: 'phone',           ddl: 'VARCHAR(30) DEFAULT NULL' },
+    { table: 'warehouses', column: 'email',           ddl: 'VARCHAR(200) DEFAULT NULL' },
+
+    // Customer location — accepted on customer create; mobile reads c.city.
+    { table: 'customers', column: 'city',    ddl: 'VARCHAR(120) DEFAULT NULL' },
+    { table: 'customers', column: 'state',   ddl: 'VARCHAR(120) DEFAULT NULL' },
+    { table: 'customers', column: 'country', ddl: 'VARCHAR(120) DEFAULT NULL' },
   ];
 
   // Push-notification device registry — one row per (user, expo token).
