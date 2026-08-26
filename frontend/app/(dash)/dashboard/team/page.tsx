@@ -14,8 +14,9 @@ import { Input } from '@/components/ui/Input';
 import { PasswordInput } from '@/components/ui/PasswordInput';
 import { Checkbox } from '@/components/ui/Checkbox';
 import {
-  Button, Badge, Card, CardHeader, CardTitle, CardDescription, Avatar, Tooltip, Tabs, EmptyState, useConfirm,
+  Button, Badge, Card, CardHeader, CardTitle, CardDescription, Avatar, Tooltip, Tabs, EmptyState, useConfirm, Pagination,
 } from '@/components/ui';
+import { StatRow } from '@/components/StatCards';
 
 export default function TeamPage() {
   const { hasPermission } = useAuthStore();
@@ -76,6 +77,9 @@ function UsersTab({ canManage, showNew, setShowNew }: {
   const [roles, setRoles] = useState<any[]>([]);
   const [editing, setEditing] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [uPage, setUPage] = useState(1);
+  const uPageSize = 20;
+  const plan = useAuthStore((s) => s.plan);
   const [confirmUi, askConfirm] = useConfirm();
 
   const load = async () => {
@@ -92,6 +96,14 @@ function UsersTab({ canManage, showNew, setShowNew }: {
   const filteredUsers = useFilteredBySearch(users, (u: any) =>
     `${u.name || ''} ${u.email || ''} ${u.role || ''} ${(u.roles || []).map((ur: any) => ur.role?.name || '').join(' ')}`
   );
+  useEffect(() => { setUPage(1); }, [filteredUsers.length]);
+  const pagedUsers = filteredUsers.slice((uPage - 1) * uPageSize, uPage * uPageSize);
+
+  // Stat strip figures.
+  const activeCount = users.filter((u: any) => u.isActive).length;
+  const customRoleCount = roles.filter((r: any) => !r.isSystem).length;
+  const seatCap = plan?.maxUsers ?? null;
+  const seatsLeft = seatCap == null ? '∞' : Math.max(0, seatCap - users.length);
 
   const save = async (data: any) => {
     if (data.id) await userApi.update(data.id, data);
@@ -128,6 +140,13 @@ function UsersTab({ canManage, showNew, setShowNew }: {
         />
       </Modal>
 
+      <StatRow items={[
+        { label: 'Team members', value: users.length, tone: 'slate', icon: <Users size={16} /> },
+        { label: 'Active', value: activeCount, tone: 'emerald', icon: <Users size={16} /> },
+        { label: 'Custom roles', value: customRoleCount, tone: 'violet', icon: <Shield size={16} /> },
+        { label: 'Seats left', value: seatsLeft, tone: 'amber', icon: <Plus size={16} />, hint: seatCap == null ? 'Unlimited on your plan' : `Plan allows ${seatCap} users` },
+      ]} cols={4} />
+
       <Card className="p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -142,7 +161,7 @@ function UsersTab({ canManage, showNew, setShowNew }: {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? <TableRowsSkeleton rows={4} cols={5} cellClassName="px-4 py-3.5" /> :
-               filteredUsers.length ? filteredUsers.map((u) => {
+               filteredUsers.length ? pagedUsers.map((u) => {
                 // No dedicated last-active field exists yet — show a real
                 // timestamp when the API provides one, otherwise a neutral dash
                 // (never a fabricated value).
@@ -250,6 +269,10 @@ function UsersTab({ canManage, showNew, setShowNew }: {
           </table>
         </div>
       </Card>
+
+      {filteredUsers.length > uPageSize && (
+        <Pagination page={uPage} total={filteredUsers.length} pageSize={uPageSize} onPageChange={setUPage} />
+      )}
     </>
   );
 }

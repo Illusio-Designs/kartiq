@@ -106,7 +106,7 @@ export const billingApi = {
   updateTenant: (data: { businessName?: string; gstin?: string }) =>
     api.patch('/billing/tenant', data),
   // Tenant-visible audit log (own tenant only)
-  audit: (params?: { limit?: number; action?: string; before?: string }) =>
+  audit: (params?: { page?: number; limit?: number; action?: string; before?: string }) =>
     api.get('/billing/audit', { params }),
 };
 
@@ -139,7 +139,7 @@ export const oauthApi = {
 
 // ── Support tickets ────────────────────────────────────────────────
 export const ticketApi = {
-  list: () => api.get('/tickets'),
+  list: (params?: { page?: number; limit?: number }) => api.get('/tickets', { params }),
   get: (id: string) => api.get(`/tickets/${id}`),
   create: (data: { subject: string; body: string; priority?: string; category?: string }) =>
     api.post('/tickets', data),
@@ -427,6 +427,7 @@ export const dashboardApi = {
 
 export const productApi = {
   list: (params?: any) => api.get('/products', { params }),
+  stats: () => api.get('/products/stats'),
   get: (id: string) => api.get(`/products/${id}`),
   create: (data: any) => api.post('/products', data),
   update: (id: string, data: any) => api.put(`/products/${id}`, data),

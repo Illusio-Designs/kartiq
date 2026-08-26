@@ -14,6 +14,7 @@ import {
 import type { Density } from '@/components/ui';
 import { Plus, Package, RefreshCw, CheckCircle2, XCircle, Boxes, Layers, AlertTriangle, Ban, Tag, SearchX, ListFilter, ArrowUpDown, Bookmark, Download, SlidersHorizontal, Trash2, Send, Eye, EyeOff, X, ArrowUp, ArrowDown, ChevronsUpDown, Upload, MoreHorizontal } from 'lucide-react';
 import { ProductCardSkeleton } from '@/components/Shimmer';
+import { StatRow } from '@/components/StatCards';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
@@ -116,6 +117,7 @@ export default function ProductsPage() {
   });
 
   // Filter options
+  const { data: prodStats } = useQuery({ queryKey: ['product-stats'], queryFn: () => productApi.stats().then(r => r.data) });
   const { data: catData } = useQuery({ queryKey: ['product-categories'], queryFn: () => productApi.categories().then(r => r.data) });
   const { data: brandData } = useQuery({ queryKey: ['product-brands'], queryFn: () => productApi.brands().then(r => r.data) });
   const { data: channelsData } = useQuery({ queryKey: ['channels'], queryFn: () => channelApi.list().then(r => r.data) });
@@ -327,6 +329,14 @@ export default function ProductsPage() {
     <>
       <div className="space-y-5 animate-slide-up">
         <PageHeader title="Catalog" />
+
+        <StatRow items={[
+          { label: 'Total SKUs', value: (prodStats?.total ?? 0).toLocaleString(), tone: 'slate', icon: <Package size={16} /> },
+          { label: 'In stock', value: (prodStats?.inStock ?? 0).toLocaleString(), tone: 'emerald', icon: <CheckCircle2 size={16} /> },
+          { label: 'Low stock', value: (prodStats?.lowStock ?? 0).toLocaleString(), tone: 'amber', icon: <AlertTriangle size={16} />, hint: '10 or fewer available' },
+          { label: 'Out of stock', value: (prodStats?.outOfStock ?? 0).toLocaleString(), tone: 'rose', icon: <Ban size={16} /> },
+          { label: 'Needs price', value: (prodStats?.needsPrice ?? 0).toLocaleString(), tone: 'amber', icon: <Tag size={16} /> },
+        ]} cols={5} />
 
         {/* Controls card — tabs · toolbar · filter chips in one surface.
             overflow-visible so the Views/Sort/Columns menus aren't clipped. */}

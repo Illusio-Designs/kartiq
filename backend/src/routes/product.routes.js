@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { getProducts, getProduct, createProduct, updateProduct, deleteProduct, addVariant, getCategories, getBrands } = require('../controllers/product.controller');
+const { getProducts, getProductStats, getProduct, createProduct, updateProduct, deleteProduct, addVariant, getCategories, getBrands } = require('../controllers/product.controller');
 const { authenticate, requireTenant, requirePermission, enforceLimit } = require('../middleware/auth.middleware');
 const { pushProductToChannels } = require('../services/channel.service');
 
@@ -7,6 +7,7 @@ const router = Router();
 router.use(authenticate, requireTenant);
 
 router.get('/',           requirePermission('products.read'), getProducts);
+router.get('/stats',      requirePermission('products.read'), getProductStats);
 router.get('/categories', requirePermission('products.read'), getCategories);
 router.get('/brands',     requirePermission('products.read'), getBrands);
 router.get('/:id',        requirePermission('products.read'), getProduct);

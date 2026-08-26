@@ -462,7 +462,9 @@ router.post('/subscription/cancel', requirePermission('billing.manage'), async (
 // rows so a single response stays under the JSON limit; clients should
 // paginate via `before` (cursor on createdAt) to walk further back.
 router.get('/audit', requirePermission('settings.read'), async (req, res) => {
-  const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 25));
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const skip = (page - 1) * limit;
   const action = String(req.query.action || '').trim();
   const before = req.query.before ? new Date(String(req.query.before)) : null;
 
@@ -474,9 +476,11 @@ router.get('/audit', requirePermission('settings.read'), async (req, res) => {
     prisma.auditLog.findMany({
       where,
       orderBy: { createdAt: 'desc' },
+      skip,
       take: limit,
     }),
-    prisma.auditLog.count({ where: { tenantId: req.tenant.id } }),
+    // Total honours the action filter so the pager count matches the list.
+    prisma.auditLog.count({ where }),
   ]);
 
   // Distinct action list for the UI's filter dropdown — small surface, fast.
@@ -491,6 +495,8 @@ router.get('/audit', requirePermission('settings.read'), async (req, res) => {
   res.json({
     logs: rows,
     total,
+    page,
+    limit,
     actions: distinctActions.map((a) => ({ action: a.action, count: a._count?.action || 0 })),
   });
 });

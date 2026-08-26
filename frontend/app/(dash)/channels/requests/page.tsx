@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { channelApi } from '@/lib/api';
@@ -11,7 +11,8 @@ import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { TableRowsSkeleton } from '@/components/Shimmer';
 import { Tooltip } from '@/components/ui/Tooltip';
-import { Badge, Card, EmptyState, useConfirm } from '@/components/ui';
+import { Badge, Card, EmptyState, useConfirm, Pagination } from '@/components/ui';
+import { StatRow } from '@/components/StatCards';
 
 const STATUS_FILTERS = [
   { value: '', label: 'All Statuses' },
@@ -63,6 +64,18 @@ export default function ChannelRequestsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['channel-requests'] }),
   });
 
+  // Client-side pagination over the filtered set.
+  const [reqPage, setReqPage] = useState(1);
+  const pageSize = 15;
+  useEffect(() => { setReqPage(1); }, [search, status]);
+  const pagedRequests = useMemo(
+    () => (requests || []).slice((reqPage - 1) * pageSize, reqPage * pageSize),
+    [requests, reqPage],
+  );
+
+  // Status breakdown for the stat row (from the loaded set).
+  const rc = (s: string) => (rawRequests || []).filter((r: any) => String(r.status).toUpperCase() === s).length;
+
   const isEmpty = !requests || requests.length === 0;
 
   return (
@@ -70,6 +83,13 @@ export default function ChannelRequestsPage() {
       {confirmUi}
       <div className="space-y-5 animate-slide-up">
         <PageHeader title="Channel Requests" />
+
+        <StatRow items={[
+          { label: 'Pending', value: rc('PENDING'), tone: 'amber', icon: <Clock size={16} /> },
+          { label: 'Approved', value: rc('APPROVED'), tone: 'emerald', icon: <CheckCircle2 size={16} /> },
+          { label: 'Rejected', value: rc('REJECTED'), tone: 'rose', icon: <XCircle size={16} /> },
+          { label: 'Total', value: (rawRequests || []).length, tone: 'slate', icon: <Inbox size={16} /> },
+        ]} cols={4} />
 
         <Link
           href="/channels"
@@ -129,7 +149,7 @@ export default function ChannelRequestsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {requests.map((r: any) => {
+                  {pagedRequests.map((r: any) => {
                     const meta = STATUS_META[r.status] || STATUS_META.PENDING;
                     const StatusIcon = meta.icon;
                     return (
@@ -177,6 +197,10 @@ export default function ChannelRequestsPage() {
             </div>
           )}
         </Card>
+
+        {requests.length > pageSize && (
+          <Pagination page={reqPage} total={requests.length} pageSize={pageSize} onPageChange={setReqPage} />
+        )}
       </div>
     </>
   );

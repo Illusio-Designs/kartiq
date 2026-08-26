@@ -16,7 +16,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { billingApi } from '@/lib/api';
 import { TableRowsSkeleton } from '@/components/Shimmer';
 import { Activity, RefreshCw, ChevronDown } from 'lucide-react';
-import { Button, Badge, Card, Select, SearchField, EmptyState } from '@/components/ui';
+import { Button, Badge, Card, Select, SearchField, EmptyState, Pagination } from '@/components/ui';
 
 interface AuditRow {
   id: string;
@@ -90,15 +90,17 @@ export default function TenantAuditPage() {
   const [logs, setLogs] = useState<AuditRow[]>([]);
   const [actions, setActions] = useState<Array<{ action: string; count: number }>>([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
   const [loading, setLoading] = useState(true);
   const [actionFilter, setActionFilter] = useState('');
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const load = async (filter = actionFilter) => {
+  const load = async (filter = actionFilter, p = page) => {
     setLoading(true);
     try {
-      const r = await billingApi.audit({ limit: 200, action: filter || undefined });
+      const r = await billingApi.audit({ page: p, limit: pageSize, action: filter || undefined });
       setLogs(r.data?.logs || []);
       setActions(r.data?.actions || []);
       setTotal(Number(r.data?.total || 0));
@@ -107,7 +109,9 @@ export default function TenantAuditPage() {
     }
   };
 
-  useEffect(() => { load(''); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { load('', 1); /* eslint-disable-next-line */ }, []);
+  // Refetch whenever the page changes (server-side pagination).
+  useEffect(() => { load(actionFilter, page); /* eslint-disable-next-line */ }, [page]);
 
   const filtered = useMemo(() => {
     if (!search) return logs;
@@ -181,7 +185,7 @@ export default function TenantAuditPage() {
               <div className="hidden sm:block flex-1" />
               <Select
                 value={actionFilter}
-                onChange={(v) => { setActionFilter(v); load(v); }}
+                onChange={(v) => { setActionFilter(v); setPage(1); load(v, 1); }}
                 options={[
                   { value: '', label: 'All actions' },
                   ...actions.map((a) => ({ value: a.action, label: `${a.action} (${a.count})` })),
@@ -284,8 +288,12 @@ export default function TenantAuditPage() {
           </div>
         </Card>
 
+        {total > pageSize && (
+          <Pagination page={page} total={total} pageSize={pageSize} onPageChange={setPage} />
+        )}
+
         <p className="text-[11px] text-slate-400">
-          Showing up to 200 most recent entries for your tenant. Click any row to expand its metadata.
+          {total.toLocaleString()} event{total === 1 ? '' : 's'} logged for your tenant. Click any row to expand its metadata.
           For longer-range investigations, contact support.
         </p>
     </div>

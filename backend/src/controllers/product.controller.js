@@ -97,6 +97,48 @@ const getProducts = async (req, res) => {
   }
 };
 
+// Catalog KPI counts for the Products stat row. Computed across the WHOLE
+// catalog (not just a page): total SKUs, and how many are in / low / out of
+// stock, plus how many still need a price. Low threshold matches the UI (≤10).
+const getProductStats = async (req, res) => {
+  try {
+    const tId = tenantId(req);
+    const LOW = 10;
+    const [stockRows, priceRows] = await Promise.all([
+      // Available per product (products with no inventory row count as 0).
+      db('products as p')
+        .leftJoin('inventory_items as ii', 'ii.productId', 'p.id')
+        .where('p.tenantId', tId).andWhere('p.isActive', true)
+        .groupBy('p.id')
+        .select('p.id')
+        .select(db.raw('COALESCE(SUM(ii.quantityAvailable), 0) as avail'))
+        .catch(() => []),
+      // Highest variant price per product — 0/none means it still needs pricing.
+      db('products as p')
+        .leftJoin('product_variants as v', 'v.productId', 'p.id')
+        .where('p.tenantId', tId).andWhere('p.isActive', true)
+        .groupBy('p.id')
+        .select('p.id')
+        .select(db.raw('COALESCE(MAX(v.sellingPrice), 0) as maxprice'))
+        .catch(() => []),
+    ]);
+    let inStock = 0, lowStock = 0, outOfStock = 0;
+    for (const r of stockRows) {
+      const a = Number(r.avail || 0);
+      if (a <= 0) outOfStock++;
+      else if (a <= LOW) lowStock++;
+      else inStock++;
+    }
+    let needsPrice = 0;
+    for (const r of priceRows) if (Number(r.maxprice || 0) <= 0) needsPrice++;
+
+    res.json({ total: stockRows.length, inStock, lowStock, outOfStock, needsPrice });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Failed to fetch product stats' });
+  }
+};
+
 const getProduct = async (req, res) => {
   try {
     const product = await prisma.product.findFirst({
@@ -247,4 +289,4 @@ const getBrands = async (req, res) => {
   }
 };
 
-module.exports = { getProducts, getProduct, createProduct, updateProduct, deleteProduct, addVariant, getCategories, getBrands };
+module.exports = { getProducts, getProductStats, getProduct, createProduct, updateProduct, deleteProduct, addVariant, getCategories, getBrands };

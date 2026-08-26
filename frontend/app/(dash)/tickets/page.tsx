@@ -16,8 +16,9 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { ticketApi } from '@/lib/api';
 import { useSearchStore } from '@/store/search.store';
 import {
-  LifeBuoy, Send, MessageSquare, X as XIcon, Check, Plus,
+  LifeBuoy, Send, MessageSquare, X as XIcon, Check, Plus, Clock, CheckCircle2,
 } from 'lucide-react';
+import { StatRow } from '@/components/StatCards';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -79,6 +80,8 @@ function openNewTicket() {
 
 export default function TicketsPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [total, setTotal] = useState(0);
+  const [limit, setLimit] = useState(50);
   const [loading, setLoading] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [active, setActive] = useState<Ticket | null>(null);
@@ -86,12 +89,14 @@ export default function TicketsPage() {
   const [busy, setBusy] = useState(false);
   const query = useSearchStore((s) => s.query);
 
-  const load = async () => {
+  const load = async (take = limit) => {
     setLoading(true);
     try {
-      const r = await ticketApi.list();
-      const list: Ticket[] = r.data || [];
+      const r = await ticketApi.list({ limit: take });
+      // Tolerate both the paginated envelope and a legacy bare array.
+      const list: Ticket[] = r.data?.tickets || r.data || [];
       setTickets(list);
+      setTotal(Number(r.data?.total ?? list.length));
       if (!activeId && list[0]) setActiveId(list[0].id);
     } finally { setLoading(false); }
   };
@@ -146,6 +151,13 @@ export default function TicketsPage() {
           }
         />
 
+        <StatRow items={[
+          { label: 'Total', value: total, tone: 'slate', icon: <LifeBuoy size={16} /> },
+          { label: 'Open', value: tickets.filter((t) => t.status === 'OPEN').length, tone: 'blue', icon: <MessageSquare size={16} /> },
+          { label: 'Pending', value: tickets.filter((t) => t.status === 'PENDING').length, tone: 'amber', icon: <Clock size={16} /> },
+          { label: 'Resolved', value: tickets.filter((t) => t.status === 'RESOLVED' || t.status === 'CLOSED').length, tone: 'emerald', icon: <CheckCircle2 size={16} /> },
+        ]} cols={4} />
+
         {loading ? (
           <Card className="p-0 overflow-hidden">
             <table className="w-full"><tbody><TableRowsSkeleton rows={6} cols={3} cellClassName="px-4 py-3.5" /></tbody></table>
@@ -196,6 +208,13 @@ export default function TicketsPage() {
                     );
                   })}
                 </ul>
+                {tickets.length < total && (
+                  <div className="p-3 border-t border-slate-100 dark:border-slate-800 text-center">
+                    <Button variant="ghost" size="sm" loading={loading} onClick={() => { const next = limit + 50; setLimit(next); load(next); }}>
+                      Load more ({tickets.length} of {total})
+                    </Button>
+                  </div>
+                )}
               </div>
 
               {/* ── RIGHT: conversation pane (collapses on narrow screens) ── */}

@@ -6,11 +6,12 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { channelApi, oauthApi } from '@/lib/api';
 import { TableRowsSkeleton } from '@/components/Shimmer';
 import {
-  Plug, Clock, Inbox, Sparkles, Lock, Plus,
+  Plug, Clock, Inbox, Sparkles, Lock, Plus, Layers,
   ShoppingBag, Zap, Truck, Globe, MessageCircle, Building2, ChevronRight, HelpCircle, Mail,
   Calculator, ScanLine, CreditCard, Receipt, Users, Undo2, Warehouse,
 } from 'lucide-react';
 import Link from 'next/link';
+import { StatRow } from '@/components/StatCards';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -254,6 +255,13 @@ export default function ChannelsPage() {
     <>
       <div className="space-y-5 animate-slide-up">
         <PageHeader title="Channels" />
+
+        <StatRow items={[
+          { label: 'Connected', value: summary.connected ?? 0, tone: 'emerald', icon: <Plug size={16} /> },
+          { label: 'Requested', value: (data?.catalog || []).filter((e: CatalogEntry) => e.pendingRequest).length, tone: 'amber', icon: <Clock size={16} />, hint: 'Integration requests awaiting review', href: '/channels/requests' },
+          { label: 'Available', value: summary.available ?? 0, tone: 'blue', icon: <Sparkles size={16} /> },
+          { label: 'In market', value: summary.total ?? 0, tone: 'slate', icon: <Layers size={16} /> },
+        ]} cols={4} />
 
         {/* One card — header (subtitle + actions + toolbar) then the table. */}
         <Card className="p-0 overflow-visible">

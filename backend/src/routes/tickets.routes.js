@@ -15,17 +15,26 @@ router.use(authenticate, requireTenant);
 const canViewTickets = requirePermission('settings.read');
 const canManageTickets = requirePermission('settings.update');
 
-// List my tenant's tickets
+// List my tenant's tickets (paginated). Returns { tickets, total, page, limit }.
 router.get('/', canViewTickets, async (req, res) => {
-  const tickets = await prisma.supportTicket.findMany({
-    where: { tenantId: req.tenant.id },
-    orderBy: { updatedAt: 'desc' },
-    include: {
-      _count: { select: { messages: true } },
-      messages: { orderBy: { createdAt: 'desc' }, take: 1 },
-    },
-  });
-  res.json(tickets);
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+  const skip = (page - 1) * limit;
+  const where = { tenantId: req.tenant.id };
+  const [tickets, total] = await Promise.all([
+    prisma.supportTicket.findMany({
+      where,
+      orderBy: { updatedAt: 'desc' },
+      skip,
+      take: limit,
+      include: {
+        _count: { select: { messages: true } },
+        messages: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+    }),
+    prisma.supportTicket.count({ where }),
+  ]);
+  res.json({ tickets, total, page, limit });
 });
 
 // Get a single ticket with its full thread

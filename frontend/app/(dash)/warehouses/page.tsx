@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { warehouseApi } from '@/lib/api';
 import { TableRowsSkeleton } from '@/components/Shimmer';
+import { StatRow } from '@/components/StatCards';
 import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import {
   Button, Badge, Card, Modal, Input, Checkbox, EmptyState, Tooltip,
@@ -119,6 +120,13 @@ export default function WarehousesPage() {
     <>
       <div className="space-y-5 animate-slide-up">
         <PageHeader title="Warehouses" />
+
+        <StatRow items={[
+          { label: 'Locations', value: allWarehouses.length, tone: 'slate', icon: <Store size={16} /> },
+          { label: 'Active', value: allWarehouses.filter((w: any) => w.isActive).length, tone: 'emerald', icon: <Store size={16} /> },
+          { label: 'Amazon FBA', value: allWarehouses.filter(isVirtualFacility).length, tone: 'violet', icon: <Cloud size={16} />, hint: 'Read-only pooled facility' },
+          { label: 'Incomplete address', value: allWarehouses.filter(isIncompleteReal).length, tone: 'amber', icon: <MapPin size={16} />, hint: 'Finish the address to print MFN labels' },
+        ]} cols={4} />
 
         {/* Address-completion nudge for the auto-created location. Persists
             (unlike the one-time popup) until the address is filled in. */}
