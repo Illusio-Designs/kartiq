@@ -76,6 +76,7 @@ async function snapshotInvoiceForSubscription(sub, period) {
 
   if (sub.payAsYouGo) {
     const rates = plan.meteredRates || {};
+    // Orders — usage flow, from the monthly meter.
     for (const m of meters) {
       if (m.metric === 'orders' && plan.maxOrdersPerMonth !== null) {
         const over = Math.max(0, m.count - plan.maxOrdersPerMonth);
@@ -84,6 +85,29 @@ async function snapshotInvoiceForSubscription(sub, period) {
           overageAmount += amt;
           lineItems.push({ type: 'overage', metric: 'orders', qty: over, rate: rates.extraOrders, amount: amt });
         }
+      }
+    }
+    // Recurring standing add-ons — billed EVERY month they stay over the plan
+    // limit, from the LIVE count (not a meter): extra channels and warehouses.
+    const [chCount, whCount] = await Promise.all([
+      prisma.channel.count({ where: { tenantId, isActive: true } }),
+      prisma.warehouse.count({ where: { tenantId, isVirtual: false } }),
+    ]);
+    const chLimit = plan.features?.maxChannels;
+    if (typeof chLimit === 'number' && rates.extraChannels) {
+      const over = Math.max(0, chCount - chLimit);
+      if (over > 0) {
+        const amt = over * Number(rates.extraChannels);
+        overageAmount += amt;
+        lineItems.push({ type: 'overage', metric: 'channels', qty: over, rate: rates.extraChannels, amount: amt });
+      }
+    }
+    if (plan.maxFacilities !== null && rates.extraFacilities) {
+      const over = Math.max(0, whCount - plan.maxFacilities);
+      if (over > 0) {
+        const amt = over * Number(rates.extraFacilities);
+        overageAmount += amt;
+        lineItems.push({ type: 'overage', metric: 'facilities', qty: over, rate: rates.extraFacilities, amount: amt });
       }
     }
   }

@@ -232,17 +232,22 @@ const requirePlatformAdmin = (req, res, next) => {
   next();
 };
 
+// Standing resources billed RECURRING monthly on the invoice (per extra unit,
+// every month it exists) rather than once at create: channels and facilities
+// (warehouses). Users and SKUs are ONE-TIME add-ons charged here at create.
+// Orders are a monthly usage flow handled separately.
+const RECURRING_OVERAGE_METRICS = new Set(['channels', 'facilities']);
+
 // Register a one-shot hook that, when the create request finishes with a 2xx,
-// charges the tenant's wallet for the one overage unit (if any) and increments
-// the usage meter for that metric. This is what makes PAYG overage actually
-// bill for SKUs/users/channels/facilities — previously only orders were charged
-// (in their controller), so every other metric leaked. Orders are skipped here
-// because order.controller already debits + meters them.
+// charges the tenant's wallet ONCE for a one-time add-on (users, SKUs). For
+// recurring metrics (channels, facilities) it does nothing here — the monthly
+// billing job bills those from the live count. Orders are handled in their own
+// controller.
 function chargeOverageOnFinish(req, res, tenantId) {
   res.once('finish', () => {
     if (res.statusCode < 200 || res.statusCode >= 300) return; // create failed → no charge
     const ov = req.overage;
-    if (!ov || ov.metric === 'orders' || req._overageCharged) return;
+    if (!ov || ov.metric === 'orders' || RECURRING_OVERAGE_METRICS.has(ov.metric) || req._overageCharged) return;
     req._overageCharged = true;
     const wallet = require('../services/wallet.service');
     const period = new Date().toISOString().slice(0, 7);

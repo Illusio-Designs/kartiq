@@ -4,7 +4,7 @@ const {
 } = require('../middleware/auth.middleware');
 const prisma = require('../utils/prisma');
 const { encryptCredentials, maskCredentials } = require('../utils/crypto');
-const { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, importCatalogFromChannel, syncChannelSettlements, listChannelSettlements, syncChannelReturns, listChannelReturns } = require('../services/channel.service');
+const { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, importCatalogFromChannel, syncChannelSettlements, listChannelSettlements, syncChannelReturns, listChannelReturns, ensureDefaultWarehouse } = require('../services/channel.service');
 const { CATALOG, getCatalogEntry, getCatalogByCategory } = require('../data/channel-catalog');
 
 const router = Router();
@@ -346,6 +346,11 @@ router.post('/',
           category: resolvedCategory,
         },
       });
+      // Ensure the tenant has a real warehouse to fulfil self-shipped (MFN)
+      // orders from and to hold merchant-fulfilled stock — so connecting a
+      // channel immediately gives inventory somewhere real to live.
+      ensureDefaultWarehouse(req.tenant.id).catch((e) =>
+        console.warn('[channel.create] ensureDefaultWarehouse:', e.message));
       res.status(201).json(safeChannel(ch));
     } catch (err) {
       res.status(400).json({ error: err.message });
