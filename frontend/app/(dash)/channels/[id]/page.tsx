@@ -7,7 +7,7 @@ import { channelApi, productApi } from '@/lib/api';
 import {
   ArrowLeft, Upload, Download, RefreshCw,
   Plug, AlertCircle, Trash2, KeyRound, CheckCircle2,
-  ShieldCheck, XCircle, Settings2, Save, Boxes, Search, Check, ChevronDown, Unlink,
+  ShieldCheck, XCircle, Settings2, Save, Boxes, Search, Check, ChevronDown, Unlink, Wallet,
 } from 'lucide-react';
 import Link from 'next/link';
 import { ConnectChannelModal } from '@/components/channels/ConnectChannelModal';
@@ -145,6 +145,38 @@ export default function ChannelDetailPage() {
     onError: (err: any) => {
       setMcfRows(null);
       toast.error(err.response?.data?.details || err.response?.data?.error || err.message);
+    },
+  });
+
+  // ── Amazon payouts / settlements (SP-API financialEventGroups) ──
+  const [financesRoleError, setFinancesRoleError] = useState(false);
+  const {
+    data: financesData,
+    isLoading: financesLoading,
+    isError: financesError,
+  } = useQuery({
+    queryKey: ['channel-finances', id],
+    queryFn: () => channelApi.finances(id).then(r => r.data),
+    enabled: !!channel && String(channel.type).startsWith('AMAZON'),
+  });
+
+  const financesSyncMutation = useMutation({
+    mutationFn: () => channelApi.financesSync(id),
+    onSuccess: (res) => {
+      setFinancesRoleError(false);
+      qc.invalidateQueries({ queryKey: ['channel-finances', id] });
+      const d = res.data || {};
+      if (d.supported === false) {
+        toast.error(d.message || 'Settlements are not supported for this channel.');
+        return;
+      }
+      const n = d.synced ?? d.total ?? 0;
+      toast.success(`Synced ${n} settlement${n === 1 ? '' : 's'}`);
+    },
+    onError: (err: any) => {
+      const msg = err.response?.data?.details || err.response?.data?.error || err.message || '';
+      if (/\brole\b/i.test(String(msg))) setFinancesRoleError(true);
+      toast.error(String(msg));
     },
   });
 
@@ -330,7 +362,12 @@ export default function ChannelDetailPage() {
                       (deleteListingMutation.isPending && deleteListingMutation.variables === l.channelSku);
                     return (
                       <tr key={l.id} className="border-b border-slate-50 last:border-0">
-                        <td className="px-5 py-3 font-mono text-xs text-slate-700">{l.channelSku}</td>
+                        <td className="px-5 py-3">
+                          <span className="font-mono text-xs text-slate-700">{l.channelSku}</span>
+                          {l.asin && (
+                            <span className="block font-mono text-[11px] text-slate-400 mt-0.5">ASIN {l.asin}</span>
+                          )}
+                        </td>
                         <td className="px-5 py-3 font-medium text-slate-800">
                           {mapped ? (
                             l.product?.name || <span className="text-slate-400">—</span>
@@ -443,6 +480,81 @@ export default function ChannelDetailPage() {
           </Card>
         )}
 
+        {/* Amazon payouts / settlements — Amazon channels only */}
+        {isAmazon && (
+          <Card className="overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <Wallet size={17} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Payouts &amp; settlements</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Amazon disbursements to your bank account</p>
+                </div>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                leftIcon={<RefreshCw size={14} className={financesSyncMutation.isPending ? 'animate-spin' : ''} />}
+                loading={financesSyncMutation.isPending}
+                disabled={!hasCredentials}
+                onClick={() => financesSyncMutation.mutate()}
+              >
+                Sync from Amazon
+              </Button>
+            </div>
+            {financesRoleError && (
+              <div className="flex items-start gap-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-xs px-5 py-3">
+                <AlertCircle size={14} className="mt-0.5 shrink-0" />
+                <span>Requires the SP-API Finances role on your Amazon app.</span>
+              </div>
+            )}
+            {financesLoading ? (
+              <div className="p-8 text-center text-sm text-slate-400">Loading settlements…</div>
+            ) : financesError ? (
+              <div className="p-8 text-center text-sm text-rose-500">Couldn&apos;t load settlements. Try a sync.</div>
+            ) : !financesData?.settlements?.length ? (
+              <div className="p-8 text-center text-sm text-slate-400">No settlements yet — run a sync.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[560px]">
+                  <thead>
+                    <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                      <th className="px-5 py-2.5">Payout window</th>
+                      <th className="px-5 py-2.5">Fund transfer date</th>
+                      <th className="px-5 py-2.5">Status</th>
+                      <th className="px-5 py-2.5 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {financesData.settlements.map((s: any, i: number) => (
+                      <tr key={s.groupId || s.traceId || i} className="border-b border-slate-50 last:border-0">
+                        <td className="px-5 py-3 text-slate-700 whitespace-nowrap">
+                          <span className="tabular-nums">{s.beginTime ? formatDate(s.beginTime) : '—'}</span>
+                          <span className="text-slate-400"> → </span>
+                          <span className="tabular-nums">{s.endTime ? formatDate(s.endTime) : '—'}</span>
+                        </td>
+                        <td className="px-5 py-3 text-slate-600 tabular-nums whitespace-nowrap">
+                          {s.fundTransferDate ? formatDate(s.fundTransferDate) : '—'}
+                        </td>
+                        <td className="px-5 py-3">
+                          <Badge variant={settlementPillVariant(s.fundTransferStatus || s.processingStatus)} dot>
+                            {s.fundTransferStatus || s.processingStatus || 'Unknown'}
+                          </Badge>
+                        </td>
+                        <td className="px-5 py-3 text-right text-slate-900 font-semibold tabular-nums whitespace-nowrap">
+                          {formatSettlementAmount(s.total, s.currency)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        )}
+
         {/* Channel settings — rename + default fulfilment */}
         <Card>
           <div className="flex items-center gap-2.5 px-5 py-4 border-b border-slate-100">
@@ -490,6 +602,27 @@ export default function ChannelDetailPage() {
 }
 
 type VariantOption = { value: string; label: string; productId: string };
+
+// Format a settlement's total in its own currency, falling back gracefully when
+// the currency code is missing or invalid.
+function formatSettlementAmount(total: any, currency?: string) {
+  const n = Number(total);
+  if (!isFinite(n)) return '—';
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency: currency || 'USD' }).format(n);
+  } catch {
+    return `${currency || ''} ${n.toFixed(2)}`.trim();
+  }
+}
+
+// Status pill colour: green for completed/succeeded-like, amber for
+// pending/processing, slate otherwise.
+function settlementPillVariant(status?: string): 'emerald' | 'amber' | 'slate' {
+  const s = String(status || '').toUpperCase();
+  if (/COMPLET|SUCCE|DONE|PAID|SETTLED/.test(s)) return 'emerald';
+  if (/PEND|PROCESS|IN_PROGRESS|OPEN|INITIAT/.test(s)) return 'amber';
+  return 'slate';
+}
 
 // Inline searchable variant dropdown used on unmapped listing rows. Matches the
 // shared Select's popover styling but adds a type-to-filter input, since the
