@@ -167,7 +167,12 @@ export default function OrdersPage() {
   const [pageSize, setPageSize] = useState(20);
   const [status, setStatus] = useState('');
   const [risk, setRisk] = useState('');
-  const [channelId, setChannelId] = useState('');
+  // Seed the channel filter from ?channelId= so deep links (e.g. from a channel
+  // page's "View orders" link) land pre-filtered.
+  const [channelId, setChannelId] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return new URLSearchParams(window.location.search).get('channelId') || '';
+  });
   const [tab, setTab] = useState<OrderTab>('all');
   const [reviewResult, setReviewResult] = useState<{ id: string; type: 'success' | 'error'; message: string } | null>(null);
   const [dateFrom, setDateFrom] = useState('');

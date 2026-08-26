@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { channelApi, productApi } from '@/lib/api';
+import { channelApi, productApi, orderApi } from '@/lib/api';
 import {
   ArrowLeft, Upload, Download, RefreshCw,
   Plug, AlertCircle, Trash2, KeyRound, CheckCircle2,
   ShieldCheck, XCircle, Settings2, Save, Boxes, Search, Check, ChevronDown, Unlink, Wallet, RotateCcw,
+  ShoppingCart, Clock, Truck, PackageCheck, Ban, Store, Cloud,
 } from 'lucide-react';
 import Link from 'next/link';
 import { ConnectChannelModal } from '@/components/channels/ConnectChannelModal';
@@ -33,6 +34,13 @@ export default function ChannelDetailPage() {
   const { data: listings } = useQuery({
     queryKey: ['channel-listings', id],
     queryFn: () => channelApi.listListings(id).then(r => r.data),
+    enabled: !!channel,
+  });
+
+  // Order-status + fulfilment breakdown for this channel, for the stat cards.
+  const { data: orderStats } = useQuery({
+    queryKey: ['channel-order-stats', id],
+    queryFn: () => orderApi.stats({ channelId: id }).then(r => r.data),
     enabled: !!channel,
   });
 
@@ -223,6 +231,20 @@ export default function ChannelDetailPage() {
   const isMapped = (l: any) => !!(l.variantId || l.variant || l.product);
   const unmappedCount = (listings || []).filter((l: any) => !isMapped(l)).length;
 
+  // Roll the raw status/fulfilment counts up into the buckets shown on the cards.
+  const sc: Record<string, number> = orderStats?.statusCounts || {};
+  const fc: Record<string, number> = orderStats?.fulfillmentCounts || {};
+  const sum = (...keys: string[]) => keys.reduce((n, k) => n + (sc[k] || 0), 0);
+  const orderSummary = {
+    total: orderStats?.total ?? 0,
+    open: sum('PENDING', 'CONFIRMED', 'PROCESSING'),
+    shipped: sum('SHIPPED'),
+    delivered: sum('DELIVERED'),
+    closed: sum('CANCELLED', 'RETURNED'),
+    channel: fc['CHANNEL'] || 0,          // marketplace-fulfilled (FBA/MCF)
+    self: (fc['SELF'] || 0) + (fc['DROPSHIP'] || 0), // self-shipped (MFN) + dropship
+  };
+
   return (
     <>
       {confirmUi}
@@ -360,6 +382,56 @@ export default function ChannelDetailPage() {
             disabled={!hasCredentials}
           />
         </div>
+
+        {/* Order overview — status breakdown + fulfilment split for this channel */}
+        <Card className="overflow-hidden">
+          <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <ShoppingCart size={17} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Order overview</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Order status for this channel, across both fulfilment paths</p>
+              </div>
+            </div>
+            <Link
+              href={`/orders?channelId=${id}`}
+              className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 whitespace-nowrap"
+            >
+              View orders →
+            </Link>
+          </div>
+
+          {/* Status cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-px bg-slate-100">
+            <StatCard icon={ShoppingCart} label="Total"     value={orderSummary.total}     tone="slate" />
+            <StatCard icon={Clock}        label="Open"      value={orderSummary.open}      tone="amber"   hint="Pending · Confirmed · Processing" />
+            <StatCard icon={Truck}        label="Shipped"   value={orderSummary.shipped}   tone="blue" />
+            <StatCard icon={PackageCheck} label="Delivered" value={orderSummary.delivered} tone="emerald" />
+            <StatCard icon={Ban}          label="Cancelled" value={orderSummary.closed}    tone="rose"    hint="Cancelled · Returned" />
+          </div>
+
+          {/* Fulfilment split — "for both" self-ship (MFN) and channel (FBA) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-px bg-slate-100 border-t border-slate-100">
+            <FulfilmentSplit
+              icon={Cloud}
+              label="Channel-fulfilled"
+              sub="Amazon FBA / MCF ships these"
+              value={orderSummary.channel}
+              total={orderSummary.total}
+              tone="amber"
+            />
+            <FulfilmentSplit
+              icon={Store}
+              label="Self-fulfilled (MFN)"
+              sub="You ship these from your stock"
+              value={orderSummary.self}
+              total={orderSummary.total}
+              tone="emerald"
+            />
+          </div>
+        </Card>
 
         {/* Listings & SKU mapping */}
         <Card className="overflow-hidden">
@@ -838,6 +910,64 @@ function VariantPicker({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Order-overview stat cards ────────────────────────────────────────────────
+type Tone = 'slate' | 'amber' | 'blue' | 'emerald' | 'rose';
+const TONE_TEXT: Record<Tone, string> = {
+  slate:   'bg-slate-100 text-slate-600',
+  amber:   'bg-amber-50 text-amber-600',
+  blue:    'bg-blue-50 text-blue-600',
+  emerald: 'bg-emerald-50 text-emerald-600',
+  rose:    'bg-rose-50 text-rose-600',
+};
+
+// A single order-status count. Cards sit on a slate grid (gap-px) so the hairline
+// dividers read as one cohesive strip.
+function StatCard({
+  icon: Icon, label, value, tone, hint,
+}: { icon: any; label: string; value: number; tone: Tone; hint?: string }) {
+  const card = (
+    <div className="bg-white p-4 flex flex-col gap-2">
+      <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', TONE_TEXT[tone])}>
+        <Icon size={15} />
+      </div>
+      <div>
+        <div className="text-2xl font-bold text-slate-900 tabular-nums leading-none">{value}</div>
+        <div className="text-xs text-slate-500 mt-1 font-medium">{label}</div>
+      </div>
+    </div>
+  );
+  return hint ? <Tooltip content={hint} side="top"><div>{card}</div></Tooltip> : card;
+}
+
+// Fulfilment-path split — shows how many of this channel's orders each path
+// carries, with a proportional bar. "Both" paths render side by side.
+function FulfilmentSplit({
+  icon: Icon, label, sub, value, total, tone,
+}: { icon: any; label: string; sub: string; value: number; total: number; tone: Tone }) {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+  const bar = tone === 'emerald' ? 'bg-emerald-500' : 'bg-amber-500';
+  return (
+    <div className="bg-white p-4">
+      <div className="flex items-center gap-2.5">
+        <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0', TONE_TEXT[tone])}>
+          <Icon size={16} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-sm font-bold text-slate-900 truncate">{label}</span>
+            <span className="text-lg font-bold text-slate-900 tabular-nums">{value}</span>
+          </div>
+          <p className="text-[11px] text-slate-500 truncate">{sub}</p>
+        </div>
+      </div>
+      <div className="mt-2.5 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+        <div className={cn('h-full rounded-full transition-all', bar)} style={{ width: `${pct}%` }} />
+      </div>
+      <div className="mt-1 text-right text-[11px] text-slate-400 tabular-nums">{pct}% of orders</div>
     </div>
   );
 }

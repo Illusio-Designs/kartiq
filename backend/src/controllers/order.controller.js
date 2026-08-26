@@ -112,6 +112,38 @@ const getOrder = async (req, res) => {
   }
 };
 
+// Aggregated order counts for the stat cards. Scoped to the tenant and,
+// optionally, one channel (?channelId=). Returns a breakdown by order status
+// and by fulfilment type (SELF = self-shipped/MFN, CHANNEL = marketplace/FBA)
+// so the UI can show "for both" fulfilment paths side by side. Computed with a
+// single grouped query per axis rather than pulling every order into memory.
+const getOrderStats = async (req, res) => {
+  try {
+    const where = { tenantId: tid(req) };
+    if (req.query.channelId) where.channelId = String(req.query.channelId);
+
+    const [byStatus, byFulfillment, total] = await Promise.all([
+      prisma.order.groupBy({ by: ['status'], where, _count: { status: true } }),
+      prisma.order.groupBy({ by: ['fulfillmentType'], where, _count: { fulfillmentType: true } }),
+      prisma.order.count({ where }),
+    ]);
+
+    const statusCounts = {};
+    for (const row of byStatus) {
+      statusCounts[String(row.status || 'UNKNOWN')] = row._count?.status || 0;
+    }
+    const fulfillmentCounts = {};
+    for (const row of byFulfillment) {
+      fulfillmentCounts[String(row.fulfillmentType || 'UNKNOWN')] = row._count?.fulfillmentType || 0;
+    }
+
+    res.json({ total, statusCounts, fulfillmentCounts });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Failed to fetch order stats' });
+  }
+};
+
 // Helper: ensure a "Manual" channel and "Walk-in" customer exist for ad-hoc orders
 async function ensureManualChannel(tenantId) {
   let ch = await prisma.channel.findFirst({ where: { tenantId, type: 'OFFLINE' } });
@@ -393,4 +425,4 @@ const cancelOrder = async (req, res) => {
   }
 };
 
-module.exports = { getOrders, getOrder, createOrder, updateOrderStatus, cancelOrder };
+module.exports = { getOrders, getOrder, getOrderStats, createOrder, updateOrderStatus, cancelOrder };

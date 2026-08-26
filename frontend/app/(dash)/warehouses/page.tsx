@@ -17,6 +17,16 @@ function isVirtualFacility(w: any): boolean {
   return !!w?.isVirtual || w?.externalSource === 'AMAZON_FBA';
 }
 
+// A real (self-managed) warehouse whose address is not yet complete enough to
+// print shipping labels. When a seller connects a channel we auto-create a
+// "My Warehouse" location; it starts with a blank address that the seller must
+// fill in before MFN/self-ship orders can be routed and labelled.
+function isIncompleteReal(w: any): boolean {
+  if (isVirtualFacility(w) || !w?.isActive) return false;
+  const a = typeof w?.address === 'object' && w.address ? w.address : {};
+  return !(a.line1 && a.city && a.pincode);
+}
+
 // Render the address (object or legacy string) as a short "City, State" line.
 function locationLine(address: any): string {
   if (!address) return '';
@@ -39,6 +49,7 @@ export default function WarehousesPage() {
   const [editWarehouse, setEditWarehouse] = useState<any>(null);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [search, setSearch] = useState('');
+  const [setupDismissed, setSetupDismissed] = useState(false);
 
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
@@ -47,6 +58,12 @@ export default function WarehousesPage() {
   });
 
   const allWarehouses = data || [];
+  // The first real location still missing a shippable address (usually the
+  // auto-created "My Warehouse" from connecting a channel).
+  const incompleteWarehouse = useMemo(
+    () => allWarehouses.find(isIncompleteReal) || null,
+    [allWarehouses],
+  );
   // Global topbar search first, then the in-table search on top of it.
   const globallyFiltered = useFilteredBySearch(allWarehouses, (w: any) =>
     `${w.name || ''} ${w.code || ''} ${w.address?.line1 || ''} ${w.address?.city || ''} ${w.address?.state || ''} ${w.address?.pincode || ''}`
@@ -79,10 +96,55 @@ export default function WarehousesPage() {
     onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not sync Amazon facility'),
   });
 
+  // Auto-open the setup popup once per browser session when there's a location
+  // still missing its address — so a seller who just connected a channel is
+  // nudged to finish it, but isn't nagged on every visit.
+  const [setupPopupOpen, setSetupPopupOpen] = useState(false);
+  useEffect(() => {
+    if (!incompleteWarehouse) return;
+    let seen = false;
+    try { seen = sessionStorage.getItem('kq-wh-setup-seen') === '1'; } catch {}
+    if (!seen) {
+      setSetupPopupOpen(true);
+      try { sessionStorage.setItem('kq-wh-setup-seen', '1'); } catch {}
+    }
+  }, [incompleteWarehouse]);
+
+  const completeSetup = (w: any) => {
+    setSetupPopupOpen(false);
+    setEditWarehouse(w);
+  };
+
   return (
     <>
       <div className="space-y-5 animate-slide-up">
         <PageHeader title="Warehouses" />
+
+        {/* Address-completion nudge for the auto-created location. Persists
+            (unlike the one-time popup) until the address is filled in. */}
+        {incompleteWarehouse && !setupDismissed && (
+          <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3.5 text-amber-900">
+            <span className="mt-0.5 flex-shrink-0 grid place-items-center w-8 h-8 rounded-lg bg-amber-100 text-amber-600">
+              <MapPin size={16} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold">Finish setting up “{incompleteWarehouse.name}”</p>
+              <p className="mt-0.5 text-xs text-amber-800">
+                We created this warehouse for you when you connected a channel. Add its
+                full address (street, city &amp; pincode) so self-shipped (MFN) orders can be
+                routed and labelled from here.
+              </p>
+              <div className="mt-2.5 flex items-center gap-2">
+                <Button size="sm" leftIcon={<Pencil size={13} />} onClick={() => completeSetup(incompleteWarehouse)}>
+                  Complete address
+                </Button>
+                <Button size="sm" variant="ghost" className="text-amber-800 hover:bg-amber-100" onClick={() => setSetupDismissed(true)}>
+                  Later
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* One card — header (subtitle + primary action) · toolbar · table.
             overflow-visible keeps any menus/tooltips from being clipped. */}
@@ -223,6 +285,34 @@ export default function WarehousesPage() {
 
       <WarehouseModal open={createOpen} onClose={() => setCreateOpen(false)} mode="create" />
       <WarehouseModal open={!!editWarehouse} onClose={() => setEditWarehouse(null)} mode="edit" warehouse={editWarehouse} />
+
+      {/* One-time setup prompt shown when a location is missing its address. */}
+      <Modal
+        open={setupPopupOpen && !!incompleteWarehouse}
+        onClose={() => setSetupPopupOpen(false)}
+        title="Finish your warehouse setup"
+        description="One quick step before you can ship self-fulfilled orders"
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setSetupPopupOpen(false)}>Not now</Button>
+            <Button leftIcon={<MapPin size={14} />} onClick={() => incompleteWarehouse && completeSetup(incompleteWarehouse)}>
+              Add address
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3 text-sm text-slate-600">
+          <p>
+            We automatically created <span className="font-bold text-slate-900">“{incompleteWarehouse?.name}”</span> for
+            you when you connected your channel, so your inventory has a home.
+          </p>
+          <p>
+            To route and print labels for self-shipped <span className="font-semibold">(MFN)</span> orders, add its
+            pickup address — street, city and pincode. It only takes a moment.
+          </p>
+        </div>
+      </Modal>
 
       <Modal
         open={!!deleteTarget}

@@ -440,6 +440,8 @@ export const inventoryApi = {
 
 export const orderApi = {
   list: (params?: any) => api.get('/orders', { params }),
+  // Aggregated status + fulfilment counts (optionally scoped to one channel)
+  stats: (params?: { channelId?: string }) => api.get('/orders/stats', { params }),
   get: (id: string) => api.get(`/orders/${id}`),
   create: (data: any) => api.post('/orders', data),
   updateStatus: (id: string, data: any) => api.patch(`/orders/${id}/status`, data),

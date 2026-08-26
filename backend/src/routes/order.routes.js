@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { getOrders, getOrder, createOrder, updateOrderStatus, cancelOrder } = require('../controllers/order.controller');
+const { getOrders, getOrder, getOrderStats, createOrder, updateOrderStatus, cancelOrder } = require('../controllers/order.controller');
 const {
   authenticate, requireTenant, requirePermission, enforceLimit,
 } = require('../middleware/auth.middleware');
@@ -255,6 +255,7 @@ router.patch('/:id/warehouse', requirePermission('orders.update'), async (req, r
 // ── Standard CRUD ────────────────────────────────────────────────────────────
 
 router.get('/',              requirePermission('orders.read'),    getOrders);
+router.get('/stats',         requirePermission('orders.read'),    getOrderStats);
 router.get('/:id',           requirePermission('orders.read'),    getOrder);
 router.post('/',             requirePermission('orders.create'),  enforceLimit('orders'), createOrder);
 router.patch('/:id/status',  requirePermission('orders.update'),  updateOrderStatus);
