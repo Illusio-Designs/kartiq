@@ -4,7 +4,7 @@ const {
 } = require('../middleware/auth.middleware');
 const prisma = require('../utils/prisma');
 const { encryptCredentials, maskCredentials } = require('../utils/crypto');
-const { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, importCatalogFromChannel, syncChannelSettlements, listChannelSettlements } = require('../services/channel.service');
+const { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, importCatalogFromChannel, syncChannelSettlements, listChannelSettlements, syncChannelReturns, listChannelReturns } = require('../services/channel.service');
 const { CATALOG, getCatalogEntry, getCatalogByCategory } = require('../data/channel-catalog');
 
 const router = Router();
@@ -772,6 +772,39 @@ router.get('/:id/finances', requirePermission('channels.read'), async (req, res)
       limit: req.query.limit,
     });
     res.json({ settlements, total: settlements.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Returns (read-only) ───────────────────────────────────────────────────
+// Pull the channel's customer returns from the marketplace (Amazon merchant
+// returns report). Refund issuance is intentionally NOT exposed here.
+router.post('/:id/returns/sync', requirePermission('channels.sync'), async (req, res) => {
+  try {
+    const channel = await loadTenantChannel(req);
+    if (!channel) return res.status(404).json({ error: 'Channel not found' });
+    const result = await syncChannelReturns(channel, { tenantId: req.tenant.id, since: req.body?.since });
+    if (!result.supported) {
+      return res.status(400).json({ error: 'This channel does not support returns sync' });
+    }
+    await prisma.channel.update({ where: { id: channel.id }, data: { syncError: null } }).catch(() => {});
+    res.json({ message: 'Returns sync complete', ...result });
+  } catch (err) {
+    await prisma.channel.updateMany({
+      where: { id: req.params.id, tenantId: req.tenant.id },
+      data: { syncError: err.message },
+    }).catch(() => {});
+    res.status(500).json({ error: 'Returns sync failed', details: err.message });
+  }
+});
+
+router.get('/:id/returns', requirePermission('channels.read'), async (req, res) => {
+  try {
+    const channel = await loadTenantChannel(req);
+    if (!channel) return res.status(404).json({ error: 'Channel not found' });
+    const returns = await listChannelReturns(channel.id, { tenantId: req.tenant.id, limit: req.query.limit });
+    res.json({ returns, total: returns.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

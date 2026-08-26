@@ -1025,4 +1025,51 @@ async function listChannelSettlements(channelId, { tenantId, limit = 100 } = {})
     .limit(Math.min(500, Number(limit) || 100));
 }
 
-module.exports = { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, pushProductToChannels, importCatalogFromChannel, confirmChannelShipment, syncChannelSettlements, listChannelSettlements };
+// Pull the channel's customer returns (Amazon merchant returns report) and
+// upsert them into channel_returns. Read-only; no refund is issued here. No-op
+// for channels whose adapter doesn't expose fetchReturns.
+async function syncChannelReturns(channel, { tenantId, since } = {}) {
+  const adapter = getAdapter(channel);
+  if (typeof adapter.fetchReturns !== 'function') {
+    return { supported: false, synced: 0 };
+  }
+  const rows = await adapter.fetchReturns({ since });
+  let synced = 0;
+  for (const rt of rows) {
+    if (!rt.returnId) continue;
+    const row = {
+      tenantId,
+      channelId: channel.id,
+      returnId: rt.returnId,
+      orderId: rt.orderId || null,
+      returnDate: rt.returnDate ? new Date(rt.returnDate) : null,
+      sku: rt.sku || null,
+      asin: rt.asin || null,
+      quantity: rt.quantity || 0,
+      reason: rt.reason || null,
+      status: rt.status || null,
+      resolution: rt.resolution || null,
+      refundAmount: rt.refundAmount || 0,
+      currency: rt.currency || null,
+      updatedAt: new Date(),
+    };
+    const existing = await db('channel_returns')
+      .where({ channelId: channel.id, returnId: rt.returnId }).first();
+    if (existing) {
+      await db('channel_returns').where({ id: existing.id }).update(row);
+    } else {
+      await db('channel_returns').insert({ id: randomUUID(), createdAt: new Date(), ...row });
+    }
+    synced += 1;
+  }
+  return { supported: true, synced, total: rows.length };
+}
+
+async function listChannelReturns(channelId, { tenantId, limit = 100 } = {}) {
+  return db('channel_returns')
+    .where({ channelId, tenantId })
+    .orderBy('returnDate', 'desc')
+    .limit(Math.min(500, Number(limit) || 100));
+}
+
+module.exports = { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, pushProductToChannels, importCatalogFromChannel, confirmChannelShipment, syncChannelSettlements, listChannelSettlements, syncChannelReturns, listChannelReturns };

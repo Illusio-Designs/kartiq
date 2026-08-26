@@ -207,6 +207,31 @@ async function initDb() {
       KEY \`channel_settlements_tenant_idx\` (\`tenantId\`, \`fundTransferDate\`),
       KEY \`channel_settlements_channel_idx\` (\`channelId\`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+    // Channel returns — e.g. Amazon merchant returns report. One row per
+    // return line; read-only (refund issuance is not done here). returnId is
+    // the marketplace RMA (or a composite), unique per channel.
+    `CREATE TABLE IF NOT EXISTS \`channel_returns\` (
+      \`id\` varchar(191) NOT NULL,
+      \`tenantId\` varchar(191) NOT NULL,
+      \`channelId\` varchar(191) NOT NULL,
+      \`returnId\` varchar(191) NOT NULL,
+      \`orderId\` varchar(191) DEFAULT NULL,
+      \`returnDate\` datetime(3) DEFAULT NULL,
+      \`sku\` varchar(191) DEFAULT NULL,
+      \`asin\` varchar(20) DEFAULT NULL,
+      \`quantity\` int(11) NOT NULL DEFAULT 0,
+      \`reason\` varchar(255) DEFAULT NULL,
+      \`status\` varchar(64) DEFAULT NULL,
+      \`resolution\` varchar(64) DEFAULT NULL,
+      \`refundAmount\` decimal(14,2) NOT NULL DEFAULT 0.00,
+      \`currency\` varchar(8) DEFAULT NULL,
+      \`createdAt\` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+      \`updatedAt\` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
+      PRIMARY KEY (\`id\`),
+      UNIQUE KEY \`channel_returns_channel_return_unique\` (\`channelId\`, \`returnId\`),
+      KEY \`channel_returns_tenant_idx\` (\`tenantId\`, \`returnDate\`),
+      KEY \`channel_returns_channel_idx\` (\`channelId\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
     // Background job queue — durable retry/DLQ without needing Redis.
     // status: pending | running | done | dead.
     // Workers claim a row via UPDATE (atomic) and run the registered handler.

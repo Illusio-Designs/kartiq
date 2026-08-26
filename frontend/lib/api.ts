@@ -541,6 +541,12 @@ export const channelApi = {
     api.post(`/channels/${id}/finances/sync`, body || {}),
   finances: (id: string, params?: { limit?: number }) =>
     api.get(`/channels/${id}/finances`, { params }),
+
+  // Returns (read-only) — Amazon merchant returns report
+  returnsSync: (id: string, body?: { since?: string }) =>
+    api.post(`/channels/${id}/returns/sync`, body || {}),
+  returns: (id: string, params?: { limit?: number }) =>
+    api.get(`/channels/${id}/returns`, { params }),
 };
 
 export const customerApi = {

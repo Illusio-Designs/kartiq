@@ -258,8 +258,72 @@ class AmazonAdapter {
           mapped[i].discount = totals.discount;
         }
       } catch (_) { /* keep items empty; retried on the next sync */ }
+
+      // MFN (merchant-fulfilled) orders MUST ship from us, so they need the
+      // full ship-to address + buyer. The orders LIST often omits these even
+      // with the list RDT, so when they're missing on an MFN order, pull them
+      // from the dedicated per-order address/buyer endpoints (each with its own
+      // RDT). FBA orders ship from Amazon and don't need this. Best-effort.
+      const isMfn = String(rawOrders[i].FulfillmentChannel || '').toUpperCase() === 'MFN';
+      if (isMfn && !mapped[i].shippingAddress?.line1) {
+        try {
+          const addr = await this._getOrderAddress(rawOrders[i].AmazonOrderId);
+          if (addr) {
+            mapped[i].shippingAddress = {
+              line1: addr.line1, line2: addr.line2, city: addr.city,
+              state: addr.state, pincode: addr.pincode, country: addr.country,
+            };
+            if (addr.name && (!mapped[i].customer.name || mapped[i].customer.name === 'Amazon Customer')) {
+              mapped[i].customer.name = addr.name;
+            }
+            if (addr.phone && !mapped[i].customer.phone) mapped[i].customer.phone = addr.phone;
+          }
+        } catch (_) { /* no PII role / throttled — leave as-is */ }
+        if (!mapped[i].customer.email) {
+          try {
+            const buyer = await this._getOrderBuyerInfo(rawOrders[i].AmazonOrderId);
+            if (buyer) {
+              if (buyer.email) mapped[i].customer.email = buyer.email;
+              if (buyer.name && (!mapped[i].customer.name || mapped[i].customer.name === 'Amazon Customer')) {
+                mapped[i].customer.name = buyer.name;
+              }
+            }
+          } catch (_) { /* best-effort */ }
+        }
+      }
     }
     return mapped;
+  }
+
+  // Per-order ship-to address (getOrderAddress). Needs an RDT scoped to this
+  // order's address resource; returns null if the seller lacks the PII role.
+  async _getOrderAddress(amazonOrderId) {
+    const path = `/orders/v0/orders/${encodeURIComponent(amazonOrderId)}/address`;
+    let token = null;
+    try {
+      token = await this._getRestrictedToken([{ method: 'GET', path, dataElements: ['shippingAddress'] }]);
+    } catch (_) { return null; }
+    const data = await this._request('GET', path, {}, token);
+    const a = data.payload?.ShippingAddress;
+    if (!a) return null;
+    return {
+      line1: a.AddressLine1, line2: a.AddressLine2, city: a.City,
+      state: a.StateOrRegion, pincode: a.PostalCode, country: a.CountryCode,
+      name: a.Name || null, phone: a.Phone || null,
+    };
+  }
+
+  // Per-order buyer info (getOrderBuyerInfo). RDT-scoped; null without the role.
+  async _getOrderBuyerInfo(amazonOrderId) {
+    const path = `/orders/v0/orders/${encodeURIComponent(amazonOrderId)}/buyerInfo`;
+    let token = null;
+    try {
+      token = await this._getRestrictedToken([{ method: 'GET', path, dataElements: ['buyerInfo'] }]);
+    } catch (_) { return null; }
+    const data = await this._request('GET', path, {}, token);
+    const b = data.payload;
+    if (!b) return null;
+    return { email: b.BuyerEmail || null, name: b.BuyerName || null };
   }
 
   // Amazon SP-API Orders — line items for one order (a separate endpoint from
@@ -555,6 +619,107 @@ class AmazonAdapter {
       }
       nextToken = data.payload?.NextToken || null;
     } while (nextToken && ++guard < 50 && out.length < 2000);
+    return out;
+  }
+
+  // Generic Reports-API runner: create → poll → download → decode, returning
+  // the report's decoded text (the caller parses it). Same proven flow as the
+  // catalog import; reportOptions / dataStart-End are report-type specific.
+  async _downloadReport(reportType, { dataStartTime, dataEndTime, reportOptions } = {}) {
+    const zlib = require('zlib');
+    const REPORTS = '/reports/2021-06-30';
+    const token = await this._getAccessToken();
+    const body = { reportType, marketplaceIds: [this.marketplaceId] };
+    if (dataStartTime) body.dataStartTime = new Date(dataStartTime).toISOString();
+    if (dataEndTime) body.dataEndTime = new Date(dataEndTime).toISOString();
+    if (reportOptions) body.reportOptions = reportOptions;
+    let reportId;
+    try {
+      const { data } = await axios({
+        method: 'POST',
+        url: `${this.endpoint}${REPORTS}/reports`,
+        headers: { 'x-amz-access-token': token, 'Content-Type': 'application/json' },
+        data: body,
+      });
+      reportId = data.reportId;
+    } catch (err) {
+      const status = err.response?.status;
+      const apiMsg = err.response?.data?.errors?.[0]?.message || err.message;
+      throw new Error(`Amazon createReport(${reportType}) failed (${status || '?'}): ${apiMsg}`);
+    }
+    if (!reportId) throw new Error(`Amazon createReport(${reportType}) returned no reportId`);
+    let documentId = null;
+    for (let i = 0; i < 20; i++) {
+      await this._sleep(i === 0 ? 3000 : 4000);
+      const r = await this._request('GET', `${REPORTS}/reports/${reportId}`);
+      const st = r.processingStatus;
+      if (st === 'DONE') { documentId = r.reportDocumentId; break; }
+      if (st === 'CANCELLED') return '';                // no data in range
+      if (st === 'FATAL') throw new Error(`Amazon report ${reportType} failed (FATAL) — check seller authorization/roles.`);
+    }
+    if (!documentId) throw new Error(`Amazon report ${reportType} is still processing — try again shortly.`);
+    const meta = await this._request('GET', `${REPORTS}/documents/${documentId}`);
+    const resp = await axios.get(meta.url, { responseType: 'arraybuffer' });
+    let buf = Buffer.from(resp.data);
+    if (meta.compressionAlgorithm === 'GZIP') buf = zlib.gunzipSync(buf);
+    const enc = /utf-?8/i.test(meta.reportDocumentEncoding || '') ? 'utf-8' : 'latin1';
+    return buf.toString(enc);
+  }
+
+  // Pull customer returns via the merchant returns flat-file report
+  // (GET_FLAT_FILE_RETURNS_DATA_BY_RETURN_DATE). Read-only — refund issuance is
+  // NOT done here (Amazon has no simple SP-API refund; that stays in Seller
+  // Central / a separately tested Feeds path). Requires a date window.
+  async fetchReturns(sinceDate) {
+    let since = sinceDate;
+    if (since && typeof since === 'object' && !(since instanceof Date)) since = since.since;
+    if (!since) since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000); // default 60d
+    const text = await this._downloadReport('GET_FLAT_FILE_RETURNS_DATA_BY_RETURN_DATE', {
+      dataStartTime: since,
+      dataEndTime: new Date(),
+    });
+    return this._parseReturnsReport(text);
+  }
+
+  _parseReturnsReport(text) {
+    const lines = String(text).split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2) return [];
+    const header = lines[0].split('\t').map((h) => h.trim().toLowerCase());
+    const col = (...names) => { for (const n of names) { const i = header.indexOf(n); if (i !== -1) return i; } return -1; };
+    const iOrder = col('order id', 'order-id');
+    const iRma = col('amazon rma id', 'rma id');
+    const iDate = col('return request date', 'return-request-date', 'return delivery date');
+    const iStatus = col('return request status', 'return-request-status');
+    const iSku = col('merchant sku', 'sku', 'seller-sku');
+    const iAsin = col('asin');
+    const iQty = col('return quantity', 'return-quantity', 'quantity');
+    const iReason = col('return reason', 'return-reason', 'reason');
+    const iResolution = col('resolution');
+    const iRefund = col('refunded amount', 'refunded-amount');
+    const iCurrency = col('currency code', 'currency');
+    if (iOrder === -1 && iRma === -1) return [];
+    const out = [];
+    for (let r = 1; r < lines.length; r++) {
+      const c = lines[r].split('\t');
+      const orderId = iOrder !== -1 ? (c[iOrder] || '').trim() : '';
+      const rma = iRma !== -1 ? (c[iRma] || '').trim() : '';
+      const sku = iSku !== -1 ? (c[iSku] || '').trim() : '';
+      const date = iDate !== -1 ? (c[iDate] || '').trim() : '';
+      if (!orderId && !rma) continue;
+      out.push({
+        returnId: rma || `${orderId}:${sku}:${date}`,
+        orderId: orderId || null,
+        returnDate: date || null,
+        sku: sku || null,
+        asin: iAsin !== -1 ? (c[iAsin] || '').trim() || null : null,
+        quantity: iQty !== -1 ? Number(c[iQty]) || 0 : 0,
+        reason: iReason !== -1 ? (c[iReason] || '').trim() || null : null,
+        status: iStatus !== -1 ? (c[iStatus] || '').trim() || null : null,
+        resolution: iResolution !== -1 ? (c[iResolution] || '').trim() || null : null,
+        refundAmount: iRefund !== -1 ? Number(c[iRefund]) || 0 : 0,
+        currency: iCurrency !== -1 ? (c[iCurrency] || '').trim() || null : null,
+      });
+    }
     return out;
   }
 

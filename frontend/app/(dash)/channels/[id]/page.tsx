@@ -7,7 +7,7 @@ import { channelApi, productApi } from '@/lib/api';
 import {
   ArrowLeft, Upload, Download, RefreshCw,
   Plug, AlertCircle, Trash2, KeyRound, CheckCircle2,
-  ShieldCheck, XCircle, Settings2, Save, Boxes, Search, Check, ChevronDown, Unlink, Wallet,
+  ShieldCheck, XCircle, Settings2, Save, Boxes, Search, Check, ChevronDown, Unlink, Wallet, RotateCcw,
 } from 'lucide-react';
 import Link from 'next/link';
 import { ConnectChannelModal } from '@/components/channels/ConnectChannelModal';
@@ -176,6 +176,38 @@ export default function ChannelDetailPage() {
     onError: (err: any) => {
       const msg = err.response?.data?.details || err.response?.data?.error || err.message || '';
       if (/\brole\b/i.test(String(msg))) setFinancesRoleError(true);
+      toast.error(String(msg));
+    },
+  });
+
+  // ── Amazon merchant returns (SP-API returns report) ──
+  const [returnsRoleError, setReturnsRoleError] = useState(false);
+  const {
+    data: returnsData,
+    isLoading: returnsLoading,
+    isError: returnsError,
+  } = useQuery({
+    queryKey: ['channel-returns', id],
+    queryFn: () => channelApi.returns(id).then(r => r.data),
+    enabled: !!channel && String(channel.type).startsWith('AMAZON'),
+  });
+
+  const returnsSyncMutation = useMutation({
+    mutationFn: () => channelApi.returnsSync(id),
+    onSuccess: (res) => {
+      setReturnsRoleError(false);
+      qc.invalidateQueries({ queryKey: ['channel-returns', id] });
+      const d = res.data || {};
+      if (d.supported === false) {
+        toast.error(d.message || 'Returns are not supported for this channel.');
+        return;
+      }
+      const n = d.synced ?? d.total ?? 0;
+      toast.success(`Synced ${n} return${n === 1 ? '' : 's'}`);
+    },
+    onError: (err: any) => {
+      const msg = err.response?.data?.details || err.response?.data?.error || err.message || '';
+      if (/\brole\b|\breport\b/i.test(String(msg))) setReturnsRoleError(true);
       toast.error(String(msg));
     },
   });
@@ -555,6 +587,88 @@ export default function ChannelDetailPage() {
           </Card>
         )}
 
+        {/* Amazon merchant returns — Amazon channels only */}
+        {isAmazon && (
+          <Card className="overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <RotateCcw size={17} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Returns</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Customer returns reported by Amazon</p>
+                </div>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                leftIcon={<RefreshCw size={14} className={returnsSyncMutation.isPending ? 'animate-spin' : ''} />}
+                loading={returnsSyncMutation.isPending}
+                disabled={!hasCredentials}
+                onClick={() => returnsSyncMutation.mutate()}
+              >
+                Sync from Amazon
+              </Button>
+            </div>
+            {returnsRoleError && (
+              <div className="flex items-start gap-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-xs px-5 py-3">
+                <AlertCircle size={14} className="mt-0.5 shrink-0" />
+                <span>Requires the SP-API Reports role; the returns report can also take a few minutes to generate — try again shortly.</span>
+              </div>
+            )}
+            {returnsLoading ? (
+              <div className="p-8 text-center text-sm text-slate-400">Loading returns…</div>
+            ) : returnsError ? (
+              <div className="p-8 text-center text-sm text-rose-500">Couldn&apos;t load returns. Try a sync.</div>
+            ) : !returnsData?.returns?.length ? (
+              <div className="p-8 text-center text-sm text-slate-400">No returns yet — run a sync.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[720px]">
+                  <thead>
+                    <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                      <th className="px-5 py-2.5">Return date</th>
+                      <th className="px-5 py-2.5">Order</th>
+                      <th className="px-5 py-2.5">SKU</th>
+                      <th className="px-5 py-2.5 text-right">Qty</th>
+                      <th className="px-5 py-2.5">Reason</th>
+                      <th className="px-5 py-2.5">Status</th>
+                      <th className="px-5 py-2.5 text-right">Refund</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {returnsData.returns.map((r: any, i: number) => (
+                      <tr key={r.returnId || r.orderId || i} className="border-b border-slate-50 last:border-0">
+                        <td className="px-5 py-3 text-slate-600 tabular-nums whitespace-nowrap">
+                          {r.returnDate ? formatDate(r.returnDate) : '—'}
+                        </td>
+                        <td className="px-5 py-3 font-mono text-xs text-slate-700 whitespace-nowrap">{r.orderId || '—'}</td>
+                        <td className="px-5 py-3">
+                          <span className="font-mono text-xs text-slate-700">{r.sku || '—'}</span>
+                          {r.asin && (
+                            <span className="block font-mono text-[11px] text-slate-400 mt-0.5">{r.asin}</span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3 text-right text-slate-900 font-semibold tabular-nums">{r.quantity ?? 0}</td>
+                        <td className="px-5 py-3 text-slate-600">{r.reason || '—'}</td>
+                        <td className="px-5 py-3">
+                          <Badge variant={returnPillVariant(r.status || r.resolution)} dot>
+                            {r.status || r.resolution || 'Unknown'}
+                          </Badge>
+                        </td>
+                        <td className="px-5 py-3 text-right text-slate-900 font-semibold tabular-nums whitespace-nowrap">
+                          {formatReturnRefund(r.refundAmount, r.currency)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        )}
+
         {/* Channel settings — rename + default fulfilment */}
         <Card>
           <div className="flex items-center gap-2.5 px-5 py-4 border-b border-slate-100">
@@ -622,6 +736,27 @@ function settlementPillVariant(status?: string): 'emerald' | 'amber' | 'slate' {
   if (/COMPLET|SUCCE|DONE|PAID|SETTLED/.test(s)) return 'emerald';
   if (/PEND|PROCESS|IN_PROGRESS|OPEN|INITIAT/.test(s)) return 'amber';
   return 'slate';
+}
+
+// Returns status/resolution pill colour: green for completed/approved-like,
+// amber for pending/requested, slate otherwise.
+function returnPillVariant(status?: string): 'emerald' | 'amber' | 'slate' {
+  const s = String(status || '').toUpperCase();
+  if (/COMPLET|APPROV|REFUND|CLOSED|DONE|RESOLVED|ACCEPT/.test(s)) return 'emerald';
+  if (/PEND|REQUEST|OPEN|IN_PROGRESS|PROCESS|INITIAT|REVIEW/.test(s)) return 'amber';
+  return 'slate';
+}
+
+// Format a return's refund in its own currency; show an em dash for a zero or
+// missing amount.
+function formatReturnRefund(amount: any, currency?: string) {
+  const n = Number(amount);
+  if (!isFinite(n) || n === 0) return '—';
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency: currency || 'USD' }).format(n);
+  } catch {
+    return `${currency || ''} ${n.toFixed(2)}`.trim();
+  }
 }
 
 // Inline searchable variant dropdown used on unmapped listing rows. Matches the
