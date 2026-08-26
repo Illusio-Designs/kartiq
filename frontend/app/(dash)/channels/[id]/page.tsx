@@ -808,6 +808,9 @@ function VariantPicker({
             <div className="relative">
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
+                // Focuses the search as soon as the user opens this picker —
+                // intentional, so autofocus is fine here.
+                // eslint-disable-next-line jsx-a11y/no-autofocus
                 autoFocus
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
