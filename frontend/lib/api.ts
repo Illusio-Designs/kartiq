@@ -535,6 +535,12 @@ export const channelApi = {
   mcfCancel: (id: string, orderNumber: string) =>
     api.post(`/channels/${id}/mcf/cancel`, { orderNumber }),
   mcfInventory: (id: string) => api.get(`/channels/${id}/mcf/inventory`),
+
+  // Finances / settlements (payouts) — Amazon SP-API financialEventGroups
+  financesSync: (id: string, body?: { since?: string }) =>
+    api.post(`/channels/${id}/finances/sync`, body || {}),
+  finances: (id: string, params?: { limit?: number }) =>
+    api.get(`/channels/${id}/finances`, { params }),
 };
 
 export const customerApi = {

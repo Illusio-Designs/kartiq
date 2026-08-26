@@ -520,6 +520,44 @@ class AmazonAdapter {
     return out;
   }
 
+  // Amazon SP-API Finances — settlement / payout groups. Each group is one
+  // payout with its window, status and total, so the dashboard can reconcile
+  // what Amazon actually paid out. Paginated via NextToken.
+  // Docs: /finances/v0/financialEventGroups
+  async fetchFinancialEventGroups(sinceDate) {
+    let since = sinceDate;
+    if (since && typeof since === 'object' && !(since instanceof Date)) since = since.since;
+    if (!since) since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000); // default last 90d
+    const sinceIso = since instanceof Date ? since.toISOString() : new Date(since).toISOString();
+    const base = { FinancialEventGroupStartedAfter: sinceIso, MaxResultsPerPage: 100 };
+    const out = [];
+    let nextToken = null;
+    let guard = 0;
+    do {
+      if (guard > 0) await this._sleep(700); // finances endpoints are throttled
+      const params = nextToken ? { NextToken: nextToken } : base;
+      const data = await this._request('GET', '/finances/v0/financialEventGroups', params);
+      const groups = data.payload?.FinancialEventGroupList || [];
+      for (const g of groups) {
+        out.push({
+          groupId: g.FinancialEventGroupId,
+          processingStatus: g.ProcessingStatus || null,
+          fundTransferStatus: g.FundTransferStatus || null,
+          currency: g.OriginalTotal?.CurrencyCode || g.ConvertedTotal?.CurrencyCode || null,
+          total: Number(g.OriginalTotal?.CurrencyAmount ?? g.ConvertedTotal?.CurrencyAmount ?? 0) || 0,
+          beginTime: g.FinancialEventGroupStart || null,
+          endTime: g.FinancialEventGroupEnd || null,
+          fundTransferDate: g.FundTransferDate || null,
+          traceId: g.TraceId || null,
+          accountTail: g.AccountTail || null,
+          raw: g,
+        });
+      }
+      nextToken = data.payload?.NextToken || null;
+    } while (nextToken && ++guard < 50 && out.length < 2000);
+    return out;
+  }
+
   _transformOrder(o) {
     return {
       channelOrderId: o.AmazonOrderId,

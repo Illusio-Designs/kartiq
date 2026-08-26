@@ -493,21 +493,28 @@ async function ensureListingForItem({ tenantId, channelId, item }) {
 
   // Map it to this channel (unique on channelId + channelSku). If a concurrent
   // item in the same batch already created it, re-fetch instead of throwing.
+  const asin = item.asin || null;
   let listing = await prisma.channelListing.findFirst({ where: { channelId, channelSku: sku } });
   if (!listing) {
     try {
       listing = await prisma.channelListing.create({
-        data: { tenantId, channelId, productId, variantId, channelSku: sku, channelPrice: price, isActive: true, fulfillmentType: listingFulfillment },
+        data: { tenantId, channelId, productId, variantId, channelSku: sku, channelPrice: price, isActive: true, fulfillmentType: listingFulfillment, asin },
       });
     } catch (e) {
       listing = await prisma.channelListing.findFirst({ where: { channelId, channelSku: sku } });
       if (!listing) throw e;
     }
-  } else if (listingFulfillment && listing.fulfillmentType !== listingFulfillment) {
-    // Backfill/refresh the fulfillment model once we learn it (e.g. an order
-    // reveals a listing first seen via catalog import is actually FBA).
-    await prisma.channelListing.update({ where: { id: listing.id }, data: { fulfillmentType: listingFulfillment } }).catch(() => {});
-    listing.fulfillmentType = listingFulfillment;
+  } else {
+    // Backfill/refresh fields we may only learn on a later sync: the fulfillment
+    // model (e.g. an order reveals a catalog-imported listing is actually FBA)
+    // and the ASIN (parsed from the listings report).
+    const patch = {};
+    if (listingFulfillment && listing.fulfillmentType !== listingFulfillment) patch.fulfillmentType = listingFulfillment;
+    if (asin && listing.asin !== asin) patch.asin = asin;
+    if (Object.keys(patch).length) {
+      await prisma.channelListing.update({ where: { id: listing.id }, data: patch }).catch(() => {});
+      Object.assign(listing, patch);
+    }
   }
   return listing;
 }
@@ -966,4 +973,56 @@ async function confirmChannelShipment(order, { trackingNumber, courierName, ship
   }
 }
 
-module.exports = { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, pushProductToChannels, importCatalogFromChannel, confirmChannelShipment };
+// ── Settlements / payouts ───────────────────────────────────────────────────
+const db = require('../utils/db');
+const { randomUUID } = require('crypto');
+
+// Pull the channel's settlement/payout groups (Amazon SP-API financialEvent
+// groups) and upsert them into channel_settlements so the dashboard can show
+// what the marketplace actually paid out. No-op for channels whose adapter
+// doesn't expose fetchFinancialEventGroups.
+async function syncChannelSettlements(channel, { tenantId, since } = {}) {
+  const adapter = getAdapter(channel);
+  if (typeof adapter.fetchFinancialEventGroups !== 'function') {
+    return { supported: false, synced: 0 };
+  }
+  const groups = await adapter.fetchFinancialEventGroups({ since });
+  let synced = 0;
+  for (const g of groups) {
+    if (!g.groupId) continue;
+    const row = {
+      tenantId,
+      channelId: channel.id,
+      groupId: g.groupId,
+      processingStatus: g.processingStatus || null,
+      fundTransferStatus: g.fundTransferStatus || null,
+      currency: g.currency || null,
+      total: g.total || 0,
+      beginTime: g.beginTime ? new Date(g.beginTime) : null,
+      endTime: g.endTime ? new Date(g.endTime) : null,
+      fundTransferDate: g.fundTransferDate ? new Date(g.fundTransferDate) : null,
+      traceId: g.traceId || null,
+      accountTail: g.accountTail || null,
+      raw: JSON.stringify(g.raw || {}),
+      updatedAt: new Date(),
+    };
+    const existing = await db('channel_settlements')
+      .where({ channelId: channel.id, groupId: g.groupId }).first();
+    if (existing) {
+      await db('channel_settlements').where({ id: existing.id }).update(row);
+    } else {
+      await db('channel_settlements').insert({ id: randomUUID(), createdAt: new Date(), ...row });
+    }
+    synced += 1;
+  }
+  return { supported: true, synced, total: groups.length };
+}
+
+async function listChannelSettlements(channelId, { tenantId, limit = 100 } = {}) {
+  return db('channel_settlements')
+    .where({ channelId, tenantId })
+    .orderBy('fundTransferDate', 'desc')
+    .limit(Math.min(500, Number(limit) || 100));
+}
+
+module.exports = { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, pushProductToChannels, importCatalogFromChannel, confirmChannelShipment, syncChannelSettlements, listChannelSettlements };

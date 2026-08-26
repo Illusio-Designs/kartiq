@@ -46,6 +46,10 @@ async function initDb() {
     // to stop pushing local quantities to FBA listings, which Amazon rejects.
     { table: 'channel_listings', column: 'fulfillmentType', ddl: 'VARCHAR(16) DEFAULT NULL' },
 
+    // Amazon ASIN parsed from the listings report — kept so mappings can show
+    // and report the ASIN alongside the seller SKU.
+    { table: 'channel_listings', column: 'asin', ddl: 'VARCHAR(20) DEFAULT NULL' },
+
     // User profile extras
     { table: 'users', column: 'phone', ddl: 'VARCHAR(30) DEFAULT NULL' },
 
@@ -176,6 +180,32 @@ async function initDb() {
       UNIQUE KEY \`pm_provider_token_unique\` (\`tenantId\`, \`providerTokenId\`),
       KEY \`pm_tenant_idx\` (\`tenantId\`, \`isActive\`),
       KEY \`pm_default_idx\` (\`tenantId\`, \`isDefault\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+    // Channel settlements / payouts — e.g. Amazon SP-API financialEventGroups.
+    // One row per settlement group (payout) so the dashboard can reconcile what
+    // the marketplace actually paid out against orders. groupId is the
+    // marketplace's own id (Amazon FinancialEventGroupId), unique per channel.
+    `CREATE TABLE IF NOT EXISTS \`channel_settlements\` (
+      \`id\` varchar(191) NOT NULL,
+      \`tenantId\` varchar(191) NOT NULL,
+      \`channelId\` varchar(191) NOT NULL,
+      \`groupId\` varchar(191) NOT NULL,
+      \`processingStatus\` varchar(32) DEFAULT NULL,
+      \`fundTransferStatus\` varchar(32) DEFAULT NULL,
+      \`currency\` varchar(8) DEFAULT NULL,
+      \`total\` decimal(14,2) NOT NULL DEFAULT 0.00,
+      \`beginTime\` datetime(3) DEFAULT NULL,
+      \`endTime\` datetime(3) DEFAULT NULL,
+      \`fundTransferDate\` datetime(3) DEFAULT NULL,
+      \`traceId\` varchar(191) DEFAULT NULL,
+      \`accountTail\` varchar(16) DEFAULT NULL,
+      \`raw\` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+      \`createdAt\` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+      \`updatedAt\` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
+      PRIMARY KEY (\`id\`),
+      UNIQUE KEY \`channel_settlements_channel_group_unique\` (\`channelId\`, \`groupId\`),
+      KEY \`channel_settlements_tenant_idx\` (\`tenantId\`, \`fundTransferDate\`),
+      KEY \`channel_settlements_channel_idx\` (\`channelId\`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
     // Background job queue — durable retry/DLQ without needing Redis.
     // status: pending | running | done | dead.

@@ -4,7 +4,7 @@ const {
 } = require('../middleware/auth.middleware');
 const prisma = require('../utils/prisma');
 const { encryptCredentials, maskCredentials } = require('../utils/crypto');
-const { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, importCatalogFromChannel } = require('../services/channel.service');
+const { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, importCatalogFromChannel, syncChannelSettlements, listChannelSettlements } = require('../services/channel.service');
 const { CATALOG, getCatalogEntry, getCatalogByCategory } = require('../data/channel-catalog');
 
 const router = Router();
@@ -736,6 +736,42 @@ router.get('/:id/mcf/inventory', requirePermission('channels.read'), async (req,
     }
     const inventory = await adapter.getMCFInventory();
     res.json(inventory);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Finances / settlements (payouts) ──────────────────────────────────────
+// Pull the channel's settlement/payout groups from the marketplace (Amazon
+// SP-API financialEventGroups) and store them for reconciliation.
+router.post('/:id/finances/sync', requirePermission('channels.sync'), async (req, res) => {
+  try {
+    const channel = await loadTenantChannel(req);
+    if (!channel) return res.status(404).json({ error: 'Channel not found' });
+    const result = await syncChannelSettlements(channel, { tenantId: req.tenant.id, since: req.body?.since });
+    if (!result.supported) {
+      return res.status(400).json({ error: 'This channel does not support settlement sync' });
+    }
+    await prisma.channel.update({ where: { id: channel.id }, data: { syncError: null } }).catch(() => {});
+    res.json({ message: 'Settlement sync complete', ...result });
+  } catch (err) {
+    await prisma.channel.updateMany({
+      where: { id: req.params.id, tenantId: req.tenant.id },
+      data: { syncError: err.message },
+    }).catch(() => {});
+    res.status(500).json({ error: 'Settlement sync failed', details: err.message });
+  }
+});
+
+router.get('/:id/finances', requirePermission('channels.read'), async (req, res) => {
+  try {
+    const channel = await loadTenantChannel(req);
+    if (!channel) return res.status(404).json({ error: 'Channel not found' });
+    const settlements = await listChannelSettlements(channel.id, {
+      tenantId: req.tenant.id,
+      limit: req.query.limit,
+    });
+    res.json({ settlements, total: settlements.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
