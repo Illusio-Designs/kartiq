@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Package, ShoppingCart,
   Store, BarChart2, Settings, LogOut,
   Plug, HelpCircle, Sparkles, PanelLeftClose, PanelLeftOpen, X,
-  Wallet, UserCog, ChevronDown, Activity, Gift,
+  Wallet, UserCog, ChevronDown, Activity, Gift, ClipboardList, Truck,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth.store';
 import { useUIStore } from '@/store/ui.store';
@@ -21,6 +21,7 @@ export interface SidebarNavItem {
   href: string;
   icon: any;
   badge?: number;
+  feature?: string; // plan-feature flag required to show this item (platform admins always see it)
 }
 
 export interface SidebarNavGroup {
@@ -42,6 +43,8 @@ const DEFAULT_NAV_GROUPS: SidebarNavGroup[] = [
     label: 'Features',
     items: [
       { label: 'Channels',    href: '/channels',     icon: Plug },
+      { label: 'Purchases',   href: '/purchases',    icon: ClipboardList, feature: 'purchaseManagement' },
+      { label: 'Vendors',     href: '/vendors',      icon: Truck,         feature: 'purchaseManagement' },
     ],
   },
   {
@@ -75,7 +78,7 @@ export function Sidebar({
   const isDefaultNav = !groups;
   const pathname = usePathname();
   const router = useRouter();
-  const { logout, tenant, plan, isPlatformAdmin } = useAuthStore();
+  const { logout, tenant, plan, isPlatformAdmin, hasFeature } = useAuthStore();
   const { sidebarCollapsed, toggleSidebar, mobileSidebarOpen, setMobileSidebar, navGroupCollapsed, toggleNavGroup } = useUIStore();
 
   // Live counts for nav badges (only on tenant nav, not platform admin nav)
@@ -96,17 +99,22 @@ export function Sidebar({
     return () => { cancelled = true; };
   }, [isDefaultNav, tenant, isPlatformAdmin]);
 
+  const isAdmin = isPlatformAdmin();
   const navGroups = useMemo(() => {
     if (!isDefaultNav) return baseGroups;
     return baseGroups.map(g => ({
       ...g,
-      items: g.items.map(it => {
-        if (it.href === '/orders'   && counts.orders)   return { ...it, badge: counts.orders };
-        if (it.href === '/channels' && counts.channels) return { ...it, badge: counts.channels };
-        return it;
-      }),
+      // Hide plan-feature-gated items the tenant's plan doesn't include (platform
+      // admins always see everything).
+      items: g.items
+        .filter(it => !it.feature || isAdmin || hasFeature(it.feature))
+        .map(it => {
+          if (it.href === '/orders'   && counts.orders)   return { ...it, badge: counts.orders };
+          if (it.href === '/channels' && counts.channels) return { ...it, badge: counts.channels };
+          return it;
+        }),
     }));
-  }, [baseGroups, counts, isDefaultNav]);
+  }, [baseGroups, counts, isDefaultNav, isAdmin, hasFeature]);
 
   const handleLogout = () => {
     logout();

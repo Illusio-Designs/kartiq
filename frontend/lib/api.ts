@@ -490,6 +490,30 @@ export const warehouseApi = {
   syncFba: () => api.post('/warehouses/amazon/fba', {}),
 };
 
+// ─── Vendors (suppliers) ─────────────────────────────────────────────────────
+// Gated by the `purchaseManagement` plan feature server-side.
+export const vendorApi = {
+  list: () => api.get('/vendors'),
+  get: (id: string) => api.get(`/vendors/${id}`),
+  create: (data: any) => api.post('/vendors', data),
+  update: (id: string, data: any) => api.put(`/vendors/${id}`, data),
+  delete: (id: string) => api.delete(`/vendors/${id}`),
+};
+
+// ─── Purchase orders ─────────────────────────────────────────────────────────
+export const purchaseApi = {
+  list: (params?: { page?: number; limit?: number; status?: string; vendorId?: string }) =>
+    api.get('/purchases', { params }),
+  get: (id: string) => api.get(`/purchases/${id}`),
+  create: (data: any) => api.post('/purchases', data),
+  update: (id: string, data: any) => api.put(`/purchases/${id}`, data),
+  setStatus: (id: string, status: string) => api.patch(`/purchases/${id}/status`, { status }),
+  // Receive stock into a warehouse. Omit `lines` to receive everything remaining.
+  receive: (id: string, data?: { warehouseId?: string; lines?: Array<{ itemId: string; qty: number }> }) =>
+    api.post(`/purchases/${id}/receive`, data || {}),
+  delete: (id: string) => api.delete(`/purchases/${id}`),
+};
+
 export const shipmentApi = {
   list: (params?: any) => api.get('/shipments', { params }),
   get: (id: string) => api.get(`/shipments/${id}`),
