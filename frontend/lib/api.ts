@@ -522,6 +522,25 @@ export const shipmentApi = {
   delete: (id: string) => api.delete(`/shipments/${id}`),
 };
 
+// ─── Returns (RMA lifecycle) ─────────────────────────────────────────────────
+// Gated by the `returns` plan feature. Enhanced tiers auto-restock on receipt.
+export const returnApi = {
+  list: (params?: { page?: number; limit?: number; status?: string }) =>
+    api.get('/returns', { params }),
+  get: (id: string) => api.get(`/returns/${id}`),
+  create: (data: { orderId: string; reason: string; refundAmt?: number; notes?: string }) =>
+    api.post('/returns', data),
+  setStatus: (id: string, data: { status: string; refundAmt?: number; notes?: string }) =>
+    api.patch(`/returns/${id}/status`, data),
+  delete: (id: string) => api.delete(`/returns/${id}`),
+};
+
+// ─── Payment reconciliation ──────────────────────────────────────────────────
+export const reconciliationApi = {
+  summary: (params?: { from?: string; to?: string; channelId?: string }) =>
+    api.get('/reconciliation/summary', { params }),
+};
+
 // ─── Channels ──────────────────────────────────────────────────────────────
 // Covers: CRUD, global catalog browser, integration requests, connect/test,
 // order/inventory sync, listings (SKU mappings), shipping operations.
