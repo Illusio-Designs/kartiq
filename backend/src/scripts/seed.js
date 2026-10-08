@@ -127,7 +127,7 @@ const PLANS = [
     // (isPublic=false). Assign via planCode on signup or directly in the DB.
     code: 'FIVERR_FREE',
     name: 'Fiverr Free',
-    tagline: 'Free full-access plan for testing and review purposes.',
+    tagline: 'Forever-free full-access plan for testing and review purposes.',
     monthlyPrice: 0, yearlyPrice: 0, sortOrder: 99, isPublic: false,
     maxFacilities: 5, maxSkus: 50000, maxUserRoles: 12, maxUsers: 10, maxOrdersPerMonth: 5000,
     features: {

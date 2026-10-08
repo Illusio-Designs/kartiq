@@ -253,6 +253,7 @@ async function rollForwardSubscriptions() {
 
   let rolled = 0, invoiced = 0, autoRenewed = 0, autoRenewFailed = 0, pastDue = 0;
   for (const sub of due) {
+    if (sub.plan?.code === 'FIVERR_FREE') continue; // forever-free plan: never rolled or billed
     try {
       const isFree = !Number(sub.billingCycle === 'YEARLY' ? sub.plan.yearlyPrice : sub.plan.monthlyPrice);
       // Snapshot an invoice for the period that just ended (skip on trial / free)

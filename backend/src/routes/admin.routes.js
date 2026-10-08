@@ -272,7 +272,11 @@ router.post('/tenants/:id/assign-plan', async (req, res) => {
     const { planCode, billingCycle, payAsYouGo } = assignPlanSchema.parse(req.body);
     const plan = await prisma.plan.findUnique({ where: { code: planCode } });
     if (!plan) return res.status(404).json({ error: 'Plan not found' });
-    const periodEnd = new Date(); periodEnd.setMonth(periodEnd.getMonth() + 1);
+    const periodEnd = new Date();
+    // FIVERR_FREE never expires: push the period end 100 years out (the billing
+    // job also skips it), so it never rolls into PAST_DUE or asks for payment.
+    if (planCode === 'FIVERR_FREE') periodEnd.setFullYear(periodEnd.getFullYear() + 100);
+    else periodEnd.setMonth(periodEnd.getMonth() + 1);
 
     const sub = await prisma.subscription.upsert({
       where: { tenantId: req.params.id },
