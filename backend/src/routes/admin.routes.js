@@ -46,7 +46,7 @@ const tenantUpdateSchema = z.object({
 });
 
 const assignPlanSchema = z.object({
-  planCode: z.enum(['STANDARD', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE']),
+  planCode: z.enum(['STANDARD', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE', 'FIVERR_FREE']),
   billingCycle: z.enum(['MONTHLY', 'YEARLY']).optional(),
   payAsYouGo: z.boolean().optional(),
 });

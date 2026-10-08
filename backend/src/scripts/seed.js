@@ -121,6 +121,25 @@ const PLANS = [
     },
     meteredRates: {},
   },
+  {
+    // Free, hidden plan for Fiverr/test accounts: every feature unlocked with
+    // generous limits, ₹0, and not listed on the public pricing page
+    // (isPublic=false). Assign via planCode on signup or directly in the DB.
+    code: 'FIVERR_FREE',
+    name: 'Fiverr Free',
+    tagline: 'Free full-access plan for testing and review purposes.',
+    monthlyPrice: 0, yearlyPrice: 0, sortOrder: 99, isPublic: false,
+    maxFacilities: 5, maxSkus: 50000, maxUserRoles: 12, maxUsers: 10, maxOrdersPerMonth: 5000,
+    features: {
+      maxChannels: 20,
+      channelCategories: null, // null = all categories
+      returns: 'enhanced', vms: true, paymentReconciliation: true, mobileApp: true,
+      purchaseManagement: true, barcoding: 'sku', inwardLogistics: true,
+      customReports: true, apiIntegration: true, advancedWarehouseOps: true,
+      vendorManagement: true, omniChannel: true, erpIntegration: false,
+    },
+    meteredRates: {},
+  },
 ];
 
 async function seedPermissions() {
@@ -146,6 +165,7 @@ async function seedPlans() {
         maxUserRoles: p.maxUserRoles, maxUsers: p.maxUsers,
         maxOrdersPerMonth: p.maxOrdersPerMonth,
         features: p.features, meteredRates: p.meteredRates,
+        isPublic: p.isPublic !== false,
       },
       create: p,
     });
