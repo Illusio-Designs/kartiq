@@ -29,7 +29,7 @@ e:/kartriq/
 │   │   ├── routes/                ← Route files per module
 │   │   ├── controllers/
 │   │   ├── services/
-│   │   ├── middleware/auth.middleware.js  ← JWT, RBAC, plan limits
+│   │   ├── middleware/auth.middleware.js  ← JWT, RBAC, plan features
 │   │   ├── jobs/                  ← cron + billing background jobs
 │   │   ├── scripts/seed.js        ← Idempotent seeder (upserts)
 │   │   ├── scripts/test.js        ← e2e test suite (vanilla http.request)
@@ -213,7 +213,7 @@ All routes live under `/api/v1`. Health check: `GET /health`.
 | Dashboard        | `/dashboard`                       |
 | Reports          | `/reports`                         |
 | Plans            | `/plans`                           |
-| Billing          | `/billing` (wallet, tenant, top-up) |
+| Billing          | `/billing` (plan, invoices, cards)  |
 | Roles & Users    | `/roles`, `/users`                 |
 | Admin            | `/admin` (platform-admin only)     |
 | Public           | `/public` (SEO, blog, pricing)     |
@@ -250,7 +250,7 @@ LIST endpoints return an envelope (the frontend depends on this — never return
 - **Reports** — Sales analytics, inventory valuation, top products
 - **Dashboard** — KPIs, recent orders, revenue trends
 - **RBAC** — Tenant-scoped roles + permission catalog (module × action); `*` = full access
-- **Plans & Billing** — Hard plan limits + Pay-As-You-Go wallet (Razorpay top-up)
+- **Plans & Billing** — Feature-based plans (no usage limits), Razorpay checkout and auto-renewal
 - **Public site** — SEO settings, blog, pricing page
 
 ---
@@ -263,8 +263,7 @@ LIST endpoints return an envelope (the frontend depends on this — never return
 - Permission model: User → Roles → Permissions (e.g. `products.create`, `orders.view`).
   Permission checks are cached in-process for 10s and invalidated on logout.
 - Platform admins (founders) can pass `x-tenant-id` to impersonate any tenant.
-- `enforceLimit()` gates resource creation against plan ceilings; once exhausted,
-  Pay-As-You-Go tenants draw from their wallet balance.
+- Plans gate features and channel categories only; there are no usage limits or wallet.
 
 ---
 
