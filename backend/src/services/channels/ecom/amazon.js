@@ -216,7 +216,7 @@ class AmazonAdapter {
         const c = code(e);
         if (okOn.includes(c)) return checks.push({ key, label, status: 'ok', detail: 'Access works (Amazon only complained about this particular order).' });
         if (c === 429) return checks.push({ key, label, status: 'unknown', detail: 'Amazon is limiting requests right now — try again in a minute.' });
-        if (c === 401 || c === 403) return checks.push({ key, label, status: 'denied', needs, detail: `Amazon refused access${needs ? ` — the app needs the role "${needs}"` : ''}. After Amazon approves it: add it to the app, then Re-authorise.` });
+        if (c === 401 || c === 403 || (c === 400 && key === 'buyer')) return checks.push({ key, label, status: 'denied', needs, detail: `Amazon refused access${needs ? ` — the app needs the role "${needs}"` : ''}. After Amazon approves it: add it to the app, then Re-authorise.${e.response?.data?.errors?.[0]?.message ? ` Amazon said: "${e.response.data.errors[0].message}"` : ''}` });
         checks.push({ key, label, status: 'unknown', detail: String(e.message).slice(0, 200) });
       }
     };
@@ -999,13 +999,13 @@ class AmazonAdapter {
 
   // Schedule the package into a slot. Amazon then owns the booking (courier, AWB, label).
   async createScheduledPackage(amazonOrderId, slot, opts = {}) {
-    const parcel = this._easyShipParcel(opts);
+    // Per Amazon's Easy Ship v2022-03-23 guide the parcel weight/size go to listHandoverSlots;
+    // createScheduledPackage takes the chosen slot (plus optional packageItems/packageIdentifier).
     const data = await this._easyShipCall('POST', '/easyShip/2022-03-23/package', {
       data: {
         amazonOrderId, marketplaceId: this.marketplaceId,
         packageDetails: {
           packageTimeSlot: { slotId: slot.slotId, startTime: slot.startTime, endTime: slot.endTime, ...(slot.handoverMethod ? { handoverMethod: slot.handoverMethod } : {}) },
-          ...parcel,
         },
       },
     });

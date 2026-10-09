@@ -234,7 +234,8 @@ async function main() {
   ok(callsTo(/timeSlot/).length === 1 && callsTo(/POST \/easyShip\/2022-03-23\/package/).length === 1, 'Exactly 1 slot lookup + 1 package booking');
   const pk = callsTo(/POST \/easyShip\/2022-03-23\/package/)[0].body;
   ok(pk.packageDetails.packageTimeSlot.slotId === 'slot-1', 'It took the earliest open pickup slot');
-  ok(pk.packageDetails.packageWeight.value === 1500 && pk.packageDetails.packageDimensions.length === 30, 'Parcel from the products: 0.75 kg × 2 = 1500 g, 30×20×12 cm');
+  const slotReq = callsTo(/POST \/easyShip\/2022-03-23\/timeSlot/)[0].body;
+  ok(slotReq.packageWeight.value === 1500 && slotReq.packageDimensions.length === 30 && !pk.packageDetails.packageWeight, 'Parcel (0.75 kg × 2 = 1500 g, 30×20×12 cm) goes to the slot lookup, as Amazon documents; the booking only carries the chosen slot');
   ok(callsTo(/eligibleShippingServices/).length === 0, 'Buy Shipping rates were NOT used in India');
   ok(c2.body.hasLabel === true && !!(await db('order_labels').where({ orderId: M[2].id, status: 'ACTIVE' }).first()), 'Label stored (ACTIVE)');
   const lbl2 = await labelGet(M[2].id);
@@ -345,7 +346,7 @@ async function main() {
   group('8. Product has no weight or size');
   fake.calls.length = 0;
   const w4 = await confirm(M[4].id);
-  const pk4 = callsTo(/POST \/easyShip\/2022-03-23\/package/)[0]?.body?.packageDetails;
+  const pk4 = callsTo(/POST \/easyShip\/2022-03-23\/timeSlot/)[0]?.body;
   ok(w4.status === 200 && pk4?.packageWeight?.value === 500 && pk4?.packageDimensions?.length === 20, 'Falls back to 500 g, 20×15×10 cm');
   ok(w4.body.usedDefaults?.weight === true && w4.body.usedDefaults?.dimensions === true, 'Result flags that defaults were assumed');
 
