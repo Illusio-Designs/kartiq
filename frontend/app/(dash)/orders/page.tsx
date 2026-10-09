@@ -449,6 +449,43 @@ export default function OrdersPage() {
       setSlipsPending(false);
     }
   };
+  // "Confirm & get labels": books the Amazon courier for every selected order the
+  // seller ships, then opens ALL the new labels as one PDF to print. Orders that
+  // need nothing (FBA, already shipped) are skipped; failures list the reason.
+  const [bookPending, setBookPending] = useState(false);
+  const confirmAndGetLabels = async () => {
+    const ids = [...selected];
+    if (!ids.length) return;
+    if (ids.length > 50) { toast.error('Select at most 50 orders at a time'); return; }
+    setBookPending(true);
+    const w = window.open('', '_blank'); // open inside the click so pop-up blockers allow it
+    try {
+      const r = await orderApi.bookShippingBulk(ids);
+      const { booked, failed, skipped, results } = r.data as { booked: number; failed: number; skipped: number; results: { id: string; order: string; booked: boolean; kind: string; reason: string | null }[] };
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      const okIds = results.filter((x) => x.booked).map((x) => x.id);
+      if (okIds.length) {
+        const l = await orderApi.labels(okIds);
+        const bytes = Uint8Array.from(atob(l.data.pdf), (c) => c.charCodeAt(0));
+        const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+        if (w) w.location.href = url; else window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 300_000);
+      } else if (w) w.close();
+      const bad = results.filter((x) => x.kind === 'error').slice(0, 2).map((x) => `${x.order}: ${x.reason}`).join(' · ');
+      const parts = [
+        booked ? `${booked} label${booked !== 1 ? 's' : ''} ready — opened to print` : 'No labels booked',
+        failed ? `${failed} failed (${bad}${failed > 2 ? ' …' : ''})` : '',
+        skipped ? `${skipped} skipped (FBA / already shipped)` : '',
+      ].filter(Boolean);
+      (booked && !failed ? toast.success : toast.error)(parts.join(' · '));
+      setSelected(new Set());
+    } catch (e: any) {
+      if (w) w.close();
+      toast.error(e?.response?.data?.error || e?.message || 'Could not get the labels');
+    } finally {
+      setBookPending(false);
+    }
+  };
   // Print the saved shipping labels of every selected order as ONE merged PDF
   // (a label per page). Orders with no label (not booked yet, FBA, cancelled
   // label, thermal ZPL) are skipped by the server and reported here.
@@ -663,6 +700,7 @@ export default function OrdersPage() {
         {/* Bulk actions (appears when rows are selected) */}
         <BulkActionBar count={selected.size} onClear={() => setSelected(new Set())}>
           <Button variant="outline" size="sm" leftIcon={<Truck size={13} />} loading={bulkPending} onClick={() => bulkSetStatus('SHIPPED', 'Marked shipped')}>Mark shipped</Button>
+          <Button variant="primary" size="sm" leftIcon={<Truck size={13} />} loading={bookPending} onClick={confirmAndGetLabels}>Confirm &amp; get labels</Button>
           <Button variant="outline" size="sm" leftIcon={<Printer size={13} />} loading={labelsPending} onClick={printSelectedLabels}>Print shipping labels</Button>
           <Button variant="outline" size="sm" leftIcon={<Printer size={13} />} loading={slipsPending} onClick={printSelectedSlips}>Print packing slips</Button>
           <Button variant="outline" size="sm" leftIcon={<Download size={13} />} onClick={() => exportRows(sortedOrders.filter((o: any) => selected.has(o.id)))}>Export</Button>

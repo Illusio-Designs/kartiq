@@ -26,17 +26,37 @@ function kg(weight) {
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
+// The fake seller's catalog ("Pull catalog" brings these in). 2 merchant-
+// fulfilled products (you ship them) and 1 FBA product (Amazon ships it).
+const DEMO_CATALOG = [
+  { channelSku: 'DEMO-WIDGET', name: 'Demo Widget', quantity: 120, unitPrice: 399, asin: 'B0DEMOWID1', fulfillmentType: 'SELF' },
+  { channelSku: 'DEMO-GADGET', name: 'Demo Gadget', quantity: 60, unitPrice: 799, asin: 'B0DEMOGAD2', fulfillmentType: 'SELF' },
+  { channelSku: 'DEMO-FBA-ITEM', name: 'Demo FBA Item', quantity: 40, unitPrice: 599, asin: 'B0DEMOFBA3', fulfillmentType: 'CHANNEL' },
+];
+
 class AmazonDemoAdapter {
-  constructor() { this.isDemo = true; }
+  constructor(channel) { this.isDemo = true; this.channel = channel || null; }
 
   async testConnection() {
     return { success: true, marketplaces: ['Amazon.in (DEMO — not connected to real Amazon)'] };
   }
 
-  // Orders are created by "Reset demo data" (not by polling) so the background
-  // sync never spams the demo tenant.
-  async fetchOrders() { return []; }
-  async fetchAllListings() { return []; }
+  // "Pull catalog" brings in the fake seller's 3 products.
+  async fetchAllListings() { return DEMO_CATALOG.map((i) => ({ ...i })); }
+
+  // The demo pack of orders arrives ONCE, after the catalog has been pulled
+  // (orders for products you haven't pulled would be meaningless) — exactly like
+  // a real seller's first sync. Later syncs return nothing, so the background
+  // sync can never flood the demo tenant. "Reset demo data" starts it over.
+  async fetchOrders() {
+    const channelId = this.channel?.id;
+    if (!channelId) return [];
+    const db = require('../../../utils/db');
+    const count = async (table) => Number((await db(table).where({ channelId }).count({ c: '*' }).first()).c);
+    if (await count('channel_listings') === 0) return [];
+    if (await count('orders') > 0) return [];
+    return buildDemoOrders({});
+  }
   async fetchInventorySummaries() { return []; }
   async fetchFinancialEventGroups() { return []; }
   async fetchReturns() { return []; }
@@ -129,37 +149,41 @@ class AmazonDemoAdapter {
   }
 }
 
-// The raw orders (same shape the real AmazonAdapter produces) that "Reset demo
-// data" feeds through the real importOrders(): 1 FBA, 4 normal MFN, and 1 MFN
-// that is built to fail at purchase time.
-function buildDemoOrders({ sku, productName = 'Demo Widget', price = 399, stamp = Date.now() }) {
+// The raw orders (same shape the real AmazonAdapter produces) that the first
+// sync delivers: 1 FBA, 4 normal MFN, and 1 MFN that is built to fail at
+// purchase time. They only use SKUs from DEMO_CATALOG.
+function buildDemoOrders({ stamp = Date.now() } = {}) {
   const buyer = (n, city, state, pin) => ({
     customer: { name: `Demo Buyer ${n}`, email: `demo-buyer-${n}@example.com`, phone: '9000000000' },
     shippingAddress: { line1: `${10 + n} Demo Street`, city, state, pincode: pin, country: 'IN' },
   });
-  const mk = (suffix, fc, qty, who, extra = {}) => ({
-    channelOrderId: `DEMO-${stamp}-${suffix}`,
-    channelOrderNumber: `DEMO-${stamp}-${suffix}`,
-    ...who,
-    items: [{ channelSku: sku, name: productName, qty, unitPrice: price }],
-    subtotal: qty * price, shippingCharge: 0, tax: 0, discount: 0, total: qty * price,
-    paymentMethod: 'Other', paymentStatus: 'PAID',
-    status: 'PROCESSING',
-    orderedAt: new Date(),
-    fulfillment_channel: fc,
-    awb: null,
-    ...extra,
-  });
+  const mk = (suffix, fc, sku, qty, who, extra = {}) => {
+    const item = DEMO_CATALOG.find((c) => c.channelSku === sku);
+    return {
+      channelOrderId: `DEMO-${stamp}-${suffix}`,
+      channelOrderNumber: `DEMO-${stamp}-${suffix}`,
+      ...who,
+      items: [{ channelSku: sku, name: item.name, qty, unitPrice: item.unitPrice }],
+      subtotal: qty * item.unitPrice, shippingCharge: 0, tax: 0, discount: 0, total: qty * item.unitPrice,
+      paymentMethod: 'Other', paymentStatus: 'PAID',
+      status: 'PROCESSING',
+      orderedAt: new Date(),
+      fulfillment_channel: fc,
+      awb: null,
+      ...extra,
+    };
+  };
   return [
-    mk('FBA', 'AFN', 1, buyer(1, 'Mumbai', 'MH', '400001')),
-    mk('MFN1', 'MFN', 1, buyer(2, 'Pune', 'MH', '411001')),
-    mk('MFN2', 'MFN', 2, buyer(3, 'Bengaluru', 'KA', '560001')),
-    mk('MFN3', 'MFN', 3, buyer(4, 'Delhi', 'DL', '110001')),
-    mk('MFN4', 'MFN', 1, buyer(5, 'Chennai', 'TN', '600001')),
-    mk(`MFN5${FAIL_SUFFIX}`, 'MFN', 1, buyer(6, 'Kolkata', 'WB', '700001')),
+    mk('FBA', 'AFN', 'DEMO-FBA-ITEM', 1, buyer(1, 'Mumbai', 'MH', '400001')),
+    mk('MFN1', 'MFN', 'DEMO-WIDGET', 1, buyer(2, 'Pune', 'MH', '411001')),
+    mk('MFN2', 'MFN', 'DEMO-WIDGET', 2, buyer(3, 'Bengaluru', 'KA', '560001')),
+    mk('MFN3', 'MFN', 'DEMO-GADGET', 1, buyer(4, 'Delhi', 'DL', '110001')),
+    mk('MFN4', 'MFN', 'DEMO-GADGET', 2, buyer(5, 'Chennai', 'TN', '600001')),
+    mk(`MFN5${FAIL_SUFFIX}`, 'MFN', 'DEMO-WIDGET', 1, buyer(6, 'Kolkata', 'WB', '700001')),
   ];
 }
 
 module.exports = AmazonDemoAdapter;
 module.exports.buildDemoOrders = buildDemoOrders;
+module.exports.DEMO_CATALOG = DEMO_CATALOG;
 module.exports.FAIL_SUFFIX = FAIL_SUFFIX;

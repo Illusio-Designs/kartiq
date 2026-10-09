@@ -101,6 +101,8 @@ export const billingApi = {
 export const oauthApi = {
   amazonStart:  (channelId: string, region?: string) =>
     api.get('/oauth/amazon/start', { params: { channelId, ...(region ? { region } : {}) } }),
+  // DEMO tenant only: the "Authorize" click on the fake Amazon consent page
+  amazonDemoAuthorize: (channelId: string) => api.post('/oauth/amazon/demo-authorize', { channelId }),
   shopifyStart: (channelId: string, shop: string) =>
     api.get('/oauth/shopify/start', { params: { channelId, shop } }),
   flipkartStart: (channelId: string) =>
@@ -462,6 +464,8 @@ export const orderApi = {
   packingSlips: (ids: string[]) => api.post('/orders/packing-slips', { ids }),
   // Many saved shipping labels merged into ONE PDF (max 100): { pdf (base64), printed, pages, skipped[] }
   labels: (ids: string[]) => api.post('/orders/labels', { ids }),
+  // "Confirm & get label" for many orders (max 50): books the Amazon courier for each, returns each outcome
+  bookShippingBulk: (ids: string[]) => api.post('/orders/book-shipping', { ids }),
   bookShipping: (id: string) => api.post(`/orders/${id}/book-shipping`, {}),
   cancelLabel: (id: string) => api.delete(`/orders/${id}/label`),
   enrich: (id: string, body: any) => api.patch(`/orders/${id}/enrich`, body),

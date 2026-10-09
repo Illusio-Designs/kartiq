@@ -3,6 +3,7 @@ const {
   authenticate, requireTenant, requirePermission, requireFeature,
 } = require('../middleware/auth.middleware');
 const prisma = require('../utils/prisma');
+const db = require('../utils/db');
 const { encryptCredentials, decryptCredentials, maskCredentials } = require('../utils/crypto');
 const { recordPurchasedLabel } = require('../services/amazonShipping.service');
 const { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, importCatalogFromChannel, syncChannelSettlements, listChannelSettlements, syncChannelReturns, listChannelReturns, ensureDefaultWarehouse } = require('../services/channel.service');
@@ -354,6 +355,13 @@ router.post('/',
           category: resolvedCategory,
         },
       });
+      // Demo tenant (demo mode on): its Amazon channel is a DEMO channel, backed by
+      // the built-in fake Amazon. Decided here from the tenant — never from the
+      // request body — so no seller can opt into it.
+      if (type === 'AMAZON' && await require('../services/demo.service').isDemoTenant(req.tenant.id)) {
+        await db('channels').where({ id: ch.id }).update({ isDemo: 1 });
+        ch.isDemo = 1;
+      }
       // Ensure the tenant has a real warehouse to fulfil self-shipped (MFN)
       // orders from and to hold merchant-fulfilled stock — so connecting a
       // channel immediately gives inventory somewhere real to live.
@@ -470,13 +478,15 @@ router.post('/:id/connect', requirePermission('channels.update'), async (req, re
     const channel = await loadTenantChannel(req);
     if (!channel) return res.status(404).json({ error: 'Channel not found' });
 
-    const encrypted = encryptCredentials(req.body);
+    // A demo channel never stores what was typed (it must not become a place real
+    // keys get pasted); it is marked connected with a harmless placeholder.
+    const encrypted = encryptCredentials(channel.isDemo ? { demo: true } : req.body);
     const updated = await prisma.channel.update({
       where: { id: req.params.id },
       data: { credentials: encrypted, syncError: null },
     });
 
-    const adapter = getAdapter({ ...updated, credentials: req.body });
+    const adapter = getAdapter({ ...updated, credentials: channel.isDemo ? { demo: true } : req.body });
     const result = await adapter.testConnection();
 
     res.json({ message: 'Channel connected successfully', connection: result });
