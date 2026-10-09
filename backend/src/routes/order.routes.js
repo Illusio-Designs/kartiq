@@ -216,6 +216,12 @@ router.get('/:id/label', requirePermission('shipments.read'), async (req, res) =
     if (!order) return res.status(404).json({ error: 'Order not found' });
     const label = await getActiveLabel(order.id, req.tenant.id);
     if (!label || !label.content) return res.status(404).json({ error: 'No label saved for this order' });
+    if (req.query.format === 'meta') {
+      return res.json({
+        id: label.id, trackingNumber: label.trackingNumber, carrier: label.carrier, serviceName: label.serviceName,
+        cost: label.cost, currency: label.currency, mime: label.mime, createdAt: label.createdAt,
+      });
+    }
     if (req.query.format === 'json') {
       return res.json({
         id: label.id, trackingNumber: label.trackingNumber, carrier: label.carrier, serviceName: label.serviceName,

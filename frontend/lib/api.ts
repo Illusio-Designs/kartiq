@@ -468,6 +468,11 @@ export const orderApi = {
   scoreRto: (id: string) => api.post(`/orders/${id}/rto/score`, {}),
   approve: (id: string) => api.post(`/orders/${id}/approve`, {}),
   reject: (id: string, reason?: string) => api.post(`/orders/${id}/reject`, { reason }),
+  // Amazon auto-booked shipping label (saved server-side so it can be reprinted)
+  labelMeta: (id: string) => api.get(`/orders/${id}/label`, { params: { format: 'meta' } }),
+  labelFile: (id: string) => api.get(`/orders/${id}/label`, { responseType: 'blob' }),
+  bookShipping: (id: string) => api.post(`/orders/${id}/book-shipping`, {}),
+  cancelLabel: (id: string) => api.delete(`/orders/${id}/label`),
   enrich: (id: string, body: any) => api.patch(`/orders/${id}/enrich`, body),
   setFulfillment: (id: string, body: { fulfillmentType: 'SELF' | 'CHANNEL' | 'DROPSHIP'; channelFulfillmentCenter?: string }) =>
     api.patch(`/orders/${id}/fulfillment`, body),
