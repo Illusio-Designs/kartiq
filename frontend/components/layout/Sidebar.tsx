@@ -118,6 +118,14 @@ export function Sidebar({
     }));
   }, [baseGroups, counts, isDefaultNav, isAdmin, hasFeature]);
 
+  // Longest-prefix match so a parent route (/admin, /dashboard) isn't also
+  // highlighted while one of its child routes (/admin/tenants, /dashboard/team) is active.
+  const isActiveHref = (href: string) => {
+    const matches = (h: string) => pathname === h || pathname.startsWith(h + '/');
+    if (!matches(href)) return false;
+    return !navGroups.some((g) => g.items.some((it) => it.href.length > href.length && it.href.startsWith(href + '/') && matches(it.href)));
+  };
+
   const handleLogout = () => {
     logout();
     setMobileSidebar(false);
@@ -221,9 +229,7 @@ export function Sidebar({
           {navGroups.map((group) => {
             // Auto-expand the group containing the active route, even if user
             // previously collapsed it. Otherwise honor the persisted state.
-            const containsActive = group.items.some(
-              (it) => pathname === it.href || pathname.startsWith(it.href + '/')
-            );
+            const containsActive = group.items.some((it) => isActiveHref(it.href));
             const collapsed = !containsActive && !!navGroupCollapsed[group.label];
 
             return (
@@ -259,7 +265,7 @@ export function Sidebar({
                 {group.items.map((item) => {
                   const { label, href, icon: Icon } = item;
                   const badge = (item as any).badge as number | undefined;
-                  const active = pathname === href || pathname.startsWith(href + '/');
+                  const active = isActiveHref(href);
 
                   const content = (
                     <Link

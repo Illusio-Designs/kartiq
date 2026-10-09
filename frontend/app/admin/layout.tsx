@@ -21,7 +21,7 @@ const ADMIN_NAV_GROUPS: SidebarNavGroup[] = [
     items: [
       { label: 'Overview',       href: '/admin',            icon: LayoutDashboard },
       { label: 'Tenants',        href: '/admin/tenants',    icon: Building2 },
-      { label: 'Subscriptions',  href: '/admin/plans',      icon: Package2 },
+      { label: 'Plans',  href: '/admin/plans',      icon: Package2 },
       { label: 'Tickets',        href: '/admin/tickets',    icon: LifeBuoy },
       { label: 'Leads',          href: '/admin/leads',      icon: Inbox },
       { label: 'Analytics',      href: '/admin/analytics',  icon: BarChart3 },
