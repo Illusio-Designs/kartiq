@@ -10,7 +10,6 @@
 //
 // It deliberately mirrors the method names/shapes of AmazonAdapter.
 
-const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 const { randomUUID } = require('crypto');
 
 const CURRENCY = 'INR';
@@ -93,6 +92,11 @@ class AmazonDemoAdapter {
 
   // A 4×6 inch label, unmistakably marked as a demo so nobody ships with it.
   async _labelPdf({ amazonOrderId, tracking, chosen, opts }) {
+    // Lazy: a server whose node_modules lacks pdf-lib must still boot.
+    let PDFDocument, StandardFonts, rgb;
+    try { ({ PDFDocument, StandardFonts, rgb } = require('pdf-lib')); } catch {
+      throw new Error('Demo labels need the "pdf-lib" package — run "NPM install" for the backend and restart.');
+    }
     const doc = await PDFDocument.create();
     const page = doc.addPage([288, 432]);
     const bold = await doc.embedFont(StandardFonts.HelveticaBold);

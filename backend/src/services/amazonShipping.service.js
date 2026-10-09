@@ -18,7 +18,6 @@
 const db = require('../utils/db');
 const prisma = require('../utils/prisma');
 const { randomUUID } = require('crypto');
-const { PDFDocument } = require('pdf-lib');
 const { getAdapter } = require('./channel.service');
 const { applyOrderStock, unshipOrderStock } = require('./stock.service');
 
@@ -227,6 +226,14 @@ async function buildBulkLabelsPdf(ids, tenantId) {
   const unique = [...new Set((Array.isArray(ids) ? ids : []).map(String).filter(Boolean))];
   if (!unique.length) return { status: 400, error: 'Select at least one order' };
   if (unique.length > BULK_LABELS_MAX) return { status: 400, error: `You can print at most ${BULK_LABELS_MAX} labels at once` };
+
+  // Loaded here, not at the top of the file: if the server's node_modules is
+  // behind package.json (e.g. cPanel hasn't run "NPM install" yet) only THIS
+  // feature reports a clear error — the rest of the API must still boot.
+  let PDFDocument;
+  try { ({ PDFDocument } = require('pdf-lib')); } catch {
+    return { status: 503, error: 'Bulk label printing needs the "pdf-lib" package, which is not installed on this server yet. Run "NPM install" for the backend (cPanel → Setup Node.js App) and restart.' };
+  }
 
   const orders = await prisma.order.findMany({ where: { id: { in: unique }, tenantId }, take: BULK_LABELS_MAX });
   const byId = new Map(orders.map((o) => [o.id, o]));
