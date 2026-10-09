@@ -80,7 +80,7 @@ export const CHANNEL_SCHEMAS: Record<string, ChannelSchema> = {
 
   AMAZON: {
     type: 'AMAZON',
-    name: 'Amazon Marketplace',
+    name: 'Amazon',
     docsUrl: 'https://developer-docs.amazon.com/sp-api',
     description: 'Amazon SP-API for sellers on amazon.in / .com / .co.uk etc. Two ways to connect: (a) click "Authorize with Amazon" to do the standard OAuth round-trip, or (b) paste a Self-Authorized refresh token from Seller Central → Develop Apps → Authorize.',
     oauth: 'amazon',

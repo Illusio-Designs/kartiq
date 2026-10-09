@@ -17,8 +17,8 @@ const CATALOG = [
   {
     type: 'AMAZON',
     category: 'ECOM',
-    name: 'Amazon India',
-    tagline: "India's largest e-commerce marketplace",
+    name: 'Amazon',
+    tagline: 'Amazon marketplaces worldwide — India, US, UK, EU, UAE, Saudi, SG, AU, JP & more',
     integrated: true,
     requiresApproval: true,
     features: ['orders', 'inventory', 'tracking'],
@@ -828,69 +828,10 @@ const CATALOG = [
         ],
         note: 'Founder-app pattern. Register a Solution Provider app at https://developer.walmart.com and store walmart.clientId / walmart.clientSecret in Admin → Settings. Sellers only paste their partnerId.',
       }),
-      pending('AMAZON_US',       'ECOM', 'Amazon US',              'Amazon.com — US marketplace', {
-        applyUrl: 'https://sellercentral.amazon.com',
-        docsUrl:  'https://developer-docs.amazon.com/sp-api/',
-        credentialsSchema: [
-          { key: 'sellerId', label: 'Seller ID', type: 'text', required: false, help: 'Auto-filled if you use OAuth.' },
-          { key: 'refreshToken', label: 'Refresh Token', type: 'password', required: false, help: 'Skip if using OAuth. Otherwise: Self Authorize from Develop Apps; begins with Atzr|.' },
-        ], // OAuth-driven by default — fields are only used when pasting a Self-Authorized refresh token
-        note: 'Reuses the platform Amazon SP-API app (amazon.appId / amazon.clientId / amazon.clientSecret). Region is fixed to US (marketplace ATVPDKIKX0DER, NA SP-API host). Smoke-test by registering the SP-API app for the North America region in Seller Central.',
-      }),
-      pending('AMAZON_UK',  'ECOM', 'Amazon UK',           'Amazon.co.uk — UK marketplace', {
-        applyUrl: 'https://sellercentral.amazon.co.uk',
-        docsUrl:  'https://developer-docs.amazon.com/sp-api/',
-        credentialsSchema: [
-          { key: 'sellerId', label: 'Seller ID', type: 'text', required: false, help: 'Auto-filled if you use OAuth.' },
-          { key: 'refreshToken', label: 'Refresh Token', type: 'password', required: false, help: 'Skip if using OAuth. Otherwise: Self Authorize from Develop Apps; begins with Atzr|.' },
-        ],
-        note: 'Reuses the platform Amazon SP-API app. Region locked to UK (marketplace A1F83G8C2ARO7P, EU SP-API host). Smoke-test against a UK sandbox seller.',
-      }),
-      pending('AMAZON_UAE', 'ECOM', 'Amazon UAE',          'Amazon.ae — UAE marketplace', {
-        applyUrl: 'https://sellercentral.amazon.ae',
-        docsUrl:  'https://developer-docs.amazon.com/sp-api/',
-        credentialsSchema: [
-          { key: 'sellerId', label: 'Seller ID', type: 'text', required: false, help: 'Auto-filled if you use OAuth.' },
-          { key: 'refreshToken', label: 'Refresh Token', type: 'password', required: false, help: 'Skip if using OAuth. Otherwise: Self Authorize from Develop Apps; begins with Atzr|.' },
-        ],
-        note: 'Reuses the platform Amazon SP-API app. Region locked to AE (marketplace A2VIGQ35RCS4UG, EU SP-API host). Smoke-test against a UAE sandbox seller.',
-      }),
-      pending('AMAZON_SA',  'ECOM', 'Amazon Saudi Arabia', 'Amazon.sa — Saudi marketplace', {
-        applyUrl: 'https://sellercentral.amazon.sa',
-        docsUrl:  'https://developer-docs.amazon.com/sp-api/',
-        credentialsSchema: [
-          { key: 'sellerId', label: 'Seller ID', type: 'text', required: false, help: 'Auto-filled if you use OAuth.' },
-          { key: 'refreshToken', label: 'Refresh Token', type: 'password', required: false, help: 'Skip if using OAuth. Otherwise: Self Authorize from Develop Apps; begins with Atzr|.' },
-        ],
-        note: 'Reuses the platform Amazon SP-API app. Region locked to SA (marketplace A17E79C6D8DWNP, EU SP-API host). Smoke-test against a Saudi sandbox seller.',
-      }),
-      pending('AMAZON_SG',  'ECOM', 'Amazon Singapore',    'Amazon.sg — Singapore marketplace', {
-        applyUrl: 'https://sellercentral.amazon.sg',
-        docsUrl:  'https://developer-docs.amazon.com/sp-api/',
-        credentialsSchema: [
-          { key: 'sellerId', label: 'Seller ID', type: 'text', required: false, help: 'Auto-filled if you use OAuth.' },
-          { key: 'refreshToken', label: 'Refresh Token', type: 'password', required: false, help: 'Skip if using OAuth. Otherwise: Self Authorize from Develop Apps; begins with Atzr|.' },
-        ],
-        note: 'Reuses the platform Amazon SP-API app. Region locked to SG (marketplace A19VAU5U5O7RUS, FE SP-API host). Smoke-test against a Singapore sandbox seller.',
-      }),
-      pending('AMAZON_AU',  'ECOM', 'Amazon Australia',    'Amazon.com.au — AU marketplace', {
-        applyUrl: 'https://sellercentral.amazon.com.au',
-        docsUrl:  'https://developer-docs.amazon.com/sp-api/',
-        credentialsSchema: [
-          { key: 'sellerId', label: 'Seller ID', type: 'text', required: false, help: 'Auto-filled if you use OAuth.' },
-          { key: 'refreshToken', label: 'Refresh Token', type: 'password', required: false, help: 'Skip if using OAuth. Otherwise: Self Authorize from Develop Apps; begins with Atzr|.' },
-        ],
-        note: 'Reuses the platform Amazon SP-API app. Region locked to AU (marketplace A39IBJ37TRP1C6, FE SP-API host). Smoke-test against an Australian sandbox seller.',
-      }),
-      pending('AMAZON_DE',  'ECOM', 'Amazon Germany',      'Amazon.de — Germany marketplace', {
-        applyUrl: 'https://sellercentral.amazon.de',
-        docsUrl:  'https://developer-docs.amazon.com/sp-api/',
-        credentialsSchema: [
-          { key: 'sellerId', label: 'Seller ID', type: 'text', required: false, help: 'Auto-filled if you use OAuth.' },
-          { key: 'refreshToken', label: 'Refresh Token', type: 'password', required: false, help: 'Skip if using OAuth. Otherwise: Self Authorize from Develop Apps; begins with Atzr|.' },
-        ],
-        note: 'Reuses the platform Amazon SP-API app. Region locked to DE (marketplace A1PA6795UKMFR9, EU SP-API host). Smoke-test against a German sandbox seller.',
-      }),
+      // Amazon regional marketplaces (US/UK/UAE/SA/SG/AU/DE/…) are intentionally NOT
+      // listed here — the single AMAZON entry above handles every country via its
+      // Region selector. Legacy AMAZON_<REGION> channel rows keep working through
+      // the aliases in channel.service.js / oauth.routes.js.
       pending('LAZADA', 'ECOM', 'Lazada', 'Southeast Asia marketplace', {
         applyUrl: 'https://open.lazada.com/apps',
         docsUrl:  'https://open.lazada.com/apps/doc/api',
