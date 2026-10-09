@@ -15,6 +15,7 @@ import {
 import { StatsSkeleton, CardSkeletonItem, TableRowsSkeleton } from '@/components/Shimmer';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { ChannelLogo } from '@/components/channels/ChannelLogo';
 
 // Order status → badge colour (was hard-coded to "Success" for every row).
 const STATUS_BADGE: Record<string, 'emerald' | 'blue' | 'amber' | 'rose' | 'slate'> = {
@@ -206,7 +207,7 @@ export default function DashboardPage() {
               {connectedChannels.length > 0 ? connectedChannels.map((c: any) => (
                 <div key={c.type} className="flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-50 transition-colors">
                   <div className="flex items-center gap-3 min-w-0">
-                    <Avatar name={c.name || c.type} size="md" />
+                    <ChannelLogo type={c.type} name={c.name || c.type} />
                     <div className="min-w-0">
                       <div className="text-sm font-bold text-slate-900 truncate">{c.name}</div>
                       <div className="text-xs text-slate-500 font-semibold">{c.category || 'Connected'}</div>

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { channelApi, productApi, orderApi, oauthApi } from '@/lib/api';
+import { ChannelLogo as SharedChannelLogo } from '@/components/channels/ChannelLogo';
 import { MfnShippingPicker, type MfnChoice } from '@/components/channels/MfnShippingPicker';
 import {
   ArrowLeft, Upload, Download, RefreshCw,
@@ -1090,35 +1091,5 @@ function ActionTile({
 // favicon → gradient initials, mirroring the channels list logo. Sized to the
 // prototype's 56px rounded tile.
 function ChannelLogo({ type, name }: { type: string; name: string }) {
-  const [stage, setStage] = useState<0 | 1 | 2 | 3>(0);
-  const domain = useMemo(() => domainFor(type, name), [type, name]);
-
-  const remoteSrc =
-    stage === 0 ? logoDevUrl(domain)
-    : stage === 1 ? iconHorseUrl(domain)
-    : stage === 2 ? googleFaviconUrl(domain)
-    : null;
-
-  return (
-    <div className="w-14 h-14 rounded-2xl bg-slate-50 border border-slate-100 dark:bg-slate-800 dark:border-slate-700 flex items-center justify-center overflow-hidden flex-shrink-0">
-      {stage === 3 ? (
-        <div className="w-full h-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white text-base font-bold">
-          {getChannelInitials(name)}
-        </div>
-      ) : (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={remoteSrc as string}
-          alt={name}
-          width={112}
-          height={112}
-          loading="lazy"
-          decoding="async"
-          referrerPolicy="no-referrer"
-          className="w-full h-full object-contain p-1.5"
-          onError={() => setStage((s) => Math.min(3, s + 1) as 0 | 1 | 2 | 3)}
-        />
-      )}
-    </div>
-  );
+  return <SharedChannelLogo type={type} name={name} className="w-14 h-14 rounded-2xl" />;
 }

@@ -227,3 +227,21 @@ export function getChannelInitials(name: string) {
   if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
   return ((words[0][0] || '?') + (words[1][0] || '')).toUpperCase();
 }
+
+
+// ── Bundled logos (public/logos) — preferred over any remote CDN: they always load. ──
+const BUNDLED: Record<string, string> = Object.fromEntries(
+  ['ajio.png', 'amazon.png', 'bigbasket.png', 'bigcommerce.png', 'blinkit.png', 'bluedart.png', 'clickpost.png', 'delhivery.png', 'dhl.png', 'dtdc.png', 'ebay.png', 'ecomexpress.png', 'etsy.svg', 'facebook.png', 'fedex.png', 'flipkart.png', 'fship.png', 'glowroad.png', 'instagram.png', 'ithink.png', 'jiomart.png', 'limeroad.png', 'magento.png', 'meesho.png', 'myntra.png', 'nimbuspost.png', 'nykaa.png', 'opencart.png', 'paytm.png', 'pickrr.png', 'shadowfax.png', 'shiprocket.png', 'shipway.png', 'shopify.png', 'snapdeal.png', 'swiggy.png', 'tatacliq.png', 'ups.png', 'whatsapp.png', 'woocommerce.png', 'xpressbees.png', 'zepto.png'].map((f: string) => [f.replace(/\.(png|svg)$/, ''), `/logos/${f}`]),
+);
+const BUNDLED_ALIASES: Record<string, string> = {
+  BB_NOW: 'bigbasket', SWIGGY_INSTAMART: 'swiggy', PAYTM_MALL: 'paytm', WHATSAPP_BUSINESS: 'whatsapp',
+  TATA_CLIQ: 'tatacliq', FACEBOOK_SHOP: 'facebook', INSTAGRAM_SHOP: 'instagram',
+};
+
+/** Path of our own copy of a channel's logo, or null when we don't ship one. */
+export function bundledLogo(type: string): string | null {
+  const t = String(type || '').toUpperCase();
+  if (t.startsWith('AMAZON')) return BUNDLED.amazon || null;
+  const key = BUNDLED_ALIASES[t] || t.toLowerCase().replace(/_/g, '');
+  return BUNDLED[key] || null;
+}

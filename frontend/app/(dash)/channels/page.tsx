@@ -21,6 +21,7 @@ import { Input, Textarea } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { getSchemaForType } from '@/lib/channel-schemas';
+import { ChannelLogo } from '@/components/channels/ChannelLogo';
 import { MfnShippingPicker, type MfnChoice } from '@/components/channels/MfnShippingPicker';
 import { domainFor, logoDevUrl, iconHorseUrl, googleFaviconUrl, getChannelInitials } from '@/lib/channel-logos';
 
@@ -943,45 +944,5 @@ function Field({
 //   4. Google favicon — last resort
 //   5. Gradient-initials avatar — pure CSS, never errors
 function ChannelCardLogo({ type, name }: { type: string; name: string }) {
-  const override = LOGO_OVERRIDES[type];
-  // Stage 0..3 represents which remote source to try; -1 means we already
-  // succeeded on the override; 4 means fallback to gradient initials.
-  const [stage, setStage] = useState<-1 | 0 | 1 | 2 | 3 | 4>(override ? -1 : 0);
-  const domain = useMemo(() => domainFor(type, name), [type, name]);
-
-  const remoteSrc =
-    stage === 0 ? logoDevUrl(domain)
-    : stage === 1 ? iconHorseUrl(domain)
-    : stage === 2 ? googleFaviconUrl(domain)
-    : null;
-
-  return (
-    <div className="w-9 h-9 rounded-lg bg-slate-50 border border-slate-100 dark:bg-slate-800 dark:border-slate-700 flex items-center justify-center overflow-hidden flex-shrink-0">
-      {stage === 4 ? (
-        <div className="w-full h-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white text-[11px] font-bold">
-          {getChannelInitials(name)}
-        </div>
-      ) : (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={stage === -1 && override ? override : (remoteSrc as string)}
-          alt={name}
-          width={72}
-          height={72}
-          loading="lazy"
-          decoding="async"
-          referrerPolicy="no-referrer"
-          className="w-full h-full object-contain p-1"
-          style={{ imageRendering: 'auto' }}
-          onError={() => {
-            // -1 (override) → 0 (logo.dev), then walk the chain to 4 (initials)
-            setStage((s) => {
-              if (s === -1) return 0;
-              return Math.min(4, (s as number) + 1) as 0 | 1 | 2 | 3 | 4;
-            });
-          }}
-        />
-      )}
-    </div>
-  );
+  return <ChannelLogo type={type} name={name} />;
 }
