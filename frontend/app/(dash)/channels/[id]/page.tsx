@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { channelApi, productApi, orderApi } from '@/lib/api';
+import { channelApi, productApi, orderApi, oauthApi } from '@/lib/api';
+import { MfnShippingPicker, type MfnChoice } from '@/components/channels/MfnShippingPicker';
 import {
   ArrowLeft, Upload, Download, RefreshCw,
   Plug, AlertCircle, Trash2, KeyRound, CheckCircle2,
@@ -119,11 +120,11 @@ export default function ChannelDetailPage() {
   // ── Settings (rename + default fulfilment) ──
   const [nameInput, setNameInput] = useState('');
   const [fulfilment, setFulfilment] = useState<'SELF' | 'CHANNEL'>('SELF');
-  const [autoBook, setAutoBook] = useState(false);
+  const [mfn, setMfn] = useState<MfnChoice>({ mfnShipping: 'AMAZON', shippingProviderId: null });
   useEffect(() => {
     if (channel) {
       setNameInput(channel.name || '');
-      setAutoBook(!!channel.autoBookShipping);
+      setMfn({ mfnShipping: channel.mfnShipping === 'OWN' ? 'OWN' : 'AMAZON', shippingProviderId: channel.shippingProviderId || null });
       setFulfilment(channel.defaultFulfillmentType === 'CHANNEL' ? 'CHANNEL' : 'SELF');
     }
     // Re-seed only when the channel identity changes, so refetches don't clobber edits.
@@ -131,13 +132,45 @@ export default function ChannelDetailPage() {
   }, [channel?.id]);
 
   const updateChannelMutation = useMutation({
-    mutationFn: (data: { name: string; defaultFulfillmentType: string; autoBookShipping?: boolean }) => channelApi.update(id, data),
+    mutationFn: (data: { name: string; defaultFulfillmentType: string; mfnShipping?: string; shippingProviderId?: string | null }) => channelApi.update(id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['channel', id] });
       toast.success('Channel settings saved');
     },
     onError: (err: any) => toast.error(err.response?.data?.details || err.response?.data?.error || err.message),
   });
+
+  // ── Re-authorise Amazon (opens Amazon's consent tab, waits for it to finish) ──
+  const [reauthBusy, setReauthBusy] = useState(false);
+  const reauthPoll = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  useEffect(() => () => { if (reauthPoll.current) clearInterval(reauthPoll.current); }, []);
+  const reauthorise = async () => {
+    setReauthBusy(true);
+    const startedAt = Date.now();
+    try {
+      const url = (await oauthApi.amazonStart(id)).data.url;
+      const tab = window.open(url, '_blank');
+      if (!tab) { toast.error('Your browser blocked the Amazon tab. Allow pop-ups and try again.'); setReauthBusy(false); return; }
+      let tries = 0;
+      reauthPoll.current = setInterval(async () => {
+        tries += 1;
+        try {
+          const r = (await oauthApi.amazonStatus(id)).data;
+          if (r.authorizedAt && new Date(r.authorizedAt).getTime() >= startedAt - 2000 && !r.error) {
+            clearInterval(reauthPoll.current); setReauthBusy(false);
+            toast.success('Amazon is authorised again', 'Connected');
+            qc.invalidateQueries({ queryKey: ['channel', id] });
+            return;
+          }
+          if (r.error && tries > 2) { clearInterval(reauthPoll.current); setReauthBusy(false); toast.error(r.error); return; }
+        } catch { /* keep waiting */ }
+        if (tab.closed || tries >= 90) { clearInterval(reauthPoll.current); setReauthBusy(false); }
+      }, 2000);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || e.message);
+      setReauthBusy(false);
+    }
+  };
 
   // ── Real connection test ──
   const [testState, setTestState] = useState<'idle' | 'ok' | 'fail'>('idle');
@@ -237,6 +270,7 @@ export default function ChannelDetailPage() {
   const isAmazon = channel.type === 'AMAZON_SMARTBIZ' || channel.type === 'AMAZON_FBA';
   // Buy Shipping (auto-book courier) exists on seller-account Amazon channels, not SmartBiz/FBA.
   const canAutoBook = String(channel.type || '').startsWith('AMAZON') && !isAmazon;
+  const canReauth = channel.type === 'AMAZON' || channel.type === 'AMAZON_SMARTBIZ';
   const lastSync = channel.lastSyncAt ? formatDateTime(channel.lastSyncAt) : 'never';
   const listingCount = listings?.length || 0;
   const isMapped = (l: any) => !!(l.variantId || l.variant || l.product);
@@ -277,7 +311,9 @@ export default function ChannelDetailPage() {
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              {hasCredentials ? (
+              {hasCredentials && channel.needsReauth ? (
+                <Badge variant="rose" dot><AlertCircle size={12} /> Needs re-authorising</Badge>
+              ) : hasCredentials ? (
                 <Badge variant="emerald" dot><CheckCircle2 size={12} /> Connected</Badge>
               ) : (
                 <Badge variant="amber" dot>Not connected</Badge>
@@ -299,9 +335,16 @@ export default function ChannelDetailPage() {
                   Test connection
                 </Button>
               )}
-              <Button variant="secondary" size="sm" leftIcon={<KeyRound size={14} />} onClick={() => setConnectOpen(true)}>
-                {hasCredentials ? 'Credentials' : 'Connect'}
-              </Button>
+              {hasCredentials && canReauth && (
+                <Button variant={channel.needsReauth ? 'primary' : 'secondary'} size="sm" leftIcon={<KeyRound size={14} />} loading={reauthBusy} onClick={reauthorise}>
+                  Re-authorise
+                </Button>
+              )}
+              {!(hasCredentials && canReauth) && (
+                <Button variant="secondary" size="sm" leftIcon={<KeyRound size={14} />} onClick={() => setConnectOpen(true)}>
+                  {hasCredentials ? 'Credentials' : 'Connect'}
+                </Button>
+              )}
               <Button
                 variant="secondary"
                 size="sm"
@@ -324,7 +367,18 @@ export default function ChannelDetailPage() {
         </Card>
 
         {/* Status banner */}
-        {channel.syncError && (
+        {channel.needsReauth && canReauth && (
+          <div data-testid="reauth-banner" className="flex items-start gap-3 bg-rose-50 border border-rose-200 text-rose-800 text-sm rounded-xl p-4">
+            <AlertCircle size={18} className="mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="font-bold">Amazon needs to be authorised again</p>
+              <p className="text-xs mt-1">{channel.reauthReason}</p>
+            </div>
+            <Button variant="primary" size="sm" loading={reauthBusy} onClick={reauthorise}>Re-authorise</Button>
+          </div>
+        )}
+
+        {channel.syncError && !(channel.needsReauth && canReauth) && (
           <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 text-rose-800 text-sm rounded-xl p-3">
             <AlertCircle size={16} className="mt-0.5 shrink-0" />
             <div>
@@ -788,25 +842,10 @@ export default function ChannelDetailPage() {
             />
           </div>
           {canAutoBook && (
-            <div className="mx-5 mb-4 flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div>
-                <div className="text-sm font-bold text-slate-800">Auto-book Amazon courier</div>
-                <p className="text-xs text-slate-500 mt-1 max-w-xl">
-                  When you confirm a self-fulfilled (MFN) order, Kartriq picks the cheapest Amazon courier, buys the
-                  shipping label, saves it, and marks the order shipped. You just print the label. Each label is charged
-                  to your Amazon seller account.
-                </p>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={autoBook}
-                aria-label="Auto-book Amazon courier"
-                onClick={() => setAutoBook((v) => !v)}
-                className={`relative shrink-0 mt-0.5 h-6 w-11 rounded-full transition-colors ${autoBook ? 'bg-emerald-500' : 'bg-slate-300'}`}
-              >
-                <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${autoBook ? 'translate-x-5' : ''}`} />
-              </button>
+            <div className="mx-5 mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4" data-testid="manage-mfn">
+              <div className="text-sm font-bold text-slate-800">How orders you ship yourself (MFN) work</div>
+              <p className="text-xs text-slate-500 mt-1 mb-3">A change applies to new orders. Orders already confirmed keep the courier they were booked with.</p>
+              <MfnShippingPicker value={mfn} onChange={setMfn} />
             </div>
           )}
           <div className="flex justify-end px-5 pb-5">
@@ -814,11 +853,11 @@ export default function ChannelDetailPage() {
               size="sm"
               leftIcon={<Save size={14} />}
               loading={updateChannelMutation.isPending}
-              disabled={!nameInput.trim()}
+              disabled={!nameInput.trim() || (canAutoBook && mfn.mfnShipping === 'OWN' && !mfn.shippingProviderId)}
               onClick={() => updateChannelMutation.mutate({
                 name: nameInput.trim(),
                 defaultFulfillmentType: fulfilment,
-                ...(canAutoBook ? { autoBookShipping: autoBook } : {}),
+                ...(canAutoBook ? { mfnShipping: mfn.mfnShipping, shippingProviderId: mfn.shippingProviderId } : {}),
               })}
             >
               Save settings

@@ -861,6 +861,150 @@ class AmazonAdapter {
     return { cancelled: true, shipmentId };
   }
 
+
+  // ── Amazon Easy Ship (India) ────────────────────────────────────────────────
+  // Amazon arranges the courier: list pickup slots → schedule a package into one
+  // → Amazon returns the package (and tracking) and produces the shipping label.
+  // API: Easy Ship v2022-03-23, https://developer-docs.amazon.com/sp-api/docs/easy-ship-api-v2022-03-23-reference
+  //
+  // NOTE: written from Amazon's published API description and exercised against a
+  // stand-in only. It needs the seller to be approved for Easy Ship and the app to
+  // hold the restricted "Direct to Consumer Shipping" role. The label download
+  // (Feeds API, POST_EASYSHIP_DOCUMENTS) parses the result defensively because the
+  // result-document wrapper (PDF / zip / link / base64 inside XML) is not something
+  // we have been able to confirm; the first real order should be tried by hand.
+
+  async _easyShipCall(method, path, { params, data } = {}) {
+    const token = await this._getAccessToken();
+    try {
+      const res = await axios({
+        method, url: `${this.endpoint}${path}`, params, data,
+        headers: { 'x-amz-access-token': token, 'Content-Type': 'application/json' },
+      });
+      return res.data;
+    } catch (err) {
+      const body = err.response?.data;
+      const msg = body?.errors?.[0]?.message || body?.errors?.[0]?.code || body?.message || err.message;
+      throw new Error(`Amazon Easy Ship ${method} ${path.replace(/^.*\/(\w+)$/, '$1')} failed (${err.response?.status || '?'}): ${msg}`);
+    }
+  }
+
+  _easyShipParcel(opts = {}) {
+    const w = opts.weight || {};
+    const d = opts.dimensions || {};
+    const grams = String(w.unit || 'grams').toLowerCase().startsWith('k') ? Number(w.value || 0.5) * 1000 : Number(w.value || 500);
+    return {
+      packageDimensions: { length: Number(d.length || 20), width: Number(d.width || 15), height: Number(d.height || 10), unit: 'Cm' },
+      packageWeight: { value: Math.max(1, Math.round(grams)), unit: 'Grams' },
+    };
+  }
+
+  // Open pickup slots for this order and parcel.
+  async listHandoverSlots(amazonOrderId, opts = {}) {
+    const data = await this._easyShipCall('POST', '/easyShip/2022-03-23/timeSlot', {
+      data: { marketplaceId: this.marketplaceId, amazonOrderId, ...this._easyShipParcel(opts) },
+    });
+    return (data.timeSlots || []).map((t) => ({
+      slotId: t.slotId, startTime: t.startTime, endTime: t.endTime, handoverMethod: t.handoverMethod || null,
+    }));
+  }
+
+  // Schedule the package into a slot. Amazon then owns the booking (courier, AWB, label).
+  async createScheduledPackage(amazonOrderId, slot, opts = {}) {
+    const parcel = this._easyShipParcel(opts);
+    const data = await this._easyShipCall('POST', '/easyShip/2022-03-23/package', {
+      data: {
+        amazonOrderId, marketplaceId: this.marketplaceId,
+        packageDetails: {
+          packageTimeSlot: { slotId: slot.slotId, startTime: slot.startTime, endTime: slot.endTime, ...(slot.handoverMethod ? { handoverMethod: slot.handoverMethod } : {}) },
+          ...parcel,
+        },
+      },
+    });
+    const packageId = data.scheduledPackageId?.packageId || data.packageId || null;
+    return {
+      packageId,
+      trackingId: data.trackingDetails?.trackingId || data.trackingId || null,
+      packageStatus: data.packageStatus || null,
+      slot: data.packageTimeSlot || slot,
+      raw: data,
+    };
+  }
+
+  async getScheduledPackage(amazonOrderId, packageId) {
+    const data = await this._easyShipCall('GET', '/easyShip/2022-03-23/package', {
+      params: { amazonOrderId, packageId, marketplaceId: this.marketplaceId },
+    });
+    return {
+      packageId: data.scheduledPackageId?.packageId || packageId,
+      trackingId: data.trackingDetails?.trackingId || data.trackingId || null,
+      packageStatus: data.packageStatus || null,
+      raw: data,
+    };
+  }
+
+  async cancelScheduledPackage(amazonOrderId, packageId) {
+    await this._easyShipCall('DELETE', '/easyShip/2022-03-23/package', {
+      params: { amazonOrderId, packageId, marketplaceId: this.marketplaceId },
+    });
+    return { cancelled: true, packageId };
+  }
+
+  // The shipping label PDF for a scheduled Easy Ship package, via the Feeds API.
+  async getEasyShipLabel(amazonOrderId) {
+    const FEEDS = '/feeds/2021-06-30';
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<AmazonEnvelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="amzn-envelope.xsd">
+  <Header><DocumentVersion>1.01</DocumentVersion><MerchantIdentifier>${String(this.creds.sellerId || '').replace(/[<>&]/g, '')}</MerchantIdentifier></Header>
+  <MessageType>EasyShipDocument</MessageType>
+  <Message><MessageID>1</MessageID><EasyShipDocument><AmazonOrderID>${String(amazonOrderId).replace(/[<>&]/g, '')}</AmazonOrderID><DocumentTypes><DocumentType>Label</DocumentType></DocumentTypes></EasyShipDocument></Message>
+</AmazonEnvelope>`;
+    const doc = await this._easyShipCall('POST', `${FEEDS}/documents`, { data: { contentType: 'text/xml; charset=UTF-8' } });
+    try { await axios.put(doc.url, xml, { headers: { 'Content-Type': 'text/xml; charset=UTF-8' } }); }
+    catch (err) { throw new Error(`Amazon label request failed while uploading (${err.response?.status || '?'})`); }
+    const feed = await this._easyShipCall('POST', `${FEEDS}/feeds`, {
+      data: { feedType: 'POST_EASYSHIP_DOCUMENTS', marketplaceIds: [this.marketplaceId], inputFeedDocumentId: doc.feedDocumentId },
+    });
+    let resultId = null;
+    for (let i = 0; i < 30; i++) {
+      const st = await this._easyShipCall('GET', `${FEEDS}/feeds/${encodeURIComponent(feed.feedId)}`);
+      if (st.processingStatus === 'DONE') { resultId = st.resultFeedDocumentId; break; }
+      if (st.processingStatus === 'FATAL' || st.processingStatus === 'CANCELLED') throw new Error(`Amazon could not prepare the label (${st.processingStatus})`);
+      await this._sleep(this._labelPollMs ?? 2000);
+    }
+    if (!resultId) throw new Error('Amazon is still preparing the label — try again in a minute');
+    const meta = await this._easyShipCall('GET', `${FEEDS}/documents/${encodeURIComponent(resultId)}`);
+    return this._extractLabel(await this._downloadBuffer(meta.url, meta.compressionAlgorithm), 0);
+  }
+
+  async _downloadBuffer(url, compression) {
+    const res = await axios.get(url, { responseType: 'arraybuffer' });
+    let buf = Buffer.from(res.data);
+    if (String(compression || '').toUpperCase() === 'GZIP' || (buf[0] === 0x1f && buf[1] === 0x8b)) buf = require('zlib').gunzipSync(buf);
+    return buf;
+  }
+
+  // The label can come back as the PDF itself, a zip holding it, a link to it, or
+  // base64 inside the processing-report XML. Try each, in that order.
+  async _extractLabel(buf, depth) {
+    const pdf = (b) => ({ contentBase64: b.toString('base64'), mime: 'application/pdf' });
+    if (buf.slice(0, 4).toString() === '%PDF') return pdf(buf);
+    if (buf[0] === 0x50 && buf[1] === 0x4b) { // zip
+      let unzipSync;
+      try { ({ unzipSync } = require('fflate')); } catch { throw new Error('Reading Amazon label files needs the "fflate" package on this server. Run NPM install for the backend and restart.'); }
+      const files = unzipSync(new Uint8Array(buf));
+      const name = Object.keys(files).find((n) => /\.pdf$/i.test(n));
+      if (!name) throw new Error('Amazon returned a zip without a PDF label');
+      return pdf(Buffer.from(files[name]));
+    }
+    const text = buf.toString('utf8');
+    const b64 = text.match(/JVBER[A-Za-z0-9+/=\s]{200,}/);
+    if (b64) return pdf(Buffer.from(b64[0].replace(/\s+/g, ''), 'base64'));
+    const link = text.match(/https?:\/\/[^\s"'<>]+/);
+    if (link && depth < 1) return this._extractLabel(await this._downloadBuffer(link[0]), depth + 1);
+    throw new Error('Amazon returned a label in a format Kartriq could not read');
+  }
+
   _transformOrder(o) {
     return {
       channelOrderId: o.AmazonOrderId,

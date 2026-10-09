@@ -2,7 +2,6 @@ const { z } = require('zod');
 const prisma = require('../utils/prisma');
 const { notifyTenant } = require('../services/notifications.service');
 const { confirmChannelShipment } = require('../services/channel.service');
-const { autoBookAmazonShipping } = require('../services/amazonShipping.service');
 const { applyOrderStock } = require('../services/stock.service');
 const { stampRetentionOnDelivery } = require('../services/vms.service');
 
@@ -57,11 +56,19 @@ const generateOrderNumber = () => `ORD-${Date.now()}-${Math.floor(Math.random() 
 
 const getOrders = async (req, res) => {
   try {
-    const { page = '1', limit = '20', status, channelId, search, risk, needsApproval, fulfillment, completeness, dateFrom, dateTo, source } = req.query;
+    const { page = '1', limit = '20', status, channelId, search, risk, needsApproval, fulfillment, completeness, dateFrom, dateTo, source, shipmentStatus } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
     // Knex-backed Prisma shim — unknown columns pass through to SQL directly
     const where = { tenantId: tid(req) };
     if (status) where.status = String(status);
+    // Shipment status chips: a status, or TO_CONFIRM = self-shipped marketplace orders not booked yet.
+    if (shipmentStatus) {
+      if (String(shipmentStatus) === 'TO_CONFIRM') {
+        where.shipmentStatus = null;
+        where.fulfillmentType = 'SELF';
+        where.status = { in: ['PENDING', 'PROCESSING', 'CONFIRMED'] };
+      } else where.shipmentStatus = String(shipmentStatus);
+    }
     // Date range on createdAt — the field the Orders table's Date column shows,
     // and one every order has (orderedAt is null for manual/older orders, so
     // filtering on it silently dropped rows). dateTo is inclusive of the day.
@@ -124,7 +131,9 @@ const getOrderStats = async (req, res) => {
     const where = { tenantId: tid(req) };
     if (req.query.channelId) where.channelId = String(req.query.channelId);
 
-    const [byStatus, byFulfillment, byRisk, needsReview, total] = await Promise.all([
+    const [byShipment, toConfirm, byStatus, byFulfillment, byRisk, needsReview, total] = await Promise.all([
+      prisma.order.groupBy({ by: ['shipmentStatus'], where: { ...where, shipmentStatus: { not: null } }, _count: { shipmentStatus: true } }),
+      prisma.order.count({ where: { ...where, shipmentStatus: null, fulfillmentType: 'SELF', status: { in: ['PENDING', 'PROCESSING', 'CONFIRMED'] } } }),
       prisma.order.groupBy({ by: ['status'], where, _count: { status: true } }),
       prisma.order.groupBy({ by: ['fulfillmentType'], where, _count: { fulfillmentType: true } }),
       // RTO risk breakdown (High / Medium / Low) across the same scope.
@@ -150,7 +159,10 @@ const getOrderStats = async (req, res) => {
     const returned = statusCounts.RETURNED || 0;
     const returnRate = total > 0 ? Math.round((returned / total) * 1000) / 10 : 0; // one decimal %
 
-    res.json({ total, statusCounts, fulfillmentCounts, rto: { needsReview, ...riskCounts, returnRate } });
+    const shipmentCounts = { TO_CONFIRM: toConfirm };
+    for (const row of byShipment) shipmentCounts[String(row.shipmentStatus)] = row._count?.shipmentStatus || 0;
+
+    res.json({ total, statusCounts, shipmentCounts, fulfillmentCounts, rto: { needsReview, ...riskCounts, returnRate } });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Failed to fetch order stats' });
@@ -366,17 +378,6 @@ const updateOrderStatus = async (req, res) => {
     // they're auto-pruned RETENTION_DAYS later (unless a dispute is open).
     if (status === 'DELIVERED') {
       stampRetentionOnDelivery(order).catch(() => {});
-    }
-
-    // Confirming an Amazon MFN order on a channel with "auto-book courier" ON
-    // buys the cheapest Amazon label and ships it (see amazonShipping.service).
-    // Never fails the status change: the outcome rides along as `shipping`.
-    if (status === 'CONFIRMED') {
-      const shipping = await autoBookAmazonShipping(order.id, { tenantId: tid(req) });
-      if (shipping.booked || shipping.error) {
-        const fresh = await prisma.order.findFirst({ where: { id: order.id, tenantId: tid(req) } });
-        return res.json({ ...(fresh || order), shipping });
-      }
     }
 
     res.json(order);

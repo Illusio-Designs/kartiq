@@ -57,10 +57,10 @@ class XpressbeesAdapter {
     const payload = {
       order_number: order.orderNumber,
       payment_type: order.paymentStatus === 'PAID' ? 'prepaid' : 'cod',
-      package_weight: 500,
-      package_length: 10,
-      package_breadth: 10,
-      package_height: 10,
+      package_weight: order.parcel ? Math.round((order.parcel.weightKg || 0.5) * 1000) : 500,
+      package_length: order.parcel?.lengthCm || 10,
+      package_breadth: order.parcel?.widthCm || 10,
+      package_height: order.parcel?.heightCm || 10,
       consignee: {
         name: order.customer?.name || '',
         phone: order.customer?.phone || '',

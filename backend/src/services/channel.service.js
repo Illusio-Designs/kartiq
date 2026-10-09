@@ -46,6 +46,7 @@ const {
   XpressbeesAdapter, ShadowfaxAdapter, BlueDartAdapter, DTDCAdapter,
   FedExAdapter, DHLAdapter, UPSAdapter, IThinkAdapter,
   PickrrAdapter, ShipwayAdapter, NimbusPostAdapter, ClickPostAdapter,
+  RapidshypAdapter, ShipmozoAdapter, VamashipAdapter, BigshipAdapter, ShipyaariAdapter,
   AramexAdapter, EkartAdapter, IndiaPostAdapter, GatiAdapter,
   SafexpressAdapter, TrackonAdapter, ProfessionalCouriersAdapter, SmartrAdapter,
   ShypliteAdapter, ICarryAdapter, DotZotAdapter, ShipDelightAdapter,
@@ -138,6 +139,7 @@ const CHANNEL_CATEGORY = {
   GATI: 'LOGISTICS', SAFEXPRESS: 'LOGISTICS', TRACKON: 'LOGISTICS',
   PROFESSIONAL_COURIERS: 'LOGISTICS', SMARTR: 'LOGISTICS',
   SHYPLITE: 'LOGISTICS', ICARRY: 'LOGISTICS', DOTZOT: 'LOGISTICS', SHIPDELIGHT: 'LOGISTICS',
+  RAPIDSHYP: 'LOGISTICS', SHIPMOZO: 'LOGISTICS', VAMASHIP: 'LOGISTICS', BIGSHIP: 'LOGISTICS', SHIPYAARI: 'LOGISTICS',
 
   // OWNSTORE
   AMAZON_SMARTBIZ: 'OWNSTORE',
@@ -204,14 +206,6 @@ function getCategoryForType(type) {
 // ── Adapter factory ──────────────────────────────────────────────────────────
 
 function getAdapter(channel) {
-  // Demo channel (demo tenant only): the built-in fake Amazon — no network, no
-  // money. Needs DEMO_MODE_ENABLED=true on the server; otherwise it refuses
-  // rather than silently talking to real Amazon with fake credentials.
-  if (channel.isDemo) {
-    if (process.env.DEMO_MODE_ENABLED !== 'true') throw new Error('Demo mode is not enabled on this server');
-    return new (require('./channels/ecom/amazon-demo'))(channel);
-  }
-
   let creds = channel.credentials;
 
   // Manual channels (OFFLINE/POS/WHOLESALE/DISTRIBUTOR/OTHER) need no
@@ -341,6 +335,11 @@ function getAdapter(channel) {
     case 'COUNTRY_DELIGHT':  return new CountryDelightAdapter(creds || {});
 
     // ── LOGISTICS (extended) ──────────────────────────────
+    case 'RAPIDSHYP':             return new RapidshypAdapter(creds);
+    case 'SHIPMOZO':              return new ShipmozoAdapter(creds);
+    case 'VAMASHIP':              return new VamashipAdapter(creds);
+    case 'BIGSHIP':               return new BigshipAdapter(creds);
+    case 'SHIPYAARI':             return new ShipyaariAdapter(creds);
     case 'ARAMEX':                return new AramexAdapter(creds);
     case 'EKART':                 return new EkartAdapter(creds);
     case 'INDIA_POST':            return new IndiaPostAdapter(creds);

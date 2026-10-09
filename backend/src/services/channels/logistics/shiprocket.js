@@ -92,10 +92,10 @@ class ShiprocketAdapter {
       })) || [],
       payment_method: order.paymentStatus === 'PAID' ? 'Prepaid' : 'COD',
       sub_total: parseFloat(order.subtotal),
-      length: 10,
-      breadth: 10,
-      height: 10,
-      weight: 0.5,
+      length: order.parcel?.lengthCm || 10,
+      breadth: order.parcel?.widthCm || 10,
+      height: order.parcel?.heightCm || 10,
+      weight: order.parcel?.weightKg || 0.5,
     };
     const data = await this._req('POST', '/orders/create/adhoc', payload);
     return {
@@ -105,6 +105,32 @@ class ShiprocketAdapter {
       courierName: data.courier_name,
       pickupDate: data.pickup_scheduled_date,
     };
+  }
+
+  // Full booking in Shiprocket's three steps: create the order, assign a courier
+  // (no courier_id → Shiprocket picks by your rules) so an AWB exists, then ask
+  // for the pickup. A pickup that fails to schedule does not undo the booking.
+  async bookShipment(order, channel, warehouseAddress = {}) {
+    const created = await this.createShipment(order, channel, warehouseAddress);
+    if (!created.shipmentId) throw new Error('Shiprocket did not create the order');
+    let awbCode = created.awbCode;
+    let courierName = created.courierName;
+    if (!awbCode) {
+      const a = await this.assignCourier(created.shipmentId);
+      awbCode = a.awbCode; courierName = a.courierName || courierName;
+    }
+    if (!awbCode) throw new Error('Shiprocket could not assign a courier (check serviceability and wallet balance)');
+    let pickup = null;
+    try { pickup = await this.schedulePickup(created.shipmentId); } catch (e) { pickup = { error: e.message }; }
+    return { ...created, awbCode, courierName, pickup };
+  }
+
+  // Label PDF link (courier/generate/label takes SHIPMENT ids, not AWBs).
+  async getLabel(shipmentId) {
+    const data = await this._req('POST', '/courier/generate/label', { shipment_id: [shipmentId] });
+    const url = data.label_url || data.response?.label_url;
+    if (!url) throw new Error(`Shiprocket returned no label${data.message ? ': ' + data.message : ''}`);
+    return { url };
   }
 
   // Assign a courier and generate AWB
@@ -130,7 +156,9 @@ class ShiprocketAdapter {
     const track = data.tracking_data;
     return {
       awbCode,
-      currentStatus: track?.track_status,
+      // The readable status ('Pickup Scheduled', 'In Transit', …) sits on the first tracking entry;
+      // track_status / shipment_status are numeric codes.
+      currentStatus: track?.shipment_track?.[0]?.current_status || (typeof track?.track_status === 'string' ? track.track_status : null),
       estimatedDelivery: track?.etd,
       courierName: track?.shipment_track?.[0]?.courier_name,
       activities: track?.shipment_track_activities?.map(a => ({

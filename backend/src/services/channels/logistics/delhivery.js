@@ -53,7 +53,9 @@ class DelhiveryAdapter {
   }
 
   // Create a forward shipment waybill
-  async createShipment(order, warehouseAddress) {
+  // Accepts (order, warehouse) or (order, channel, warehouse) like the other couriers.
+  async createShipment(order, a2, a3) {
+    const warehouseAddress = a3 !== undefined ? a3 : a2;
     const shipmentData = {
       format: 'json',
       data: JSON.stringify({
@@ -83,10 +85,10 @@ class DelhiveryAdapter {
           seller_name: warehouseAddress?.name || 'Kartriq',
           seller_inv: order.orderNumber,
           quantity: order.items?.reduce((s, i) => s + i.qty, 0) || 1,
-          weight: 500, // grams, default
-          shipment_length: 10,
-          shipment_width: 10,
-          shipment_height: 10,
+          weight: order.parcel ? Math.round((order.parcel.weightKg || 0.5) * 1000) : 500, // grams
+          shipment_length: order.parcel?.lengthCm || 10,
+          shipment_width: order.parcel?.widthCm || 10,
+          shipment_height: order.parcel?.heightCm || 10,
           waybill: '',        // leave blank; Delhivery will assign
           seller_gst_tin: warehouseAddress?.gstin || '',
           shipping_mode: 'Surface',
@@ -101,10 +103,15 @@ class DelhiveryAdapter {
     });
 
     const pkg = data?.packages?.[0];
+    if (!pkg?.waybill || String(pkg.status).toLowerCase() === 'fail') {
+      throw new Error(`Delhivery did not book this order: ${(pkg?.remarks || []).join?.('; ') || pkg?.remarks || data?.rmk || 'no waybill returned'}`);
+    }
     return {
-      waybill: pkg?.waybill,
-      status: pkg?.status,
-      remarks: pkg?.remarks,
+      waybill: pkg.waybill,
+      awbCode: pkg.waybill,
+      courierName: 'Delhivery',
+      status: pkg.status,
+      remarks: pkg.remarks,
     };
   }
 
@@ -115,10 +122,13 @@ class DelhiveryAdapter {
       verbose: 1,
     });
     const pkg = data?.ShipmentData?.[0]?.Shipment;
-    if (!pkg) return { waybill, status: 'Not found' };
+    if (!pkg) return { waybill, status: null, currentStatus: null };
     return {
       waybill,
       status: pkg.Status?.Status,
+      // Delhivery's Status is e.g. "In Transit"/"Dispatched"/"Delivered"; StatusType UD/DL/RT/PP is the family.
+      currentStatus: pkg.Status?.Status || null,
+      statusType: pkg.Status?.StatusType,
       expectedDelivery: pkg.ExpectedDeliveryDate,
       destination: pkg.Destination,
       origin: pkg.Origin,

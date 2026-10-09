@@ -1,25 +1,9 @@
-// Amazon Buy Shipping (MFN) automation.
-//
-// When a self-fulfilled (MFN) Amazon order is CONFIRMED and its channel has
-// "auto-book courier" switched on, we do the whole booking without the seller
-// choosing anything:
-//
-//   1. ask Amazon for eligible shipping services (rates)
-//   2. pick the CHEAPEST one (ties → earliest delivery)
-//   3. buy it → Amazon books the shipment + returns tracking + the label
-//   4. store the label so it can be reprinted any time
-//   5. mark the order SHIPPED with the tracking and deduct stock
-//
-// On any failure nothing is bought, the order keeps its status, and the reason
-// is stored in orders.shippingError so the UI can show it with a Retry button.
-// The whole thing is idempotent: an order with an ACTIVE label is never booked
-// twice.
+// Shared helpers for shipping labels: parcel size from the order's products,
+// cheapest-rate picking, ship-from address, stored-label lookup and bulk label PDFs.
+// The booking flow itself lives in shipping/shipment.service.js.
 
 const db = require('../utils/db');
 const prisma = require('../utils/prisma');
-const { randomUUID } = require('crypto');
-const { getAdapter } = require('./channel.service');
-const { applyOrderStock, unshipOrderStock } = require('./stock.service');
 
 // Fallback parcel when products carry no weight/size. Amazon needs both to rate.
 const DEFAULT_WEIGHT_G = 500;
@@ -84,130 +68,6 @@ function warehouseShipFrom(wh) {
   };
 }
 
-// Persist a bought label, ship the order, move stock. Shared by the automatic
-// flow and the manual "Buy label" route so both behave identically.
-async function recordPurchasedLabel(order, channelId, result) {
-  const labelId = randomUUID();
-  await db('order_labels').insert({
-    id: labelId,
-    tenantId: order.tenantId,
-    orderId: order.id,
-    channelId,
-    shipmentId: result.shipmentId || null,
-    trackingNumber: result.trackingId || null,
-    carrier: result.carrier || null,
-    serviceName: result.serviceName || null,
-    cost: result.cost?.amount ?? null,
-    currency: result.cost?.currency || null,
-    mime: result.label?.mime || null,
-    content: result.label?.contentBase64 || null,
-    status: 'ACTIVE',
-  });
-
-  if (!result.trackingId) return { labelId, shipped: false };
-
-  const updated = await prisma.order.update({
-    where: { id: order.id },
-    data: {
-      trackingNumber: result.trackingId,
-      courierName: result.carrier || 'Amazon',
-      channelShipmentId: result.shipmentId || null,
-      status: 'SHIPPED',
-      shippedAt: new Date(),
-      needsApproval: false,
-      shippingError: null,
-    },
-  });
-  // Deduct stock for the now-shipped self-fulfilled order (idempotent).
-  if (updated.fulfillmentType === 'SELF' && updated.warehouseId) {
-    const items = await prisma.orderItem.findMany({ where: { orderId: updated.id } });
-    await applyOrderStock(updated, items);
-  }
-  return { labelId, shipped: true, order: updated };
-}
-
-async function recordError(orderId, message) {
-  await prisma.order.update({
-    where: { id: orderId },
-    data: { shippingError: String(message).slice(0, 1000) },
-  }).catch(() => {});
-}
-
-// Main entry. Never throws: returns { booked, skipped?, error?, ... }.
-async function autoBookAmazonShipping(orderId, { tenantId, force = false } = {}) {
-  try {
-    const order = await prisma.order.findFirst({ where: { id: orderId, ...(tenantId ? { tenantId } : {}) } });
-    if (!order) return { booked: false, skipped: 'order not found' };
-    if (!order.channelId || !order.channelOrderId) return { booked: false, skipped: 'not a channel order' };
-    if (order.fulfillmentType !== 'SELF') return { booked: false, skipped: 'not self-fulfilled (FBA/channel ships it)' };
-    if (['SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED'].includes(order.status)) {
-      return { booked: false, skipped: `order is ${order.status}` };
-    }
-
-    const channel = await prisma.channel.findFirst({ where: { id: order.channelId, tenantId: order.tenantId } });
-    if (!channel) return { booked: false, skipped: 'channel not found' };
-    if (!isAmazonChannelType(channel.type)) return { booked: false, skipped: 'not an Amazon channel' };
-    if (!force && !channel.autoBookShipping) return { booked: false, skipped: 'auto-book courier is off for this channel' };
-
-    // Idempotency: never buy a second label for an order that already has one.
-    const existing = await db('order_labels')
-      .where({ tenantId: order.tenantId, orderId: order.id, status: 'ACTIVE' }).first();
-    if (existing) return { booked: false, skipped: 'label already bought', labelId: existing.id };
-
-    const adapter = getAdapter(channel);
-    if (typeof adapter.getMfnRates !== 'function' || typeof adapter.buyMfnShipping !== 'function') {
-      return { booked: false, skipped: 'channel does not support Amazon Buy Shipping' };
-    }
-
-    const wh = order.warehouseId
-      ? await prisma.warehouse.findFirst({ where: { id: order.warehouseId, tenantId: order.tenantId } })
-      : null;
-    if (!wh) {
-      const msg = 'No ship-from warehouse on this order';
-      await recordError(order.id, msg);
-      return { booked: false, error: msg };
-    }
-    const shipFrom = warehouseShipFrom(wh);
-    if (!shipFrom.pincode || !shipFrom.city) {
-      const msg = `Warehouse "${wh.name}" has no city/pincode — add its address so Amazon can quote a courier`;
-      await recordError(order.id, msg);
-      return { booked: false, error: msg };
-    }
-
-    const parcel = await resolveParcel(order);
-    const rates = await adapter.getMfnRates(order.channelOrderId, {
-      shipFrom, weight: parcel.weight, dimensions: parcel.dimensions,
-    });
-    const best = pickCheapest(rates);
-    if (!best) {
-      const msg = 'Amazon returned no eligible courier for this order';
-      await recordError(order.id, msg);
-      return { booked: false, error: msg };
-    }
-
-    const result = await adapter.buyMfnShipping(order.channelOrderId, {
-      shipFrom, weight: parcel.weight, dimensions: parcel.dimensions,
-      shippingServiceId: best.serviceId, shippingServiceOfferId: best.serviceOfferId,
-    });
-    const saved = await recordPurchasedLabel(order, channel.id, result);
-    return {
-      booked: true,
-      shipped: saved.shipped,
-      labelId: saved.labelId,
-      trackingNumber: result.trackingId || null,
-      carrier: result.carrier || null,
-      cost: result.cost || null,
-      chosen: { serviceId: best.serviceId, amount: best.amount, carrier: best.carrier },
-      ratesConsidered: rates.length,
-      usedDefaults: parcel.usedDefaults,
-      hasLabel: !!result.label,
-    };
-  } catch (err) {
-    await recordError(orderId, err.message);
-    return { booked: false, error: err.message };
-  }
-}
-
 // The stored, ACTIVE label for an order (or null).
 async function getActiveLabel(orderId, tenantId) {
   return db('order_labels').where({ tenantId, orderId, status: 'ACTIVE' }).orderBy('createdAt', 'desc').first();
@@ -251,8 +111,13 @@ async function buildBulkLabelsPdf(ids, tenantId) {
     if (!order) { skipped.push({ id, reason: 'Order not found' }); continue; }
     const name = order.orderNumber || order.channelOrderId || id;
     if (order.fulfillmentType === 'CHANNEL') { skipped.push({ id, order: name, reason: 'Fulfilled by the marketplace (FBA) — no label needed' }); continue; }
-    const label = labelByOrder.get(id);
-    if (!label || !label.content) { skipped.push({ id, order: name, reason: 'No active shipping label — book the courier first' }); continue; }
+    let label = labelByOrder.get(id);
+    if (!label) { skipped.push({ id, order: name, reason: 'No active shipping label — press Confirm first' }); continue; }
+    if (!label.content) { // courier-hosted / Easy Ship label: fetch it once and keep it
+      const got = await require('./shipping/shipment.service').getLabelFile(id, tenantId);
+      if (got.error || !got.label?.content) { skipped.push({ id, order: name, reason: got.error || 'Label is not available yet' }); continue; }
+      label = got.label;
+    }
     const mime = String(label.mime || 'application/pdf').toLowerCase();
     try {
       const bytes = Buffer.from(label.content, 'base64');
@@ -282,72 +147,6 @@ async function buildBulkLabelsPdf(ids, tenantId) {
   return { pdf, printed, pages, skipped };
 }
 
-// ── Bulk "Confirm & get label" ───────────────────────────────────────────────
-// Books the Amazon courier for many orders in one go (the seller's "confirm"
-// click, for a whole selection). Sequential on purpose: Amazon rate-limits the
-// Buy Shipping API and each order is a paid purchase, so no parallel burst.
-// Always books (force) — the seller asked explicitly, regardless of the
-// channel's auto-book switch. One failure never stops the others; each order
-// gets its own outcome.
-const BULK_BOOK_MAX = 50;
-
-async function bookShippingBulk(ids, tenantId) {
-  const unique = [...new Set((Array.isArray(ids) ? ids : []).map(String).filter(Boolean))];
-  if (!unique.length) return { status: 400, error: 'Select at least one order' };
-  if (unique.length > BULK_BOOK_MAX) return { status: 400, error: `You can get at most ${BULK_BOOK_MAX} labels at once` };
-  const results = [];
-  for (const id of unique) {
-    const order = await prisma.order.findFirst({ where: { id, tenantId } });
-    const name = order ? (order.orderNumber || order.channelOrderId || id) : id;
-    const r = await autoBookAmazonShipping(id, { tenantId, force: true });
-    results.push({
-      id, order: name,
-      booked: !!r.booked,
-      trackingNumber: r.trackingNumber || null,
-      carrier: r.carrier || null,
-      // `skipped` = nothing to do (FBA, already shipped…); `error` = Amazon/data problem to fix
-      reason: r.error || r.skipped || null,
-      kind: r.booked ? 'booked' : r.error ? 'error' : 'skipped',
-    });
-  }
-  const booked = results.filter((x) => x.booked).length;
-  return { results, booked, failed: results.filter((x) => x.kind === 'error').length, skipped: results.filter((x) => x.kind === 'skipped').length };
-}
-
-// Void a label on Amazon and mark it CANCELLED locally.
-async function cancelOrderLabel(orderId, tenantId) {
-  const label = await getActiveLabel(orderId, tenantId);
-  if (!label) return { cancelled: false, error: 'No active label for this order' };
-  const channel = await prisma.channel.findFirst({ where: { id: label.channelId, tenantId } });
-  if (!channel) return { cancelled: false, error: 'Channel not found' };
-  const adapter = getAdapter(channel);
-  if (label.shipmentId) await adapter.cancelMfnShipping(label.shipmentId);
-  await db('order_labels').where({ id: label.id }).update({ status: 'CANCELLED' });
-
-  // The parcel has no valid label any more, so the order is NOT shipped. If the
-  // order still carries this label's tracking (normally SHIPPED, but a manual
-  // status edit may have moved it elsewhere), clear it, take a SHIPPED order
-  // back to CONFIRMED (ready to book again) and put the stock back to reserved.
-  // DELIVERED / RETURNED / CANCELLED orders are left alone — the parcel already
-  // reached the buyer or the order is closed.
-  let reverted = false;
-  const order = await prisma.order.findFirst({ where: { id: orderId, tenantId } });
-  const closed = ['DELIVERED', 'RETURNED', 'CANCELLED'];
-  if (order && order.trackingNumber && order.trackingNumber === label.trackingNumber && !closed.includes(order.status)) {
-    const updated = await prisma.order.update({
-      where: { id: order.id },
-      data: {
-        ...(order.status === 'SHIPPED' ? { status: 'CONFIRMED' } : {}),
-        trackingNumber: null, courierName: null, channelShipmentId: null, shippedAt: null,
-      },
-    });
-    await unshipOrderStock({ ...updated, stockStatus: order.stockStatus });
-    reverted = true;
-  }
-  return { cancelled: true, labelId: label.id, orderReverted: reverted };
-}
-
 module.exports = {
-  autoBookAmazonShipping, getActiveLabel, cancelOrderLabel, recordPurchasedLabel, buildBulkLabelsPdf, BULK_LABELS_MAX, bookShippingBulk, BULK_BOOK_MAX,
-  resolveParcel, pickCheapest, DEFAULT_WEIGHT_G, DEFAULT_DIMS_CM,
+  getActiveLabel, buildBulkLabelsPdf, BULK_LABELS_MAX, resolveParcel, pickCheapest, warehouseShipFrom, DEFAULT_WEIGHT_G, DEFAULT_DIMS_CM,
 };

@@ -11,7 +11,7 @@ import { HelpDrawer } from '@/components/HelpDrawer';
 import { InboxDrawer } from '@/components/InboxDrawer';
 import {
   LayoutDashboard, Package2, Building2, LifeBuoy, FileText, FileEdit,
-  Search, Settings, Activity, Users, BarChart3, Cpu, Inbox, Megaphone, FlaskConical,
+  Search, Settings, Activity, Users, BarChart3, Cpu, Inbox, Megaphone,
 } from 'lucide-react';
 
 // Admin nav — same visual layout as the tenant sidebar, different items.
@@ -21,7 +21,6 @@ const ADMIN_NAV_GROUPS: SidebarNavGroup[] = [
     items: [
       { label: 'Overview',       href: '/admin',            icon: LayoutDashboard },
       { label: 'Tenants',        href: '/admin/tenants',    icon: Building2 },
-      { label: 'Demo mode',      href: '/admin/demo',       icon: FlaskConical },
       { label: 'Plans',          href: '/admin/plans',      icon: Package2 },
       { label: 'Tickets',        href: '/admin/tickets',    icon: LifeBuoy },
       { label: 'Leads',          href: '/admin/leads',      icon: Inbox },
