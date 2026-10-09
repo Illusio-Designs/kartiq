@@ -288,7 +288,7 @@ export default function ChannelsPage() {
                 onChange={setSearch}
                 placeholder="Search channels — Amazon, Shopify, Delhivery…"
                 shortcut="/"
-                className="flex-1 min-w-[180px] max-w-sm"
+                className="flex-1 min-w-[180px] sm:min-w-[300px] max-w-md"
               />
               <div className="hidden sm:block flex-1" />
               <div className="flex gap-1 p-1 bg-slate-100 dark:bg-slate-800/60 rounded-xl">
