@@ -389,6 +389,44 @@ async function main() {
   ok((await slipRaw(mfn1.id, otherToken)).status === 404, 'Another seller cannot open your packing slip (404)');
   ok((await slipRaw(mfn1.id, '')).status === 401, 'No login → 401');
 
+  // ── 15. Bulk packing slips ───────────────────────────────────────────────
+  group('15. Bulk packing slips');
+  await db('orders').where({ id: mfn5.id }).update({ status: 'CANCELLED' });
+  const bogus = randomUUID();
+  const ids = [mfn2.id, afn.id, mfn1.id, bogus, mfn4.id, mfn5.id, mfn2.id /* duplicate */];
+  const bulk = await req('POST', '/orders/packing-slips', { token, body: { ids } });
+  ok(bulk.status === 200 && typeof bulk.body.html === 'string', `Bulk request returns one document (${bulk.status})`);
+  ok(bulk.body.printed === 3, `3 slips printed: the 3 shippable orders, duplicate counted once (printed=${bulk.body.printed})`);
+  const sheets = (bulk.body.html.match(/<div class="sheet">/g) || []).length;
+  ok(sheets === 3, `Document has 3 slips, one per page (${sheets})`);
+  ok(/page-break-after:always/.test(bulk.body.html) && /break-after:page/.test(bulk.body.html), 'Each slip starts on a new page when printed');
+  const pos = (n) => bulk.body.html.indexOf(n);
+  const ord2 = await db('orders').where({ id: mfn2.id }).first();
+  const ord4 = await db('orders').where({ id: mfn4.id }).first();
+  ok(pos(ord2.orderNumber) > -1 && pos(mfn1.orderNumber) > pos(ord2.orderNumber) && pos(ord4.orderNumber) > pos(mfn1.orderNumber), 'Slips come out in the order they were selected');
+  const reasons = Object.fromEntries(bulk.body.skipped.map((x) => [x.id, x.reason]));
+  ok(bulk.body.skipped.length === 3, `3 skipped, each with a reason (${bulk.body.skipped.length})`);
+  ok(/marketplace \(FBA\)/.test(reasons[afn.id] || ''), `FBA order skipped: "${reasons[afn.id]}"`);
+  ok(/not found/i.test(reasons[bogus] || ''), `Unknown order skipped: "${reasons[bogus]}"`);
+  ok(/cancelled/i.test(reasons[mfn5.id] || ''), `Cancelled order skipped: "${reasons[mfn5.id]}"`);
+  ok(!/<script>alert|<img src=x/i.test(bulk.body.html) && bulk.body.html.includes('&lt;script&gt;'), 'Hostile buyer text is escaped in the bulk document too');
+  ok(!/₹|INR|Rs\.?\s?\d|subtotal/i.test(bulk.body.html), 'No prices anywhere in the bulk document');
+
+  const one = await req('POST', '/orders/packing-slips', { token, body: { ids: [mfn4.id] } });
+  ok(one.status === 200 && one.body.printed === 1 && one.body.skipped.length === 0, 'A single selected order works the same way');
+  const allFba = await req('POST', '/orders/packing-slips', { token, body: { ids: [afn.id] } });
+  ok(allFba.status === 400 && allFba.body.skipped?.length === 1, `Only FBA selected: 400 with the reason, nothing to print (${allFba.status})`);
+  const none = await req('POST', '/orders/packing-slips', { token, body: { ids: [] } });
+  ok(none.status === 400, `Empty selection refused (${none.status})`);
+  const tooMany = await req('POST', '/orders/packing-slips', { token, body: { ids: Array.from({ length: 101 }, () => randomUUID()) } });
+  ok(tooMany.status === 400 && /at most 100/.test(JSON.stringify(tooMany.body)), `101 orders refused, limit is 100 (${tooMany.status})`);
+  const exactly = await req('POST', '/orders/packing-slips', { token, body: { ids: Array.from({ length: 100 }, () => randomUUID()) } });
+  ok(exactly.status === 400 && !/at most/.test(JSON.stringify(exactly.body)), 'Exactly 100 is accepted by the limit check (then nothing found to print)');
+  const noAuth = await req('POST', '/orders/packing-slips', { body: { ids: [mfn4.id] } });
+  ok(noAuth.status === 401, `No login → 401 (${noAuth.status})`);
+  const spyBulk = await req('POST', '/orders/packing-slips', { token: otherToken, body: { ids: [mfn2.id, mfn1.id, mfn4.id] } });
+  ok(spyBulk.status === 400 && !spyBulk.body.html && spyBulk.body.skipped.every((x) => /not found/i.test(x.reason)), 'Another seller cannot pull your orders into their slips');
+
   // ── Result ───────────────────────────────────────────────────────────────
   console.log(`\n\x1b[1mResult: ${passed} passed, ${failed} failed\x1b[0m`);
   if (failed) { console.log('\nFailures:'); failures.forEach((f) => console.log('  - ' + f)); }

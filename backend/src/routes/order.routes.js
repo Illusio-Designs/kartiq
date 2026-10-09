@@ -6,7 +6,7 @@ const {
 } = require('../middleware/auth.middleware');
 const { requestReviewForOrder, processReviewQueue, REVIEW_DELAY_HOURS } = require('../services/review.service');
 const { autoBookAmazonShipping, getActiveLabel, cancelOrderLabel } = require('../services/amazonShipping.service');
-const { buildPackingSlip } = require('../services/packingSlip.service');
+const { buildPackingSlip, buildBulkPackingSlips } = require('../services/packingSlip.service');
 const { rankWarehouses, pickBestWarehouse } = require('../services/routing.service');
 const { scoreAndPersist } = require('../services/rto.service');
 const { VIDEO_TYPES, RETENTION_DAYS, stampRetentionOnDelivery } = require('../services/vms.service');
@@ -20,6 +20,20 @@ router.use(authenticate, requireTenant);
 // ═════════════════════════════════════════════════════════════════════════════
 // REVIEW REQUESTS — MUST be declared before /:id routes to avoid conflicts
 // ═════════════════════════════════════════════════════════════════════════════
+
+// ── Bulk packing slips — MUST be declared before /:id routes ─────────────────
+// body: { ids: string[] } (max 100). Returns ONE printable HTML document with a
+// slip per page, plus which orders were skipped and why (FBA, cancelled, not
+// found). JSON (not raw HTML) so the UI can report the skips.
+router.post('/packing-slips', requirePermission('orders.read'), async (req, res) => {
+  try {
+    const r = await buildBulkPackingSlips(req.body?.ids, req.tenant.id);
+    if (r.error) return res.status(r.status).json({ error: r.error, skipped: r.skipped || [] });
+    res.json({ html: r.html, printed: r.printed, skipped: r.skipped });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 router.post('/process-review-queue', requirePermission('orders.update'), async (req, res) => {
   try {

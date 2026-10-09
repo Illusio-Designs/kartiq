@@ -39,7 +39,8 @@ function fmtDate(d) {
   return isNaN(dt) ? '' : dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-function renderPackingSlipHtml({ order, tenant, warehouse, customer, items }) {
+// One slip, as markup. `sheet` wraps it so several can be printed back-to-back.
+function renderSheet({ order, tenant, warehouse, customer, items }) {
   const shipTo = addressLines(order.shippingAddress);
   const wa = asObject(warehouse?.address);
   const shipFrom = [warehouse?.name, ...addressLines(wa), warehouse?.phone || wa.phone ? `Phone: ${warehouse?.phone || wa.phone}` : null];
@@ -63,13 +64,31 @@ function renderPackingSlipHtml({ order, tenant, warehouse, customer, items }) {
     </tr>`;
   }).join('');
 
-  return `<!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
-<title>Packing slip ${esc(order.orderNumber || order.id)}</title>
-<style>
+  return `<div class="sheet">
+  <header>
+    <div><h1>PACKING SLIP</h1><div class="seller">${esc(tenant?.businessName || '')}</div></div>
+    <div class="meta">
+      <div><span class="k">Order</span><strong>${esc(order.orderNumber || order.id)}</strong></div>
+      ${ref}
+      <div><span class="k">Date</span> ${esc(fmtDate(order.orderedAt || order.createdAt))}</div>
+      ${ship}
+    </div>
+  </header>
+  <div class="grid">
+    ${block('Ship to', [customer?.name, ...shipTo, customer?.phone ? `Phone: ${customer.phone}` : null])}
+    ${block('Ship from', shipFrom)}
+  </div>
+  <table>
+    <thead><tr><th class="c">#</th><th>Item</th><th>SKU</th><th class="c">Qty</th><th class="c">Packed</th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="5" class="muted">No items on this order.</td></tr>'}</tbody>
+  </table>
+  <div class="total">Total units: ${esc(totalUnits)}</div>
+  ${order.notes ? `<div class="notes"><span class="k">Note</span> ${esc(order.notes)}</div>` : ''}
+  <footer>Thank you for your order${tenant?.businessName ? ` from ${esc(tenant.businessName)}` : ''}. Please check the items on arrival.</footer>
+</div>`;
+}
+
+const STYLE = `
   *{box-sizing:border-box}
   body{font:13px/1.45 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111;margin:0;padding:24px;background:#fff}
   .sheet{max-width:780px;margin:0 auto}
@@ -93,29 +112,25 @@ function renderPackingSlipHtml({ order, tenant, warehouse, customer, items }) {
   footer{border-top:1px solid #ccc;padding-top:10px;color:#555;font-size:12px}
   @page{margin:12mm}
   @media print{body{padding:0}.sheet{max-width:none}}
-</style></head>
-<body><div class="sheet">
-  <header>
-    <div><h1>PACKING SLIP</h1><div class="seller">${esc(tenant?.businessName || '')}</div></div>
-    <div class="meta">
-      <div><span class="k">Order</span><strong>${esc(order.orderNumber || order.id)}</strong></div>
-      ${ref}
-      <div><span class="k">Date</span> ${esc(fmtDate(order.orderedAt || order.createdAt))}</div>
-      ${ship}
-    </div>
-  </header>
-  <div class="grid">
-    ${block('Ship to', [customer?.name, ...shipTo, customer?.phone ? `Phone: ${customer.phone}` : null])}
-    ${block('Ship from', shipFrom)}
-  </div>
-  <table>
-    <thead><tr><th class="c">#</th><th>Item</th><th>SKU</th><th class="c">Qty</th><th class="c">Packed</th></tr></thead>
-    <tbody>${rows || '<tr><td colspan="5" class="muted">No items on this order.</td></tr>'}</tbody>
-  </table>
-  <div class="total">Total units: ${esc(totalUnits)}</div>
-  ${order.notes ? `<div class="notes"><span class="k">Note</span> ${esc(order.notes)}</div>` : ''}
-  <footer>Thank you for your order${tenant?.businessName ? ` from ${esc(tenant.businessName)}` : ''}. Please check the items on arrival.</footer>
-</div></body></html>`;
+  .sheet{page-break-after:always;break-after:page}
+  .sheet:last-child{page-break-after:auto;break-after:auto}
+  .sheet+.sheet{margin-top:40px}
+  @media print{.sheet+.sheet{margin-top:0}}
+`;
+
+function renderDocument(title, sheets) {
+  return `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>${esc(title)}</title>
+<style>${STYLE}</style></head>
+<body>${sheets.join('\n')}</body></html>`;
+}
+
+function renderPackingSlipHtml(data) {
+  return renderDocument(`Packing slip ${data.order.orderNumber || data.order.id}`, [renderSheet(data)]);
 }
 
 // Load everything the slip needs, tenant-scoped. Returns { html } or { error, status }.
@@ -135,4 +150,37 @@ async function buildPackingSlip(orderId, tenantId) {
   return { html, order };
 }
 
-module.exports = { buildPackingSlip, renderPackingSlipHtml };
+const BULK_MAX = 100;
+
+// Many slips in ONE printable document (one slip per page). Orders that can't
+// have a slip (not found / other tenant, channel-fulfilled FBA, cancelled) are
+// skipped with a reason instead of failing the whole batch. The order of `ids`
+// is kept, so the stack of slips matches the order the seller selected.
+async function buildBulkPackingSlips(ids, tenantId) {
+  const unique = [...new Set((Array.isArray(ids) ? ids : []).map(String).filter(Boolean))];
+  if (!unique.length) return { status: 400, error: 'Select at least one order' };
+  if (unique.length > BULK_MAX) return { status: 400, error: `You can print at most ${BULK_MAX} packing slips at once` };
+
+  const orders = await prisma.order.findMany({
+    where: { id: { in: unique }, tenantId },
+    include: { customer: true, warehouse: true, items: { include: { variant: { include: { product: true } } } } },
+    take: BULK_MAX,
+  });
+  const byId = new Map(orders.map((o) => [o.id, o]));
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+
+  const sheets = [];
+  const skipped = [];
+  for (const id of unique) {
+    const order = byId.get(id);
+    if (!order) { skipped.push({ id, reason: 'Order not found' }); continue; }
+    const label = order.orderNumber || order.channelOrderId || id;
+    if (order.fulfillmentType === 'CHANNEL') { skipped.push({ id, order: label, reason: 'Fulfilled by the marketplace (FBA) — no slip needed' }); continue; }
+    if (order.status === 'CANCELLED') { skipped.push({ id, order: label, reason: 'Order is cancelled' }); continue; }
+    sheets.push(renderSheet({ order, tenant, warehouse: order.warehouse, customer: order.customer, items: order.items || [] }));
+  }
+  if (!sheets.length) return { status: 400, error: 'None of the selected orders needs a packing slip', skipped };
+  return { html: renderDocument(`Packing slips (${sheets.length})`, sheets), printed: sheets.length, skipped };
+}
+
+module.exports = { buildPackingSlip, buildBulkPackingSlips, renderPackingSlipHtml, BULK_MAX };

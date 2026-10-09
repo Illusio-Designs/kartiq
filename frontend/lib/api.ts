@@ -473,6 +473,8 @@ export const orderApi = {
   labelFile: (id: string) => api.get(`/orders/${id}/label`, { responseType: 'blob' }),
   // Packing slip (print-ready HTML, no prices) for self-fulfilled orders
   packingSlip: (id: string) => api.get(`/orders/${id}/packing-slip`, { responseType: 'blob' }),
+  // Many packing slips in one printable document (max 100): { html, printed, skipped[] }
+  packingSlips: (ids: string[]) => api.post('/orders/packing-slips', { ids }),
   bookShipping: (id: string) => api.post(`/orders/${id}/book-shipping`, {}),
   cancelLabel: (id: string) => api.delete(`/orders/${id}/label`),
   enrich: (id: string, body: any) => api.patch(`/orders/${id}/enrich`, body),

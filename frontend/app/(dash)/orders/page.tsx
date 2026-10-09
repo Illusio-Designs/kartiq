@@ -13,7 +13,7 @@ import {
   SearchField, DateRangePicker, Popover, BulkActionBar, DensityToggle, Dropdown, useConfirm,
 } from '@/components/ui';
 import type { Density } from '@/components/ui';
-import { AlertTriangle, CheckCircle2, Star, Trash2, XCircle, Zap, Hand, Layers, ShoppingBag, Plug, RefreshCw, Download, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Eye, Pencil, Lock, Truck, Info, ListFilter, ArrowUpDown, Bookmark, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Star, Trash2, XCircle, Zap, Hand, Layers, ShoppingBag, Plug, RefreshCw, Download, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Eye, Pencil, Lock, Truck, Info, ListFilter, ArrowUpDown, Bookmark, X, Printer } from 'lucide-react';
 import { toast } from '@/store/toast.store';
 import Link from 'next/link';
 
@@ -414,6 +414,41 @@ export default function OrdersPage() {
     if (ok) toast.success(`${verb} ${ok} order${ok !== 1 ? 's' : ''}${ok < ids.length ? ` · ${ids.length - ok} skipped` : ''}`);
     else toast.error('Could not update the selected orders');
   };
+  // Print the packing slips for every selected order as ONE document (a slip per
+  // page). FBA / cancelled orders are skipped by the server and reported here.
+  const [slipsPending, setSlipsPending] = useState(false);
+  const printSelectedSlips = async () => {
+    const ids = [...selected];
+    if (!ids.length) return;
+    if (ids.length > 100) { toast.error('Select at most 100 orders at a time'); return; }
+    setSlipsPending(true);
+    // Open the tab NOW (inside the click) so a pop-up blocker allows it, then
+    // point it at the slips once the server has built them.
+    const w = window.open('', '_blank');
+    try {
+      const r = await orderApi.packingSlips(ids);
+      const { html, printed, skipped } = r.data as { html: string; printed: number; skipped: { id: string; order?: string; reason: string }[] };
+      const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+      if (w) {
+        w.location.href = url;
+        w.addEventListener('load', () => { try { w.print(); } catch { /* user can print manually */ } });
+      } else {
+        window.open(url, '_blank');
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 120_000);
+      if (skipped?.length) {
+        const why = skipped.slice(0, 3).map((x) => `${x.order || x.id}: ${x.reason}`).join(' · ');
+        toast.success(`Printing ${printed} packing slip${printed !== 1 ? 's' : ''} · ${skipped.length} skipped (${why}${skipped.length > 3 ? ' …' : ''})`);
+      } else {
+        toast.success(`Printing ${printed} packing slip${printed !== 1 ? 's' : ''}`);
+      }
+    } catch (e: any) {
+      if (w) w.close();
+      toast.error(e?.response?.data?.error || e?.message || 'Could not build the packing slips');
+    } finally {
+      setSlipsPending(false);
+    }
+  };
   const cancelSelected = async () => {
     const ok = await confirm({
       title: `Cancel ${selected.size} order${selected.size !== 1 ? 's' : ''}?`,
@@ -595,6 +630,7 @@ export default function OrdersPage() {
         {/* Bulk actions (appears when rows are selected) */}
         <BulkActionBar count={selected.size} onClear={() => setSelected(new Set())}>
           <Button variant="outline" size="sm" leftIcon={<Truck size={13} />} loading={bulkPending} onClick={() => bulkSetStatus('SHIPPED', 'Marked shipped')}>Mark shipped</Button>
+          <Button variant="outline" size="sm" leftIcon={<Printer size={13} />} loading={slipsPending} onClick={printSelectedSlips}>Print packing slips</Button>
           <Button variant="outline" size="sm" leftIcon={<Download size={13} />} onClick={() => exportRows(sortedOrders.filter((o: any) => selected.has(o.id)))}>Export</Button>
           <Button variant="danger" size="sm" leftIcon={<XCircle size={13} />} loading={bulkPending} onClick={cancelSelected}>Cancel</Button>
         </BulkActionBar>
