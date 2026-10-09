@@ -18,6 +18,7 @@
 const db = require('../utils/db');
 const prisma = require('../utils/prisma');
 const { randomUUID } = require('crypto');
+const { PDFDocument } = require('pdf-lib');
 const { getAdapter } = require('./channel.service');
 const { applyOrderStock, unshipOrderStock } = require('./stock.service');
 
@@ -213,6 +214,67 @@ async function getActiveLabel(orderId, tenantId) {
   return db('order_labels').where({ tenantId, orderId, status: 'ACTIVE' }).orderBy('createdAt', 'desc').first();
 }
 
+// ── Bulk label printing ──────────────────────────────────────────────────────
+// Merge the stored ACTIVE labels of many orders into ONE printable PDF (a label
+// per page, in the order the ids were given). PDF labels keep their own page
+// size; PNG labels get a 4×6 in page. ZPL (thermal-printer language) can't be
+// shown as a page, so those orders are skipped with a reason — print them from
+// the order page. A bad/corrupt file skips just that order, never the batch.
+const BULK_LABELS_MAX = 100;
+const LABEL_PAGE = { width: 288, height: 432 }; // 4×6 inch in PDF points
+
+async function buildBulkLabelsPdf(ids, tenantId) {
+  const unique = [...new Set((Array.isArray(ids) ? ids : []).map(String).filter(Boolean))];
+  if (!unique.length) return { status: 400, error: 'Select at least one order' };
+  if (unique.length > BULK_LABELS_MAX) return { status: 400, error: `You can print at most ${BULK_LABELS_MAX} labels at once` };
+
+  const orders = await prisma.order.findMany({ where: { id: { in: unique }, tenantId }, take: BULK_LABELS_MAX });
+  const byId = new Map(orders.map((o) => [o.id, o]));
+  // newest ACTIVE label per order
+  const rows = await db('order_labels').where({ tenantId, status: 'ACTIVE' }).whereIn('orderId', unique).orderBy('createdAt', 'desc');
+  const labelByOrder = new Map();
+  for (const r of rows) if (!labelByOrder.has(r.orderId)) labelByOrder.set(r.orderId, r);
+
+  const out = await PDFDocument.create();
+  const skipped = [];
+  let printed = 0;
+  let pages = 0;
+  for (const id of unique) {
+    const order = byId.get(id);
+    if (!order) { skipped.push({ id, reason: 'Order not found' }); continue; }
+    const name = order.orderNumber || order.channelOrderId || id;
+    if (order.fulfillmentType === 'CHANNEL') { skipped.push({ id, order: name, reason: 'Fulfilled by the marketplace (FBA) — no label needed' }); continue; }
+    const label = labelByOrder.get(id);
+    if (!label || !label.content) { skipped.push({ id, order: name, reason: 'No active shipping label — book the courier first' }); continue; }
+    const mime = String(label.mime || 'application/pdf').toLowerCase();
+    try {
+      const bytes = Buffer.from(label.content, 'base64');
+      if (mime.includes('pdf')) {
+        const src = await PDFDocument.load(bytes);
+        const copied = await out.copyPages(src, src.getPageIndices());
+        copied.forEach((pg) => out.addPage(pg));
+        pages += copied.length;
+      } else if (mime.includes('png')) {
+        const img = await out.embedPng(bytes);
+        const scale = Math.min(LABEL_PAGE.width / img.width, LABEL_PAGE.height / img.height);
+        const w = img.width * scale; const h = img.height * scale;
+        const pg = out.addPage([LABEL_PAGE.width, LABEL_PAGE.height]);
+        pg.drawImage(img, { x: (LABEL_PAGE.width - w) / 2, y: LABEL_PAGE.height - h, width: w, height: h });
+        pages += 1;
+      } else {
+        skipped.push({ id, order: name, reason: 'Thermal (ZPL) label — print it from the order page' });
+        continue;
+      }
+      printed += 1;
+    } catch (e) {
+      skipped.push({ id, order: name, reason: 'Label file could not be read' });
+    }
+  }
+  if (!printed) return { status: 400, error: 'None of the selected orders has a printable label', skipped };
+  const pdf = Buffer.from(await out.save()).toString('base64');
+  return { pdf, printed, pages, skipped };
+}
+
 // Void a label on Amazon and mark it CANCELLED locally.
 async function cancelOrderLabel(orderId, tenantId) {
   const label = await getActiveLabel(orderId, tenantId);
@@ -247,6 +309,6 @@ async function cancelOrderLabel(orderId, tenantId) {
 }
 
 module.exports = {
-  autoBookAmazonShipping, getActiveLabel, cancelOrderLabel, recordPurchasedLabel,
+  autoBookAmazonShipping, getActiveLabel, cancelOrderLabel, recordPurchasedLabel, buildBulkLabelsPdf, BULK_LABELS_MAX,
   resolveParcel, pickCheapest, DEFAULT_WEIGHT_G, DEFAULT_DIMS_CM,
 };

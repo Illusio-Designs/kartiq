@@ -101,6 +101,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   console.log(`   4. Open the DEMO-FBA order: Amazon ships it — no courier, no label.`);
   console.log(`   5. On any MFN order, click "Print packing slip" (items, qty, addresses, no prices).`);
   console.log(`      Bulk: Orders list → tick several orders → "Print packing slips" (one slip per page).`);
+  console.log(`      Bulk labels: confirm 2+ MFN orders first, then tick them → "Print shipping labels" (one merged PDF).`);
   console.log(`   6. With the switch OFF, confirming an MFN order does NOT buy a label`);
   console.log(`      (use the manual "Buy shipping via Amazon" card instead).`);
   console.log(`${line}\n  Ctrl+C to stop.\n`);

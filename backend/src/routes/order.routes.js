@@ -5,7 +5,7 @@ const {
   authenticate, requireTenant, requirePermission, requireFeature, enforceLimit,
 } = require('../middleware/auth.middleware');
 const { requestReviewForOrder, processReviewQueue, REVIEW_DELAY_HOURS } = require('../services/review.service');
-const { autoBookAmazonShipping, getActiveLabel, cancelOrderLabel } = require('../services/amazonShipping.service');
+const { autoBookAmazonShipping, getActiveLabel, cancelOrderLabel, buildBulkLabelsPdf } = require('../services/amazonShipping.service');
 const { buildPackingSlip, buildBulkPackingSlips } = require('../services/packingSlip.service');
 const { rankWarehouses, pickBestWarehouse } = require('../services/routing.service');
 const { scoreAndPersist } = require('../services/rto.service');
@@ -30,6 +30,19 @@ router.post('/packing-slips', requirePermission('orders.read'), async (req, res)
     const r = await buildBulkPackingSlips(req.body?.ids, req.tenant.id);
     if (r.error) return res.status(r.status).json({ error: r.error, skipped: r.skipped || [] });
     res.json({ html: r.html, printed: r.printed, skipped: r.skipped });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Bulk shipping labels — MUST be declared before /:id routes ───────────────
+// body: { ids: string[] } (max 100). Returns ONE merged PDF (base64) with a
+// label per page, plus which orders were skipped and why.
+router.post('/labels', requirePermission('shipments.read'), async (req, res) => {
+  try {
+    const r = await buildBulkLabelsPdf(req.body?.ids, req.tenant.id);
+    if (r.error) return res.status(r.status).json({ error: r.error, skipped: r.skipped || [] });
+    res.json({ pdf: r.pdf, printed: r.printed, pages: r.pages, skipped: r.skipped });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

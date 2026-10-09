@@ -449,6 +449,39 @@ export default function OrdersPage() {
       setSlipsPending(false);
     }
   };
+  // Print the saved shipping labels of every selected order as ONE merged PDF
+  // (a label per page). Orders with no label (not booked yet, FBA, cancelled
+  // label, thermal ZPL) are skipped by the server and reported here.
+  const [labelsPending, setLabelsPending] = useState(false);
+  const printSelectedLabels = async () => {
+    const ids = [...selected];
+    if (!ids.length) return;
+    if (ids.length > 100) { toast.error('Select at most 100 orders at a time'); return; }
+    setLabelsPending(true);
+    const w = window.open('', '_blank'); // open inside the click so pop-up blockers allow it
+    try {
+      const r = await orderApi.labels(ids);
+      const { pdf, printed, pages, skipped } = r.data as { pdf: string; printed: number; pages: number; skipped: { id: string; order?: string; reason: string }[] };
+      const bytes = Uint8Array.from(atob(pdf), (c) => c.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      if (w) w.location.href = url; else window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 300_000);
+      const head = `Opened ${printed} shipping label${printed !== 1 ? 's' : ''} (${pages} page${pages !== 1 ? 's' : ''}) — use Print in the PDF viewer`;
+      if (skipped?.length) {
+        const why = skipped.slice(0, 3).map((x) => `${x.order || x.id}: ${x.reason}`).join(' · ');
+        toast.success(`${head} · ${skipped.length} skipped (${why}${skipped.length > 3 ? ' …' : ''})`);
+      } else {
+        toast.success(head);
+      }
+    } catch (e: any) {
+      if (w) w.close();
+      const sk = e?.response?.data?.skipped;
+      const detail = Array.isArray(sk) && sk.length ? ` (${sk.slice(0, 3).map((x: any) => `${x.order || x.id}: ${x.reason}`).join(' · ')})` : '';
+      toast.error((e?.response?.data?.error || e?.message || 'Could not build the labels PDF') + detail);
+    } finally {
+      setLabelsPending(false);
+    }
+  };
   const cancelSelected = async () => {
     const ok = await confirm({
       title: `Cancel ${selected.size} order${selected.size !== 1 ? 's' : ''}?`,
@@ -630,6 +663,7 @@ export default function OrdersPage() {
         {/* Bulk actions (appears when rows are selected) */}
         <BulkActionBar count={selected.size} onClear={() => setSelected(new Set())}>
           <Button variant="outline" size="sm" leftIcon={<Truck size={13} />} loading={bulkPending} onClick={() => bulkSetStatus('SHIPPED', 'Marked shipped')}>Mark shipped</Button>
+          <Button variant="outline" size="sm" leftIcon={<Printer size={13} />} loading={labelsPending} onClick={printSelectedLabels}>Print shipping labels</Button>
           <Button variant="outline" size="sm" leftIcon={<Printer size={13} />} loading={slipsPending} onClick={printSelectedSlips}>Print packing slips</Button>
           <Button variant="outline" size="sm" leftIcon={<Download size={13} />} onClick={() => exportRows(sortedOrders.filter((o: any) => selected.has(o.id)))}>Export</Button>
           <Button variant="danger" size="sm" leftIcon={<XCircle size={13} />} loading={bulkPending} onClick={cancelSelected}>Cancel</Button>

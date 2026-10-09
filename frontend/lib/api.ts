@@ -475,6 +475,8 @@ export const orderApi = {
   packingSlip: (id: string) => api.get(`/orders/${id}/packing-slip`, { responseType: 'blob' }),
   // Many packing slips in one printable document (max 100): { html, printed, skipped[] }
   packingSlips: (ids: string[]) => api.post('/orders/packing-slips', { ids }),
+  // Many saved shipping labels merged into ONE PDF (max 100): { pdf (base64), printed, pages, skipped[] }
+  labels: (ids: string[]) => api.post('/orders/labels', { ids }),
   bookShipping: (id: string) => api.post(`/orders/${id}/book-shipping`, {}),
   cancelLabel: (id: string) => api.delete(`/orders/${id}/label`),
   enrich: (id: string, body: any) => api.patch(`/orders/${id}/enrich`, body),

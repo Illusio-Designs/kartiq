@@ -32,6 +32,7 @@
     "morgan": "^1.10.0",
     "mysql2": "^3.22.0",
     "nodemailer": "^10.0.16",
+    "pdf-lib": "^1.17.1",
     "pino": "^10.4.0",
     "pino-pretty": "^13.2.0",
     "razorpay": "^2.9.8",

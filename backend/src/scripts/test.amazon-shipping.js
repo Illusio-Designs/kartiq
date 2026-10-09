@@ -17,6 +17,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 const http = require('http');
 
 const { fake, callsTo, install: installFakeAmazon, amazonOrder } = require('./lib/fakeAmazon');
+const { PDFDocument } = require('pdf-lib');
 installFakeAmazon();
 
 // ───────────────────────────── Test harness ─────────────────────────────────
@@ -194,7 +195,7 @@ async function main() {
   ok(Number(lbl?.cost) === 62.5 && lbl?.carrier === 'SlowCo', 'Label cost ₹62.50 and carrier saved');
   const pdf = await req('GET', `/orders/${mfn2.id}/label`, { token, raw: true });
   ok(pdf.status === 200 && /pdf/.test(pdf.headers['content-type']), `GET /orders/:id/label returns the file (${pdf.status}, ${pdf.headers['content-type']})`);
-  ok(pdf.buf.toString().startsWith('%PDF-1.4 FAKE-LABEL-1'), 'Label bytes are exactly what Amazon sent (gunzipped correctly)');
+  ok(pdf.buf.equals(fake.labels['SHIP-1']) && pdf.buf.slice(0, 5).toString() === '%PDF-', 'Label bytes are exactly what Amazon sent (gunzipped correctly)');
   const pdf2 = await req('GET', `/orders/${mfn2.id}/label`, { token, raw: true });
   ok(pdf2.status === 200 && pdf2.buf.equals(pdf.buf), 'Label can be re-printed any time (same bytes again)');
 
@@ -426,6 +427,57 @@ async function main() {
   ok(noAuth.status === 401, `No login → 401 (${noAuth.status})`);
   const spyBulk = await req('POST', '/orders/packing-slips', { token: otherToken, body: { ids: [mfn2.id, mfn1.id, mfn4.id] } });
   ok(spyBulk.status === 400 && !spyBulk.body.html && spyBulk.body.skipped.every((x) => /not found/i.test(x.reason)), 'Another seller cannot pull your orders into their slips');
+
+  // ── 16. Bulk shipping labels ─────────────────────────────────────────────
+  group('16. Bulk shipping labels');
+  await seedStock(80);
+  fake.orders = ['7', '8', '9', '10'].map((n) => amazonOrder(`AMZ-MFN-${n}`, 'MFN', SKU, 1, 399));
+  await req('POST', `/channels/${chId}/sync/orders`, { token, body: {} });
+  const [l7, l8, l9, l10] = await Promise.all(['7', '8', '9', '10'].map((n) => find(`AMZ-MFN-${n}`)));
+  const bookAs = async (o, type) => {
+    fake.labelType = type;
+    const r = await req('PATCH', `/orders/${o.id}/status`, { token, body: { status: 'CONFIRMED' } });
+    return r.body.shipping;
+  };
+  const b7 = await bookAs(l7, 'PDF');
+  const b8 = await bookAs(l8, 'PNG');
+  const b9 = await bookAs(l9, 'ZPL');
+  const b10 = await bookAs(l10, 'PDF');
+  fake.labelType = 'PDF';
+  ok(b7?.booked && b8?.booked && b9?.booked && b10?.booked, 'Set-up: 4 fresh orders each bought a label (PDF, PNG, ZPL, PDF)');
+  await db('order_labels').where({ orderId: l10.id }).update({ content: Buffer.from('not a pdf').toString('base64') });
+  const lblIds = [l7.id, l8.id, l9.id, afn.id, mfn1.id, mfn3.id, bogus, l10.id, l7.id /* duplicate */];
+  const bl = await req('POST', '/orders/labels', { token, body: { ids: lblIds } });
+  ok(bl.status === 200 && typeof bl.body.pdf === 'string', `Bulk labels returns one PDF (${bl.status})`);
+  ok(bl.body.printed === 2 && bl.body.pages === 2, `2 labels merged into 2 pages: the PDF one and the PNG one (printed=${bl.body.printed}, pages=${bl.body.pages})`);
+  const merged = await PDFDocument.load(Buffer.from(bl.body.pdf, 'base64'));
+  const sizes = merged.getPages().map((pg) => `${Math.round(pg.getWidth())}x${Math.round(pg.getHeight())}`);
+  ok(merged.getPageCount() === 2 && sizes[0] === '300x450' && sizes[1] === '288x432', `It is a real PDF: page 1 = Amazon's PDF label (300×450), page 2 = the PNG on a 4×6 page (${sizes.join(', ')})`);
+  const why = Object.fromEntries(bl.body.skipped.map((x) => [x.id, x.reason]));
+  ok(bl.body.skipped.length === 6, `6 skipped, each with a reason (${bl.body.skipped.length})`);
+  ok(/ZPL/.test(why[l9.id] || ''), `ZPL thermal label skipped: "${why[l9.id]}"`);
+  ok(/marketplace \(FBA\)/.test(why[afn.id] || ''), `FBA order skipped: "${why[afn.id]}"`);
+  ok(/No active shipping label/.test(why[mfn1.id] || ''), `Order that never bought a label skipped: "${why[mfn1.id]}"`);
+  ok(/No active shipping label/.test(why[mfn3.id] || ''), 'Order whose label was cancelled is skipped (cancelled labels never print)');
+  ok(/not found/i.test(why[bogus] || ''), `Unknown order skipped: "${why[bogus]}"`);
+  ok(/could not be read/.test(why[l10.id] || ''), `Corrupt label file skips only that order: "${why[l10.id]}"`);
+
+  const rev = await req('POST', '/orders/labels', { token, body: { ids: [l8.id, l7.id] } });
+  const revSizes = (await PDFDocument.load(Buffer.from(rev.body.pdf, 'base64'))).getPages().map((pg) => Math.round(pg.getWidth()));
+  ok(revSizes[0] === 288 && revSizes[1] === 300, `Labels come out in the order selected (reversed selection → ${revSizes.join(', ')})`);
+  const oneLbl = await req('POST', '/orders/labels', { token, body: { ids: [l7.id] } });
+  ok(oneLbl.status === 200 && oneLbl.body.printed === 1 && oneLbl.body.skipped.length === 0, 'A single selected order works too');
+  const onlyZpl = await req('POST', '/orders/labels', { token, body: { ids: [l9.id] } });
+  ok(onlyZpl.status === 400 && onlyZpl.body.skipped?.length === 1 && !onlyZpl.body.pdf, `Only a ZPL order selected: 400 with the reason, nothing to print (${onlyZpl.status})`);
+  ok((await req('POST', '/orders/labels', { token, body: { ids: [] } })).status === 400, 'Empty selection refused');
+  const many = await req('POST', '/orders/labels', { token, body: { ids: Array.from({ length: 101 }, () => randomUUID()) } });
+  ok(many.status === 400 && /at most 100/.test(JSON.stringify(many.body)), `101 orders refused, limit is 100 (${many.status})`);
+  ok((await req('POST', '/orders/labels', { body: { ids: [l7.id] } })).status === 401, 'No login → 401');
+  const spyL = await req('POST', '/orders/labels', { token: otherToken, body: { ids: [l7.id, l8.id] } });
+  ok(spyL.status === 400 && !spyL.body.pdf && spyL.body.skipped.every((x) => /not found/i.test(x.reason)), "Another seller cannot pull your labels into their PDF");
+  const stillThere = await db('order_labels').where({ orderId: l7.id, status: 'ACTIVE' }).count({ c: '*' }).first();
+  ok(Number(stillThere.c) === 1, 'Bulk printing does not buy or change anything (label still the same single ACTIVE one)');
+  ok(callsTo(/POST \/mfn\/v0\/shipments/).filter((c) => /AMZ-MFN-7/.test(JSON.stringify(c.body))).length === 1, 'Amazon was only asked to buy order 7 once — printing never re-buys');
 
   // ── Result ───────────────────────────────────────────────────────────────
   console.log(`\n\x1b[1mResult: ${passed} passed, ${failed} failed\x1b[0m`);

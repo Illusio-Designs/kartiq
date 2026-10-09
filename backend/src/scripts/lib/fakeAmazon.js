@@ -13,12 +13,31 @@ const fake = {
   mode: 'ok',           // ok | noRates | buyFails
   goodRefreshToken: 'Atzr|GOOD',
   nextShipment: 1,
+  labelType: 'PDF',     // PDF | PNG | ZPL — what the next purchased label is
+  labels: {},           // shipmentId -> the exact bytes Amazon "sent"
   rates: [
     { id: 'svc-express', offer: 'off-express', name: 'Express', carrier: 'FastCo', amount: 140, eta: '2026-10-12T00:00:00Z' },
     { id: 'svc-cheap',   offer: 'off-cheap',   name: 'Standard', carrier: 'SlowCo', amount: 62.5, eta: '2026-10-16T00:00:00Z' },
     { id: 'svc-mid',     offer: 'off-mid',     name: 'Surface', carrier: 'MidCo',  amount: 95, eta: '2026-10-14T00:00:00Z' },
   ],
 };
+// 1×1 red PNG, for the PNG-label case.
+const TINY_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+
+// The label Amazon "returns": a real one-page PDF (300×450 pt, with the order id
+// printed on it) by default; fake.labelType switches to a PNG or ZPL label.
+async function makeLabel(n, amazonOrderId) {
+  if (fake.labelType === 'PNG') return { bytes: TINY_PNG, fileType: 'image/png' };
+  if (fake.labelType === 'ZPL') return { bytes: Buffer.from(`^XA^FO20,20^FDFAKE-LABEL-${n}^FS^XZ`), fileType: 'ZPL203' };
+  const { PDFDocument, StandardFonts } = require('pdf-lib');
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([300, 450]);
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  page.drawText(`FAKE-LABEL-${n}`, { x: 20, y: 400, size: 18, font });
+  page.drawText(String(amazonOrderId || ''), { x: 20, y: 370, size: 12, font });
+  return { bytes: Buffer.from(await doc.save()), fileType: 'application/pdf' };
+}
+
 const callsTo = (re) => fake.calls.filter((c) => re.test(`${c.method} ${c.path}`));
 
 function amazonResponse(config, status, data) {
@@ -79,16 +98,18 @@ function fakeAdapter(config) {
     }
     const chosen = fake.rates.find((r) => r.id === body.ShippingServiceId);
     const n = fake.nextShipment++;
-    const pdf = Buffer.from(`%PDF-1.4 FAKE-LABEL-${n}`);
-    return amazonResponse(config, 200, {
-      payload: {
-        ShipmentId: `SHIP-${n}`, TrackingId: `TRK${1000 + n}`, Status: 'Purchased',
-        ShippingService: {
-          CarrierName: chosen?.carrier, ShippingServiceName: chosen?.name,
-          Rate: { Amount: chosen?.amount, CurrencyCode: 'INR' },
+    return makeLabel(n, body.ShipmentRequestDetails?.AmazonOrderId).then(({ bytes, fileType }) => {
+      fake.labels[`SHIP-${n}`] = bytes;
+      return amazonResponse(config, 200, {
+        payload: {
+          ShipmentId: `SHIP-${n}`, TrackingId: `TRK${1000 + n}`, Status: 'Purchased',
+          ShippingService: {
+            CarrierName: chosen?.carrier, ShippingServiceName: chosen?.name,
+            Rate: { Amount: chosen?.amount, CurrencyCode: 'INR' },
+          },
+          Label: { FileContents: { Contents: zlib.gzipSync(bytes).toString('base64'), FileType: fileType } },
         },
-        Label: { FileContents: { Contents: zlib.gzipSync(pdf).toString('base64'), FileType: 'application/pdf' } },
-      },
+      });
     });
   }
   if (method === 'DELETE' && /^\/mfn\/v0\/shipments\//.test(path)) return amazonResponse(config, 200, { payload: {} });
