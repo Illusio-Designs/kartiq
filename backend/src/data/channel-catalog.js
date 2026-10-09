@@ -18,6 +18,13 @@ const CATALOG = [
     type: 'AMAZON',
     category: 'ECOM',
     name: 'Amazon',
+    // One Amazon card for every country. FBA and Smart Biz share the same
+    // seller account + SP-API credentials, so they are offered as add-ons on
+    // this card (see POST /channels/:id/amazon-addons) instead of separate cards.
+    addons: [
+      { type: 'AMAZON_FBA',      label: 'Amazon FBA',       description: "Fulfilment by Amazon — read FBA stock and ship orders from Amazon's warehouse", regions: null },
+      { type: 'AMAZON_SMARTBIZ', label: 'Amazon Smart Biz', description: 'D2C website orders fulfilled by Amazon MCF (India only)',                          regions: ['IN'] },
+    ],
     tagline: 'Amazon marketplaces worldwide — India, US, UK, EU, UAE, Saudi, SG, AU, JP & more',
     integrated: true,
     requiresApproval: true,
@@ -565,6 +572,7 @@ const CATALOG = [
   // ═══════════════════════════════════════════════════════════════
   {
     type: 'AMAZON_SMARTBIZ',
+    groupedUnder: 'AMAZON',
     category: 'OWNSTORE',
     name: 'Amazon Smart Biz',
     tagline: 'D2C website builder powered by Amazon MCF',
@@ -815,6 +823,7 @@ const CATALOG = [
       ...(opts.applyUrl ? { applyUrl: opts.applyUrl } : {}),
       ...(opts.docsUrl  ? { docsUrl:  opts.docsUrl  } : {}),
       ...(opts.note     ? { note:     opts.note     } : {}),
+      ...(opts.groupedUnder ? { groupedUnder: opts.groupedUnder } : {}),
     });
 
     return [
@@ -1052,6 +1061,7 @@ const CATALOG = [
 
       // ── FULFILLMENT / 3PL (new category) ───────────────────────
       pending('AMAZON_FBA',      'FULFILLMENT', 'Amazon FBA',       "Amazon's fulfillment network",      {
+        groupedUnder: 'AMAZON',
         features: ['fulfillment','tracking','inventory_sync'],
         applyUrl: 'https://sell.amazon.in/fulfillment-by-amazon',
         // Reuses platform Amazon SP-API app — same as the marketplace channels

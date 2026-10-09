@@ -552,6 +552,8 @@ export const channelApi = {
     api.post('/channels', data),
   update: (id: string, data: any) => api.put(`/channels/${id}`, data),
   delete: (id: string) => api.delete(`/channels/${id}`),
+  // Enable FBA / Smart Biz on a connected Amazon channel (reuses its credentials)
+  amazonAddons: (id: string, types: string[]) => api.post(`/channels/${id}/amazon-addons`, { types }),
 
   // Global catalog — all channels in the market + connection status
   catalog: (params?: { category?: string }) => api.get('/channels/catalog', { params }),

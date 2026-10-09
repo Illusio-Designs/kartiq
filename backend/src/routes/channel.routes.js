@@ -3,7 +3,7 @@ const {
   authenticate, requireTenant, requirePermission, requireFeature, enforceLimit,
 } = require('../middleware/auth.middleware');
 const prisma = require('../utils/prisma');
-const { encryptCredentials, maskCredentials } = require('../utils/crypto');
+const { encryptCredentials, decryptCredentials, maskCredentials } = require('../utils/crypto');
 const { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, importCatalogFromChannel, syncChannelSettlements, listChannelSettlements, syncChannelReturns, listChannelReturns, ensureDefaultWarehouse } = require('../services/channel.service');
 const { CATALOG, getCatalogEntry, getCatalogByCategory } = require('../data/channel-catalog');
 
@@ -71,13 +71,20 @@ router.get('/catalog', requirePermission('channels.read'), async (req, res) => {
     const [userChannels, userRequests] = await Promise.all([
       prisma.channel.findMany({
         where: { tenantId, isActive: true },
-        select: { id: true, name: true, type: true, lastSyncAt: true },
+        select: { id: true, name: true, type: true, lastSyncAt: true, credentials: true },
       }),
       prisma.channelRequest.findMany({
         where: { tenantId, requestedBy: req.user.id },
         select: { id: true, type: true, status: true, createdAt: true },
       }),
     ]);
+
+    // Region of the connected Amazon account (decrypted server-side only) so the
+    // UI can offer region-specific add-ons such as Smart Biz (India only).
+    let amazonRegion = null;
+    const amazonCh = userChannels.find((c) => c.type === 'AMAZON' && c.credentials);
+    if (amazonCh) { try { amazonRegion = String(decryptCredentials(amazonCh.credentials)?.region || 'IN').toUpperCase(); } catch { /* ignore */ } }
+    for (const ch of userChannels) delete ch.credentials; // never leave this handler
 
     const channelsByType = {};
     for (const ch of userChannels) {
@@ -109,6 +116,10 @@ router.get('/catalog', requirePermission('channels.read'), async (req, res) => {
         requiredPlan,
         connectedChannels: connected,
         pendingRequest: requestByType[entry.type] || null,
+        ...(entry.addons ? {
+          region: amazonRegion,
+          addons: entry.addons.map((a) => ({ ...a, connectedChannels: channelsByType[a.type] || [] })),
+        } : {}),
       };
     });
 
@@ -352,6 +363,56 @@ router.post('/',
       ensureDefaultWarehouse(req.tenant.id).catch((e) =>
         console.warn('[channel.create] ensureDefaultWarehouse:', e.message));
       res.status(201).json(safeChannel(ch));
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  }
+);
+
+// Amazon add-ons — FBA and Smart Biz share the marketplace's seller account and
+// SP-API credentials, so instead of a second OAuth round-trip we create the
+// add-on channel and copy the (re-encrypted) credentials from the parent
+// AMAZON channel. Smart Biz is India-only.
+router.post('/:id/amazon-addons',
+  requirePermission('channels.create'),
+  async (req, res) => {
+    try {
+      const parent = await loadTenantChannel(req);
+      if (!parent || parent.type !== 'AMAZON') return res.status(404).json({ error: 'Amazon channel not found' });
+      if (!parent.credentials) return res.status(400).json({ error: 'Connect the Amazon account first' });
+
+      const creds = decryptCredentials(parent.credentials);
+      const region = String(creds?.region || 'IN').toUpperCase();
+      const parentEntry = getCatalogEntry('AMAZON');
+      const types = [...new Set(Array.isArray(req.body?.types) ? req.body.types : [])];
+      const isPlatformAdmin = !!req.user?.isPlatformAdmin;
+
+      const created = [];
+      for (const type of types) {
+        const addon = (parentEntry.addons || []).find((a) => a.type === type);
+        if (!addon) return res.status(400).json({ error: `${type} is not an Amazon add-on` });
+        if (addon.regions && !addon.regions.includes(region)) {
+          return res.status(400).json({ error: `${addon.label} is only available for ${addon.regions.join(', ')} sellers` });
+        }
+        const category = getCategoryForType(type);
+        if (!isPlatformAdmin && !isCategoryAllowed(req, category)) {
+          const requiredPlan = CATEGORY_PLAN_HINT[category] || 'STANDARD';
+          return res.status(402).json({ error: `${addon.label} requires the ${requiredPlan} plan or higher`, requiredPlan, currentPlan: getTenantPlanCode(req) });
+        }
+        const existing = await prisma.channel.findFirst({ where: { tenantId: req.tenant.id, type, isActive: true } });
+        if (existing) { created.push(safeChannel(existing)); continue; }
+        const ch = await prisma.channel.create({
+          data: {
+            tenantId: req.tenant.id,
+            name: `${parent.name} – ${addon.label}`,
+            type,
+            category,
+            credentials: encryptCredentials(creds),
+          },
+        });
+        created.push(safeChannel(ch));
+      }
+      res.status(201).json({ channels: created });
     } catch (err) {
       res.status(400).json({ error: err.message });
     }
