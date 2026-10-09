@@ -204,6 +204,14 @@ function getCategoryForType(type) {
 // ── Adapter factory ──────────────────────────────────────────────────────────
 
 function getAdapter(channel) {
+  // Demo channel (demo tenant only): the built-in fake Amazon — no network, no
+  // money. Needs DEMO_MODE_ENABLED=true on the server; otherwise it refuses
+  // rather than silently talking to real Amazon with fake credentials.
+  if (channel.isDemo) {
+    if (process.env.DEMO_MODE_ENABLED !== 'true') throw new Error('Demo mode is not enabled on this server');
+    return new (require('./channels/ecom/amazon-demo'))();
+  }
+
   let creds = channel.credentials;
 
   // Manual channels (OFFLINE/POS/WHOLESALE/DISTRIBUTOR/OTHER) need no

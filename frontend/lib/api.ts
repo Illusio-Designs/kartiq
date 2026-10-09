@@ -199,6 +199,10 @@ export const adminApi = {
   activateTenant: (id: string) => api.post(`/admin/tenants/${id}/activate`, {}),
   restoreTenant: (id: string) => api.post(`/admin/tenants/${id}/restore`, {}),
   assignPlan: (id: string, data: any) => api.post(`/admin/tenants/${id}/assign-plan`, data),
+  // Demo mode: a sandbox tenant with a fake Amazon, for click-through testing on a live site
+  demoStatus: () => api.get('/admin/demo'),
+  demoSetup: (data: { email?: string; password?: string; businessName?: string }) => api.post('/admin/demo/setup', data),
+  demoReset: () => api.post('/admin/demo/reset', {}),
   // subscriptions
   subscriptions: () => api.get('/admin/subscriptions'),
   // blog
