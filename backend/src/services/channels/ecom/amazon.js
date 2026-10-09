@@ -774,16 +774,29 @@ class AmazonAdapter {
     };
   }
 
+  // Buy Shipping calls go through axios directly (not _request), so surface
+  // Amazon's own error text ("Address could not be verified") instead of
+  // axios's generic "Request failed with status code 400".
+  _mfnError(op, err) {
+    const status = err.response?.status;
+    const body = err.response?.data;
+    const msg = body?.errors?.[0]?.message || body?.errors?.[0]?.code || body?.message || err.message;
+    return new Error(`Amazon Buy Shipping ${op} failed (${status || '?'}): ${msg}`);
+  }
+
   // Get eligible Amazon-partnered shipping services (rates) for an order.
   async getMfnRates(amazonOrderId, opts = {}) {
     const itemList = opts.itemList || await this._getAmazonOrderItemList(amazonOrderId);
     const ShipmentRequestDetails = this._buildShipmentRequestDetails(amazonOrderId, itemList, opts);
     const token = await this._getAccessToken();
-    const { data } = await axios.post(
-      `${this.endpoint}/mfn/v0/eligibleShippingServices`,
-      { ShipmentRequestDetails },
-      { headers: { 'x-amz-access-token': token, 'Content-Type': 'application/json' } }
-    );
+    let data;
+    try {
+      ({ data } = await axios.post(
+        `${this.endpoint}/mfn/v0/eligibleShippingServices`,
+        { ShipmentRequestDetails },
+        { headers: { 'x-amz-access-token': token, 'Content-Type': 'application/json' } }
+      ));
+    } catch (err) { throw this._mfnError('rates', err); }
     const list = data.payload?.ShippingServiceList || [];
     return list.map((sv) => ({
       serviceId: sv.ShippingServiceId,
@@ -808,11 +821,14 @@ class AmazonAdapter {
     if (opts.shippingServiceOfferId) body.ShippingServiceOfferId = opts.shippingServiceOfferId;
 
     const token = await this._getAccessToken();
-    const { data } = await axios.post(
-      `${this.endpoint}/mfn/v0/shipments`,
-      body,
-      { headers: { 'x-amz-access-token': token, 'Content-Type': 'application/json' } }
-    );
+    let data;
+    try {
+      ({ data } = await axios.post(
+        `${this.endpoint}/mfn/v0/shipments`,
+        body,
+        { headers: { 'x-amz-access-token': token, 'Content-Type': 'application/json' } }
+      ));
+    } catch (err) { throw this._mfnError('purchase', err); }
     const p = data.payload || {};
     const fc = p.Label?.FileContents;
     let labelBase64 = null;

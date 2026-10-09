@@ -41,6 +41,13 @@ async function initDb() {
     { table: 'orders', column: 'enrichedAt',       ddl: 'DATETIME(3) DEFAULT NULL' },
     { table: 'orders', column: 'enrichedById',     ddl: 'VARCHAR(191) DEFAULT NULL' },
 
+    // Amazon "auto-book courier": when ON, confirming an Amazon MFN order buys
+    // the cheapest Amazon Buy Shipping rate automatically and stores the label.
+    { table: 'channels', column: 'autoBookShipping', ddl: 'TINYINT(1) NOT NULL DEFAULT 0' },
+    // Why the last automatic booking failed (cleared on success) — shown on the
+    // order with a Retry action.
+    { table: 'orders',   column: 'shippingError',    ddl: 'TEXT DEFAULT NULL' },
+
     // Per-channel default fulfillment (SELF | CHANNEL | BOTH)
     { table: 'channels', column: 'defaultFulfillmentType', ddl: "VARCHAR(16) NOT NULL DEFAULT 'SELF'" },
 
@@ -211,6 +218,27 @@ async function initDb() {
       UNIQUE KEY \`pm_provider_token_unique\` (\`tenantId\`, \`providerTokenId\`),
       KEY \`pm_tenant_idx\` (\`tenantId\`, \`isActive\`),
       KEY \`pm_default_idx\` (\`tenantId\`, \`isDefault\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+    // Shipping labels bought for an order (Amazon Buy Shipping). The label file
+    // is kept (base64) so it can be reprinted any time. One ACTIVE label per
+    // order; a cancelled label is kept for history with status='CANCELLED'.
+    `CREATE TABLE IF NOT EXISTS \`order_labels\` (
+      \`id\` varchar(191) NOT NULL,
+      \`tenantId\` varchar(191) NOT NULL,
+      \`orderId\` varchar(191) NOT NULL,
+      \`channelId\` varchar(191) DEFAULT NULL,
+      \`shipmentId\` varchar(191) DEFAULT NULL,
+      \`trackingNumber\` varchar(191) DEFAULT NULL,
+      \`carrier\` varchar(191) DEFAULT NULL,
+      \`serviceName\` varchar(191) DEFAULT NULL,
+      \`cost\` decimal(10,2) DEFAULT NULL,
+      \`currency\` varchar(8) DEFAULT NULL,
+      \`mime\` varchar(64) DEFAULT NULL,
+      \`content\` longtext DEFAULT NULL,
+      \`status\` varchar(16) NOT NULL DEFAULT 'ACTIVE',
+      \`createdAt\` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+      PRIMARY KEY (\`id\`),
+      KEY \`ol_order_idx\` (\`tenantId\`, \`orderId\`, \`status\`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
     // Channel settlements / payouts — e.g. Amazon SP-API financialEventGroups.
     // One row per settlement group (payout) so the dashboard can reconcile what

@@ -4,6 +4,7 @@ const {
 } = require('../middleware/auth.middleware');
 const prisma = require('../utils/prisma');
 const { encryptCredentials, maskCredentials } = require('../utils/crypto');
+const { recordPurchasedLabel } = require('../services/amazonShipping.service');
 const { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, importCatalogFromChannel, syncChannelSettlements, listChannelSettlements, syncChannelReturns, listChannelReturns, ensureDefaultWarehouse } = require('../services/channel.service');
 const { CATALOG, getCatalogEntry, getCatalogByCategory } = require('../data/channel-catalog');
 
@@ -363,12 +364,13 @@ router.put('/:id', requirePermission('channels.update'), async (req, res) => {
     const existing = await loadTenantChannel(req);
     if (!existing) return res.status(404).json({ error: 'Channel not found' });
 
-    const { name, isActive, defaultFulfillmentType } = req.body;
+    const { name, isActive, defaultFulfillmentType, autoBookShipping } = req.body;
     // Whitelist updatable fields; only include what was actually sent so a
     // partial PATCH-style body doesn't null out untouched columns.
     const data = {};
     if (name !== undefined) data.name = name;
     if (isActive !== undefined) data.isActive = isActive;
+    if (autoBookShipping !== undefined) data.autoBookShipping = !!autoBookShipping;
     if (defaultFulfillmentType !== undefined) {
       if (!['SELF', 'CHANNEL'].includes(defaultFulfillmentType)) {
         return res.status(400).json({ error: 'defaultFulfillmentType must be SELF or CHANNEL' });
@@ -871,23 +873,9 @@ router.post('/:id/amazon/mfn/buy', requirePermission('shipments.create'), async 
       shipFrom, weight: req.body.weight, dimensions: req.body.dimensions, declaredValue: req.body.declaredValue,
       shippingServiceId: req.body.shippingServiceId, shippingServiceOfferId: req.body.shippingServiceOfferId,
     });
-    // Buying the label registers + confirms the shipment on Amazon, so advance
-    // the local order to SHIPPED with the tracking Amazon assigned.
-    if (result.trackingId) {
-      await prisma.order.update({
-        where: { id: order.id },
-        data: {
-          trackingNumber: result.trackingId,
-          courierName: result.carrier || 'Amazon',
-          channelShipmentId: result.shipmentId || null,
-          status: 'SHIPPED',
-          shippedAt: new Date(),
-          // Buying the label ships the order — the RTO review gate is moot now,
-          // so clear it to avoid the "NEEDS REVIEW" badge masking a SHIPPED status.
-          needsApproval: false,
-        },
-      }).catch(() => {});
-    }
+    // Buying the label registers + confirms the shipment on Amazon: store the
+    // label (so it can be reprinted), advance the order to SHIPPED, move stock.
+    await recordPurchasedLabel(order, channel.id, result);
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: 'Buy shipping failed', details: err.message });
@@ -903,6 +891,10 @@ router.delete('/:id/amazon/mfn/:shipmentId', requirePermission('shipments.create
       return res.status(400).json({ error: 'This channel does not support Amazon Buy Shipping' });
     }
     const result = await adapter.cancelMfnShipping(req.params.shipmentId);
+    // Keep our stored label in step with Amazon (history kept, no longer active).
+    await require('../utils/db')('order_labels')
+      .where({ tenantId: req.tenant.id, shipmentId: req.params.shipmentId })
+      .update({ status: 'CANCELLED' }).catch(() => {});
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
