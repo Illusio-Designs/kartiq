@@ -37,12 +37,6 @@ Legend: ☐ untouched · 🟡 code wired & ready, awaiting smoke-test · ✅ smo
 | Done | Channel | Apply URL |
 |---|---|---|
 | 🟡 | Walmart | https://marketplace.walmart.com |
-| 🟡 | Amazon UK | https://sellercentral.amazon.co.uk |
-| 🟡 | Amazon UAE | https://sellercentral.amazon.ae |
-| 🟡 | Amazon Saudi Arabia | https://sellercentral.amazon.sa |
-| 🟡 | Amazon Singapore | https://sellercentral.amazon.sg |
-| 🟡 | Amazon Australia | https://sellercentral.amazon.com.au |
-| 🟡 | Amazon Germany | https://sellercentral.amazon.de |
 | 🟡 | Lazada | https://open.lazada.com/apps |
 | 🟡 | Shopee | https://open.shopee.com |
 | 🟡 | Noon | https://partners.noon.com |
