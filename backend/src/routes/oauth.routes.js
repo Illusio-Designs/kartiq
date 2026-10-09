@@ -104,17 +104,6 @@ router.get('/amazon/start',
       const isGeneric = channel.type === 'AMAZON' || channel.type === 'AMAZON_SMARTBIZ';
       const region = isGeneric ? String(req.query.region || inferredRegion) : inferredRegion;
 
-      // Demo tenant: instead of Amazon's real consent screen, send the seller to
-      // Kartriq's fake one (a page that looks like "Authorize this app" and, on
-      // click, marks the demo channel connected). No Amazon app/keys involved.
-      if (channel.isDemo) {
-        if (!(await require('../services/demo.service').isDemoTenant(req.tenant.id))) {
-          return res.status(403).json({ error: 'Demo mode is not enabled on this server' });
-        }
-        const base = String(process.env.FRONTEND_URL || req.headers.origin || '').replace(/\/$/, '');
-        return res.json({ url: `${base}/demo/amazon-consent?channelId=${encodeURIComponent(channel.id)}`, state: 'demo', region });
-      }
-
       const [appId, redirectUri] = await Promise.all([
         settings.get('amazon.appId'),
         settings.get('amazon.redirectUri'),
@@ -148,19 +137,6 @@ router.get('/amazon/start',
   }
 );
 
-// POST /api/v1/oauth/amazon/demo-authorize { channelId }
-// The "Authorize" click on the FAKE consent page. Demo tenant + demo mode only.
-router.post('/amazon/demo-authorize',
-  authenticate, requireTenant, requirePermission('channels.update'),
-  async (req, res) => {
-    try {
-      res.json(await require('../services/demo.service').completeDemoConnect(String(req.body?.channelId || ''), req.tenant.id));
-    } catch (err) {
-      res.status(err.status || 500).json({ error: err.message });
-    }
-  }
-);
-
 // GET /api/v1/oauth/amazon/status?channelId=xxx
 // Polled by the frontend popup-opener while the user completes consent.
 router.get('/amazon/status',
@@ -168,12 +144,15 @@ router.get('/amazon/status',
   async (req, res) => {
     const channel = await prisma.channel.findFirst({
       where: { id: String(req.query.channelId || ''), tenantId: req.tenant.id },
-      select: { id: true, credentials: true, syncError: true },
+      select: { id: true, credentials: true, syncError: true, authorizedAt: true },
     });
     if (!channel) return res.status(404).json({ error: 'Channel not found' });
     res.json({
       connected: !!channel.credentials,
       error: channel.syncError || null,
+      // Set each time the seller finishes authorising — the UI compares it with
+      // when it opened Amazon, so "Re-authorise" knows when the new consent landed.
+      authorizedAt: channel.authorizedAt || null,
     });
   }
 );
@@ -226,6 +205,7 @@ router.get('/amazon/callback', async (req, res) => {
         credentials: encryptCredentials(creds),
         syncError: null,
         lastSyncAt: null,
+        authorizedAt: new Date(),
       },
     });
 

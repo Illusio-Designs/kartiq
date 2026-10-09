@@ -5,7 +5,8 @@ const {
   authenticate, requireTenant, requirePermission, requireFeature,
 } = require('../middleware/auth.middleware');
 const { requestReviewForOrder, processReviewQueue, REVIEW_DELAY_HOURS } = require('../services/review.service');
-const { autoBookAmazonShipping, getActiveLabel, cancelOrderLabel, buildBulkLabelsPdf, bookShippingBulk } = require('../services/amazonShipping.service');
+const { buildBulkLabelsPdf } = require('../services/amazonShipping.service');
+const shipment = require('../services/shipping/shipment.service');
 const { buildPackingSlip, buildBulkPackingSlips } = require('../services/packingSlip.service');
 const { rankWarehouses, pickBestWarehouse } = require('../services/routing.service');
 const { scoreAndPersist } = require('../services/rto.service');
@@ -37,10 +38,10 @@ router.post('/packing-slips', requirePermission('orders.read'), async (req, res)
 
 // ── Bulk "Confirm & get label" — MUST be declared before /:id routes ─────────
 // body: { ids: string[] } (max 50). Books the Amazon courier for each order,
-// one by one, and returns each order's own outcome.
+// one by one (Amazon or the seller's own courier), and returns each order's own outcome.
 router.post('/book-shipping', requirePermission('shipments.create'), async (req, res) => {
   try {
-    const r = await bookShippingBulk(req.body?.ids, req.tenant.id);
+    const r = await shipment.confirmBulk(req.body?.ids, req.tenant.id);
     if (r.error) return res.status(r.status).json({ error: r.error });
     res.json(r);
   } catch (err) {
@@ -228,12 +229,6 @@ router.post('/:id/approve', requirePermission('orders.update'), async (req, res)
         status: 'CONFIRMED',
       },
     });
-    // Approving is a confirmation too — auto-book the Amazon courier if enabled.
-    const shipping = await autoBookAmazonShipping(updated.id, { tenantId: req.tenant.id });
-    if (shipping.booked || shipping.error) {
-      const fresh = await prisma.order.findFirst({ where: { id: updated.id, tenantId: req.tenant.id } });
-      return res.json({ ...(fresh || updated), shipping });
-    }
     res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -254,51 +249,76 @@ router.get('/:id/packing-slip', requirePermission('orders.read'), async (req, re
   }
 });
 
-// ── Amazon auto-booked shipping label ────────────────────────────────────────
-// Retry the automatic booking (e.g. after fixing the warehouse address). Works
-// even if the channel's auto-book switch is off — the seller asked explicitly.
+// ── Confirm → label → shipment status ────────────────────────────────────────
+// Confirm: books the courier (Amazon or the seller's own courier partner) and saves the label.
 router.post('/:id/book-shipping', requirePermission('shipments.create'), async (req, res) => {
-  const result = await autoBookAmazonShipping(req.params.id, { tenantId: req.tenant.id, force: true });
+  const result = await shipment.confirmOrder(req.params.id, { tenantId: req.tenant.id });
   if (result.error) return res.status(400).json(result);
+  if (result.notFound) return res.status(404).json(result);
   if (!result.booked) return res.status(409).json(result);
   res.json(result);
 });
 
-// Download / print the stored label (PDF/PNG/ZPL as originally bought).
+// Download / print the label (fetched from the courier the first time, then kept).
 router.get('/:id/label', requirePermission('shipments.read'), async (req, res) => {
   try {
     const order = await prisma.order.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    const label = await getActiveLabel(order.id, req.tenant.id);
-    if (!label || !label.content) return res.status(404).json({ error: 'No label saved for this order' });
-    if (req.query.format === 'meta') {
+    if (req.query.format === 'meta') { // cheap: never fetches the file from the courier
+      const l = await require('../services/amazonShipping.service').getActiveLabel(order.id, req.tenant.id);
+      if (!l) return res.status(404).json({ error: 'No label for this order yet' });
       return res.json({
-        id: label.id, trackingNumber: label.trackingNumber, carrier: label.carrier, serviceName: label.serviceName,
-        cost: label.cost, currency: label.currency, mime: label.mime, createdAt: label.createdAt,
+        id: l.id, trackingNumber: l.trackingNumber, carrier: l.carrier, serviceName: l.serviceName, cost: l.cost, currency: l.currency,
+        mime: l.mime, createdAt: l.createdAt, available: !!(l.content || l.url || l.carrier === 'Amazon Easy Ship'),
       });
     }
+    const f = await shipment.getLabelFile(order.id, req.tenant.id);
+    if (f.error) return res.status(f.status || 404).json({ error: f.error });
+    const l = f.label;
     if (req.query.format === 'json') {
-      return res.json({
-        id: label.id, trackingNumber: label.trackingNumber, carrier: label.carrier, serviceName: label.serviceName,
-        cost: label.cost, currency: label.currency, mime: label.mime, contentBase64: label.content, createdAt: label.createdAt,
-      });
+      return res.json({ id: l.id, trackingNumber: l.trackingNumber, carrier: l.carrier, serviceName: l.serviceName, cost: l.cost, currency: l.currency, mime: f.mime, contentBase64: f.buffer.toString('base64'), createdAt: l.createdAt });
     }
-    res.setHeader('Content-Type', label.mime || 'application/pdf');
+    res.setHeader('Content-Type', f.mime);
     res.setHeader('Content-Disposition', `inline; filename="label-${order.orderNumber || order.id}"`);
-    res.send(Buffer.from(label.content, 'base64'));
+    res.send(f.buffer);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Void the label on Amazon (refund) and keep the record as CANCELLED.
+// Cancel the booking (only until the courier picks the parcel up).
 router.delete('/:id/label', requirePermission('shipments.create'), async (req, res) => {
+  try {
+    const r = await shipment.cancelBooking(req.params.id, req.tenant.id);
+    if (!r.cancelled) return res.status(r.status || 400).json(r);
+    res.json(r);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Ask the courier for the latest status now (it also updates by itself every ~10 minutes).
+router.post('/:id/shipment/refresh', requirePermission('shipments.read'), async (req, res) => {
+  try {
+    const r = await shipment.refreshShipment(req.params.id, { tenantId: req.tenant.id });
+    if (r.error && !r.status) return res.status(404).json(r);
+    res.json(r);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Timeline: Booked → Pickup scheduled → … with times.
+router.get('/:id/shipment', requirePermission('shipments.read'), async (req, res) => {
   try {
     const order = await prisma.order.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    const result = await cancelOrderLabel(order.id, req.tenant.id);
-    if (!result.cancelled) return res.status(404).json(result);
-    res.json(result);
+    const events = await shipment.getHistory(order.id, req.tenant.id);
+    res.json({
+      status: order.shipmentStatus || null, statusAt: order.shipmentStatusAt || null, provider: order.shipmentProvider || null,
+      trackingNumber: order.trackingNumber || null, courierName: order.courierName || null, error: order.shippingError || null,
+      canCancel: !!order.shipmentStatus && shipment.CANCELLABLE.includes(order.shipmentStatus), events,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

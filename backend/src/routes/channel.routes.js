@@ -5,7 +5,6 @@ const {
 const prisma = require('../utils/prisma');
 const db = require('../utils/db');
 const { encryptCredentials, decryptCredentials, maskCredentials } = require('../utils/crypto');
-const { recordPurchasedLabel } = require('../services/amazonShipping.service');
 const { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, importCatalogFromChannel, syncChannelSettlements, listChannelSettlements, syncChannelReturns, listChannelReturns, ensureDefaultWarehouse } = require('../services/channel.service');
 const { CATALOG, getCatalogEntry, getCatalogByCategory } = require('../data/channel-catalog');
 
@@ -49,8 +48,31 @@ function isCategoryAllowed(req, category) {
 }
 
 // Strip encrypted creds from channel objects before sending to client
+// Amazon refuses a refresh token the seller revoked/expired ("invalid grant"):
+// that connection needs the seller to authorise again (Re-authorise button).
+const REAUTH_RE = /invalid[_ ]?grant|revoked|refresh[_ ]?token|unauthori[sz]ed|access[_ ]?denied|invalid_client|\b(401|403)\b/i;
+function reauthInfo(ch) {
+  if (!ch || !String(ch.type || '').toUpperCase().includes('AMAZON') || !ch.syncError) return { needsReauth: false };
+  if (!REAUTH_RE.test(String(ch.syncError))) return { needsReauth: false };
+  return {
+    needsReauth: true,
+    reauthReason: 'Amazon stopped accepting this connection — usually because access was removed in Seller Central or the permission expired. Authorise again to keep syncing orders.',
+  };
+}
+
 function safeChannel(ch) {
-  return { ...ch, credentials: maskCredentials(ch.credentials) };
+  return { ...ch, credentials: maskCredentials(ch.credentials), ...reauthInfo(ch) };
+}
+
+// "I use my own courier" needs a courier that is already connected under Channels.
+async function validateCourierPartner(tenantId, id) {
+  if (!id) return 'Choose which courier partner you use';
+  const c = await prisma.channel.findFirst({ where: { id, tenantId } });
+  if (!c || c.category !== 'LOGISTICS') return 'That courier is not one of your channels';
+  if (!c.credentials) return `Connect ${c.name} under Channels first, then choose it here`;
+  const supported = ['ITHINK', 'SHIPROCKET', 'DELHIVERY', 'XPRESSBEES'];
+  if (!supported.includes(c.type)) return `${c.name} is not supported for automatic booking yet — pick iThink, Shiprocket, Delhivery or Xpressbees`;
+  return null;
 }
 
 // Helper: load a channel and verify tenant ownership
@@ -355,13 +377,6 @@ router.post('/',
           category: resolvedCategory,
         },
       });
-      // Demo tenant (demo mode on): its Amazon channel is a DEMO channel, backed by
-      // the built-in fake Amazon. Decided here from the tenant — never from the
-      // request body — so no seller can opt into it.
-      if (type === 'AMAZON' && await require('../services/demo.service').isDemoTenant(req.tenant.id)) {
-        await db('channels').where({ id: ch.id }).update({ isDemo: 1 });
-        ch.isDemo = 1;
-      }
       // Ensure the tenant has a real warehouse to fulfil self-shipped (MFN)
       // orders from and to hold merchant-fulfilled stock — so connecting a
       // channel immediately gives inventory somewhere real to live.
@@ -429,13 +444,28 @@ router.put('/:id', requirePermission('channels.update'), async (req, res) => {
     const existing = await loadTenantChannel(req);
     if (!existing) return res.status(404).json({ error: 'Channel not found' });
 
-    const { name, isActive, defaultFulfillmentType, autoBookShipping } = req.body;
+    const { name, isActive, defaultFulfillmentType, mfnShipping, shippingProviderId } = req.body;
     // Whitelist updatable fields; only include what was actually sent so a
     // partial PATCH-style body doesn't null out untouched columns.
     const data = {};
     if (name !== undefined) data.name = name;
     if (isActive !== undefined) data.isActive = isActive;
-    if (autoBookShipping !== undefined) data.autoBookShipping = !!autoBookShipping;
+    // How orders the seller ships themselves (MFN) get their courier + label:
+    // AMAZON = Amazon arranges it, OWN = the seller's own connected courier partner.
+    if (mfnShipping !== undefined) {
+      const m = String(mfnShipping).toUpperCase();
+      if (!['AMAZON', 'OWN'].includes(m)) return res.status(400).json({ error: 'mfnShipping must be AMAZON or OWN' });
+      data.mfnShipping = m;
+      if (m === 'AMAZON') data.shippingProviderId = null;
+    }
+    if (shippingProviderId !== undefined && data.mfnShipping !== 'AMAZON') {
+      data.shippingProviderId = shippingProviderId || null;
+    }
+    if ((data.mfnShipping || existing.mfnShipping) === 'OWN') {
+      const pid = data.shippingProviderId !== undefined ? data.shippingProviderId : existing.shippingProviderId;
+      const err = await validateCourierPartner(req.tenant.id, pid);
+      if (err) return res.status(400).json({ error: err });
+    }
     if (defaultFulfillmentType !== undefined) {
       if (!['SELF', 'CHANNEL'].includes(defaultFulfillmentType)) {
         return res.status(400).json({ error: 'defaultFulfillmentType must be SELF or CHANNEL' });
@@ -478,15 +508,13 @@ router.post('/:id/connect', requirePermission('channels.update'), async (req, re
     const channel = await loadTenantChannel(req);
     if (!channel) return res.status(404).json({ error: 'Channel not found' });
 
-    // A demo channel never stores what was typed (it must not become a place real
-    // keys get pasted); it is marked connected with a harmless placeholder.
-    const encrypted = encryptCredentials(channel.isDemo ? { demo: true } : req.body);
+    const encrypted = encryptCredentials(req.body);
     const updated = await prisma.channel.update({
       where: { id: req.params.id },
-      data: { credentials: encrypted, syncError: null },
+      data: { credentials: encrypted, syncError: null, authorizedAt: new Date() },
     });
 
-    const adapter = getAdapter({ ...updated, credentials: channel.isDemo ? { demo: true } : req.body });
+    const adapter = getAdapter({ ...updated, credentials: req.body });
     const result = await adapter.testConnection();
 
     res.json({ message: 'Channel connected successfully', connection: result });
@@ -879,108 +907,6 @@ router.get('/:id/returns', requirePermission('channels.read'), requireFeature('r
     if (!channel) return res.status(404).json({ error: 'Channel not found' });
     const returns = await listChannelReturns(channel.id, { tenantId: req.tenant.id, limit: req.query.limit });
     res.json({ returns, total: returns.length });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── Amazon Buy Shipping (Merchant Fulfillment, /mfn/v0) ────────────────────
-// Seller-fulfilled label purchase for an MFN order. Resolves the Amazon order
-// id + ship-from warehouse from our records, then rates / buys / cancels.
-async function loadOrderAndShipFrom(req) {
-  const tenantId = req.tenant.id;
-  const order = await prisma.order.findFirst({ where: { id: req.body.orderId, tenantId } });
-  if (!order) return { error: 'Order not found' };
-  if (!order.channelOrderId) return { error: 'Order has no Amazon order id' };
-  let shipFrom = {};
-  if (req.body.warehouseId) {
-    const wh = await prisma.warehouse.findFirst({ where: { id: req.body.warehouseId, tenantId } });
-    if (wh) {
-      const a = wh.address || {};
-      shipFrom = {
-        name: wh.name, line1: a.line1, line2: a.line2, city: a.city,
-        state: a.state, pincode: a.pincode, country: a.country || 'IN',
-        phone: wh.phone || a.phone, email: a.email,
-      };
-    }
-  }
-  return { order, shipFrom };
-}
-
-router.post('/:id/amazon/mfn/rates', requirePermission('shipments.create'), async (req, res) => {
-  try {
-    const channel = await loadTenantChannel(req);
-    if (!channel) return res.status(404).json({ error: 'Channel not found' });
-    const adapter = getAdapter(channel);
-    if (typeof adapter.getMfnRates !== 'function') {
-      return res.status(400).json({ error: 'This channel does not support Amazon Buy Shipping' });
-    }
-    const { order, shipFrom, error } = await loadOrderAndShipFrom(req);
-    if (error) return res.status(404).json({ error });
-    const rates = await adapter.getMfnRates(order.channelOrderId, {
-      shipFrom, weight: req.body.weight, dimensions: req.body.dimensions, declaredValue: req.body.declaredValue,
-    });
-    res.json({ rates });
-  } catch (err) {
-    res.status(500).json({ error: 'Rate lookup failed', details: err.message });
-  }
-});
-
-router.post('/:id/amazon/mfn/buy', requirePermission('shipments.create'), async (req, res) => {
-  try {
-    const channel = await loadTenantChannel(req);
-    if (!channel) return res.status(404).json({ error: 'Channel not found' });
-    const adapter = getAdapter(channel);
-    if (typeof adapter.buyMfnShipping !== 'function') {
-      return res.status(400).json({ error: 'This channel does not support Amazon Buy Shipping' });
-    }
-    const { order, shipFrom, error } = await loadOrderAndShipFrom(req);
-    if (error) return res.status(404).json({ error });
-    const result = await adapter.buyMfnShipping(order.channelOrderId, {
-      shipFrom, weight: req.body.weight, dimensions: req.body.dimensions, declaredValue: req.body.declaredValue,
-      shippingServiceId: req.body.shippingServiceId, shippingServiceOfferId: req.body.shippingServiceOfferId,
-    });
-    // Buying the label registers + confirms the shipment on Amazon: store the
-    // label (so it can be reprinted), advance the order to SHIPPED, move stock.
-    await recordPurchasedLabel(order, channel.id, result);
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: 'Buy shipping failed', details: err.message });
-  }
-});
-
-router.delete('/:id/amazon/mfn/:shipmentId', requirePermission('shipments.create'), async (req, res) => {
-  try {
-    const channel = await loadTenantChannel(req);
-    if (!channel) return res.status(404).json({ error: 'Channel not found' });
-    const adapter = getAdapter(channel);
-    if (typeof adapter.cancelMfnShipping !== 'function') {
-      return res.status(400).json({ error: 'This channel does not support Amazon Buy Shipping' });
-    }
-    const result = await adapter.cancelMfnShipping(req.params.shipmentId);
-    // Keep our stored label in step with Amazon (history kept, no longer active).
-    const lbl = await require('../utils/db')('order_labels')
-      .where({ tenantId: req.tenant.id, shipmentId: req.params.shipmentId, status: 'ACTIVE' }).first();
-    let orderReverted = false;
-    if (lbl) {
-      // Same behaviour as cancelling from the order page: void locally and take
-      // the order back from SHIPPED. (Amazon was already told above.)
-      await require('../utils/db')('order_labels').where({ id: lbl.id }).update({ status: 'CANCELLED' });
-      const order = await prisma.order.findFirst({ where: { id: lbl.orderId, tenantId: req.tenant.id } });
-      if (order && order.trackingNumber && order.trackingNumber === lbl.trackingNumber
-          && !['DELIVERED', 'RETURNED', 'CANCELLED'].includes(order.status)) {
-        const upd = await prisma.order.update({
-          where: { id: order.id },
-          data: {
-            ...(order.status === 'SHIPPED' ? { status: 'CONFIRMED' } : {}),
-            trackingNumber: null, courierName: null, channelShipmentId: null, shippedAt: null,
-          },
-        });
-        await require('../services/stock.service').unshipOrderStock({ ...upd, stockStatus: order.stockStatus });
-        orderReverted = true;
-      }
-    }
-    res.json({ ...result, orderReverted });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

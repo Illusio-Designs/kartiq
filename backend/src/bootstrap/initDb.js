@@ -44,11 +44,24 @@ async function initDb() {
     // Amazon "auto-book courier": when ON, confirming an Amazon MFN order buys
     // the cheapest Amazon Buy Shipping rate automatically and stores the label.
     { table: 'channels', column: 'autoBookShipping', ddl: 'TINYINT(1) NOT NULL DEFAULT 0' },
-    // Demo mode (see services/demo.service.js): a sandbox tenant whose single
-    // demo channel talks to a built-in fake Amazon. Only ever set by the
-    // platform-admin demo setup — never by a seller-facing API.
-    { table: 'tenants',  column: 'isDemo',           ddl: 'TINYINT(1) NOT NULL DEFAULT 0' },
-    { table: 'channels', column: 'isDemo',           ddl: 'TINYINT(1) NOT NULL DEFAULT 0' },
+    // How the seller's own-shipped (MFN) orders get a courier + label, chosen when
+    // the channel is connected (and changeable in Manage channel):
+    //   AMAZON → Amazon arranges the courier (Easy Ship in India, Buy Shipping elsewhere)
+    //   OWN    → the seller's own courier partner, a connected logistics channel
+    //            (shippingProviderId) such as iThink / Shiprocket / Delhivery / Xpressbees
+    { table: 'channels', column: 'mfnShipping',        ddl: "VARCHAR(16) NOT NULL DEFAULT 'AMAZON'" },
+    { table: 'channels', column: 'shippingProviderId', ddl: 'VARCHAR(191) DEFAULT NULL' },
+    // When the seller last (re-)authorised the channel. The Re-authorise flow polls
+    // for authorizedAt moving past the moment it started.
+    { table: 'channels', column: 'authorizedAt',       ddl: 'DATETIME(3) DEFAULT NULL' },
+    // Courier-driven shipment status, separate from the (short) order status:
+    // BOOKED, PICKUP_SCHEDULED, PICKED_UP, IN_TRANSIT, OUT_FOR_DELIVERY, DELIVERED,
+    // DELIVERY_FAILED, RTO_INITIATED, RTO_DELIVERED. NULL = not booked.
+    { table: 'orders',   column: 'shipmentStatus',     ddl: 'VARCHAR(24) DEFAULT NULL' },
+    { table: 'orders',   column: 'shipmentStatusAt',   ddl: 'DATETIME(3) DEFAULT NULL' },
+    { table: 'orders',   column: 'shipmentProvider',   ddl: 'VARCHAR(32) DEFAULT NULL' },
+    // A label may be a courier-hosted file instead of bytes we hold.
+    { table: 'order_labels', column: 'url',            ddl: 'TEXT DEFAULT NULL' },
     // Why the last automatic booking failed (cleared on success) — shown on the
     // order with a Retry action.
     { table: 'orders',   column: 'shippingError',    ddl: 'TEXT DEFAULT NULL' },
@@ -210,6 +223,18 @@ async function initDb() {
       \`createdAt\` datetime(3) NOT NULL DEFAULT current_timestamp(3),
       PRIMARY KEY (\`id\`),
       KEY \`ol_order_idx\` (\`tenantId\`, \`orderId\`, \`status\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+    // Shipment status history shown as the timeline on the order page.
+    `CREATE TABLE IF NOT EXISTS \`order_shipment_events\` (
+      \`id\` varchar(191) NOT NULL,
+      \`tenantId\` varchar(191) NOT NULL,
+      \`orderId\` varchar(191) NOT NULL,
+      \`status\` varchar(24) NOT NULL,
+      \`rawStatus\` varchar(191) DEFAULT NULL,
+      \`note\` varchar(255) DEFAULT NULL,
+      \`createdAt\` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+      PRIMARY KEY (\`id\`),
+      KEY \`ose_order_idx\` (\`tenantId\`, \`orderId\`, \`createdAt\`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
     // Channel settlements / payouts — e.g. Amazon SP-API financialEventGroups.
     // One row per settlement group (payout) so the dashboard can reconcile what

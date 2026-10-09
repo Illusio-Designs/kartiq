@@ -101,8 +101,6 @@ export const billingApi = {
 export const oauthApi = {
   amazonStart:  (channelId: string, region?: string) =>
     api.get('/oauth/amazon/start', { params: { channelId, ...(region ? { region } : {}) } }),
-  // DEMO tenant only: the "Authorize" click on the fake Amazon consent page
-  amazonDemoAuthorize: (channelId: string) => api.post('/oauth/amazon/demo-authorize', { channelId }),
   shopifyStart: (channelId: string, shop: string) =>
     api.get('/oauth/shopify/start', { params: { channelId, shop } }),
   flipkartStart: (channelId: string) =>
@@ -202,9 +200,6 @@ export const adminApi = {
   restoreTenant: (id: string) => api.post(`/admin/tenants/${id}/restore`, {}),
   assignPlan: (id: string, data: any) => api.post(`/admin/tenants/${id}/assign-plan`, data),
   // Demo mode: a sandbox tenant with a fake Amazon, for click-through testing on a live site
-  demoStatus: () => api.get('/admin/demo'),
-  demoSetup: (data: { email?: string; password?: string; businessName?: string }) => api.post('/admin/demo/setup', data),
-  demoReset: () => api.post('/admin/demo/reset', {}),
   // subscriptions
   subscriptions: () => api.get('/admin/subscriptions'),
   // blog
@@ -464,10 +459,13 @@ export const orderApi = {
   packingSlips: (ids: string[]) => api.post('/orders/packing-slips', { ids }),
   // Many saved shipping labels merged into ONE PDF (max 100): { pdf (base64), printed, pages, skipped[] }
   labels: (ids: string[]) => api.post('/orders/labels', { ids }),
-  // "Confirm & get label" for many orders (max 50): books the Amazon courier for each, returns each outcome
+  // "Confirm" for many orders (max 50): books the courier (Amazon or your own) for each, returns each outcome
   bookShippingBulk: (ids: string[]) => api.post('/orders/book-shipping', { ids }),
   bookShipping: (id: string) => api.post(`/orders/${id}/book-shipping`, {}),
   cancelLabel: (id: string) => api.delete(`/orders/${id}/label`),
+  // Shipment status timeline + latest from the courier now
+  shipment: (id: string) => api.get(`/orders/${id}/shipment`),
+  refreshShipment: (id: string) => api.post(`/orders/${id}/shipment/refresh`, {}),
   enrich: (id: string, body: any) => api.patch(`/orders/${id}/enrich`, body),
   setFulfillment: (id: string, body: { fulfillmentType: 'SELF' | 'CHANNEL' | 'DROPSHIP'; channelFulfillmentCenter?: string }) =>
     api.patch(`/orders/${id}/fulfillment`, body),
@@ -614,13 +612,6 @@ export const channelApi = {
   returns: (id: string, params?: { limit?: number }) =>
     api.get(`/channels/${id}/returns`, { params }),
 
-  // Amazon Buy Shipping (Merchant Fulfillment, /mfn/v0) — seller-fulfilled labels
-  amazonMfnRates: (id: string, body: { orderId: string; warehouseId?: string; weight?: any; dimensions?: any }) =>
-    api.post(`/channels/${id}/amazon/mfn/rates`, body),
-  amazonMfnBuy: (id: string, body: { orderId: string; warehouseId?: string; shippingServiceId: string; shippingServiceOfferId?: string; weight?: any; dimensions?: any }) =>
-    api.post(`/channels/${id}/amazon/mfn/buy`, body),
-  amazonMfnCancel: (id: string, shipmentId: string) =>
-    api.delete(`/channels/${id}/amazon/mfn/${shipmentId}`),
 };
 
 export const customerApi = {

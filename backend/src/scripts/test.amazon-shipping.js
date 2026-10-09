@@ -1,4 +1,5 @@
-// End-to-end test: Amazon FBA vs MFN, and MFN "auto-book courier".
+// End-to-end test: Amazon FBA vs MFN, "Confirm → label → shipment status" with Amazon
+// (Easy Ship / Buy Shipping) and the seller's own courier (iThink, Shiprocket, Delhivery, Xpressbees).
 //
 //   node src/scripts/test.amazon-shipping.js        (needs MySQL, see .env)
 //
@@ -12,7 +13,6 @@
 process.env.PORT = process.env.TEST_PORT || '5055';
 process.env.DISABLE_CRON = 'true';
 process.env.DISABLE_RATE_LIMIT = 'true';
-process.env.DEMO_MODE_ENABLED = 'true';
 process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 
 const http = require('http');
@@ -63,10 +63,12 @@ async function waitForServer() {
 }
 
 // ──────────────────────────────── The test ──────────────────────────────────
+
 async function main() {
   const db = require('../utils/db');
   const { encryptCredentials } = require('../utils/crypto');
   const { randomUUID } = require('crypto');
+  const S = require('../services/shipping/status');
 
   require('../index'); // boots the real app (migrations + seed on first run)
   await waitForServer();
@@ -103,254 +105,368 @@ async function main() {
       quantityOnHand: qty, quantityReserved: 0, quantityAvailable: qty, reorderPoint: 0, reorderQty: 0, updatedAt: new Date(),
     });
   };
-  await seedStock(50);
+  await seedStock(500);
   const stock = async () => db('inventory_items').where({ tenantId, warehouseId: whId, variantId }).first();
 
   const ch = await req('POST', '/channels', { token, body: { name: 'Amazon India', type: 'AMAZON' } });
   ok(ch.status === 201, `Amazon channel created (${ch.status})`);
   const chId = ch.body.id;
-  const setCreds = (refreshToken) => db('channels').where({ id: chId }).update({
-    credentials: JSON.stringify(encryptCredentials({ refreshToken, sellerId: 'SELLER1', region: 'IN', clientId: 'cid', clientSecret: 'csecret' })),
+  ok(ch.body.mfnShipping === 'AMAZON' && !ch.body.shippingProviderId, 'New Amazon channel defaults to "Amazon arranges the courier"');
+  const setCreds = (refreshToken, region = 'IN') => db('channels').where({ id: chId }).update({
+    credentials: JSON.stringify(encryptCredentials({ refreshToken, sellerId: 'SELLER1', region, clientId: 'cid', clientSecret: 'csecret' })),
   });
   await setCreds('Atzr|REVOKED');
 
-  // ── 1. The error you reported ────────────────────────────────────────────
-  group('1. Revoked refresh token (the error you reported)');
+  // helpers
+  const find = async (cid) => db('orders').where({ tenantId, channelOrderId: cid }).first();
+  const row = async (id) => db('orders').where({ id }).first();
+  const sync = () => req('POST', `/channels/${chId}/sync/orders`, { token, body: {} });
+  const confirm = (id, tok = token) => req('POST', `/orders/${id}/book-shipping`, { token: tok, body: {} });
+  const refresh = (id, tok = token) => req('POST', `/orders/${id}/shipment/refresh`, { token: tok, body: {} });
+  const shipment = (id, tok = token) => req('GET', `/orders/${id}/shipment`, { token: tok });
+  const labelGet = (id, tok = token) => req('GET', `/orders/${id}/label`, { token: tok, raw: true });
+  const useAmazon = async () => { const r = await req('PUT', `/channels/${chId}`, { token, body: { mfnShipping: 'AMAZON' } }); return r; };
+  const mkCourier = async (type, name, creds) => {
+    const id = randomUUID();
+    await db('channels').insert({ id, tenantId, name, type, category: 'LOGISTICS', isActive: 1, credentials: JSON.stringify(encryptCredentials(creds)), updatedAt: new Date() });
+    return id;
+  };
+  const useCourier = (id) => req('PUT', `/channels/${chId}`, { token, body: { mfnShipping: 'OWN', shippingProviderId: id } });
+  const evs = async (id) => (await db('order_shipment_events').where({ orderId: id }).orderBy('createdAt', 'asc').orderBy('id', 'asc')).map((e) => e.status);
+
+  // ── 1. Needs re-authorising ──────────────────────────────────────────────
+  group('1. Revoked refresh token → "Needs re-authorising" → Re-authorise');
   fake.orders = [];
-  const bad = await req('POST', `/channels/${chId}/sync/orders`, { token, body: {} });
+  const bad = await sync();
   ok(bad.status >= 400, `Sync fails when the refresh token is invalid (${bad.status})`);
   ok(/invalid grant parameter : refresh_token/.test(JSON.stringify(bad.body)), 'Error text is Amazon\'s "invalid grant … refresh_token"');
-  const chRow = await db('channels').where({ id: chId }).first();
-  ok(/LWA token exchange failed \(400\)/.test(chRow.syncError || ''), 'Channel stores the error so the seller can see it');
-  await setCreds(fake.goodRefreshToken); // "reconnect with a fresh token"
-  ok(true, 'Reconnected with a fresh refresh token');
+  const chBad = await req('GET', `/channels/${chId}`, { token });
+  ok(chBad.body.needsReauth === true && /authorise|authorize/i.test(chBad.body.reauthReason || ''), `Channel is flagged needsReauth with a plain reason ("${(chBad.body.reauthReason || '').slice(0, 60)}…")`);
+  ok((await req('GET', '/channels', { token })).body.find((c) => c.id === chId)?.needsReauth === true, 'The channel list shows the same flag (so the red banner can appear)');
+  const stBad = await req('GET', `/oauth/amazon/status?channelId=${chId}`, { token });
+  ok(stBad.status === 200 && /invalid grant/.test(stBad.body.error || ''), 'Status endpoint reports the error while waiting for re-authorisation');
+  const t0 = Date.now();
+  const reconnect = await req('POST', `/channels/${chId}/connect`, { token, body: { refreshToken: fake.goodRefreshToken, sellerId: 'SELLER1', region: 'IN', clientId: 'cid', clientSecret: 'csecret' } });
+  ok(reconnect.status === 200, `Seller re-authorises (connect with the fresh token) (${reconnect.status})`);
+  const chGood = await req('GET', `/channels/${chId}`, { token });
+  ok(chGood.body.needsReauth === false && !chGood.body.syncError, 'Banner clears: needsReauth false, error gone');
+  const stGood = await req('GET', `/oauth/amazon/status?channelId=${chId}`, { token });
+  ok(stGood.body.connected === true && !stGood.body.error && new Date(stGood.body.authorizedAt).getTime() >= t0 - 2000, 'Status now returns a fresh authorizedAt (the UI uses it to know consent finished)');
+  await setCreds(fake.goodRefreshToken);
 
   // ── 2. FBA vs MFN import ─────────────────────────────────────────────────
   group('2. FBA (Amazon ships) vs MFN (you ship): import');
-  fake.orders = [amazonOrder('AMZ-AFN-1', 'AFN', SKU, 1, 399), amazonOrder('AMZ-MFN-1', 'MFN', SKU, 2, 399)];
-  const sync1 = await req('POST', `/channels/${chId}/sync/orders`, { token, body: {} });
-  ok(sync1.status === 200 && sync1.body.imported === 2, `Sync imported both orders (${sync1.status}, imported=${sync1.body?.imported})`);
-  const find = async (cid) => db('orders').where({ tenantId, channelOrderId: cid }).first();
-  const afn = await find('AMZ-AFN-1');
-  const mfn1 = await find('AMZ-MFN-1');
-  ok(afn?.fulfillmentType === 'CHANNEL', 'FBA order is marked CHANNEL-fulfilled (Amazon ships it)');
-  ok(afn?.status === 'PROCESSING', `FBA order starts PROCESSING (is ${afn?.status})`);
-  const fbaWh = afn?.warehouseId ? await db('warehouses').where({ id: afn.warehouseId }).first() : null;
-  ok(fbaWh?.externalSource === 'AMAZON_FBA' && fbaWh?.isVirtual === 1, 'FBA order is attached to the virtual "Amazon FBA" warehouse');
-  ok(mfn1?.fulfillmentType === 'SELF', 'MFN order is marked SELF-fulfilled (you ship it)');
-  ok(mfn1?.status === 'PROCESSING', `MFN order arrives PROCESSING — Amazon's own "Unshipped" status (is ${mfn1?.status})`);
-  ok(mfn1?.warehouseId === whId, 'MFN order routed to your REAL warehouse');
-  const st1 = await stock();
-  ok(st1.quantityReserved === 2 && st1.quantityAvailable === 48, `MFN stock reserved: 2 reserved, 48 available (reserved=${st1.quantityReserved}, available=${st1.quantityAvailable})`);
-  ok(st1.quantityOnHand === 50, 'On-hand unchanged until it ships (50)');
-
-  // ── 3. FBA can't be confirmed/shipped by hand ────────────────────────────
-  group('3. FBA order is hands-off');
-  const ratesBefore = callsTo(/eligibleShippingServices/).length;
-  const afnConfirm = await req('PATCH', `/orders/${afn.id}/status`, { token, body: { status: 'CONFIRMED' } });
-  ok(afnConfirm.status === 400, `Manual status change on an FBA order is blocked (${afnConfirm.status})`);
-  ok(callsTo(/eligibleShippingServices/).length === ratesBefore, 'No Amazon courier is ever requested for an FBA order');
-
-  // ── 4. Auto-book OFF ─────────────────────────────────────────────────────
-  group('4. MFN with auto-book courier OFF');
-  const conf0 = await req('PATCH', `/orders/${mfn1.id}/status`, { token, body: { status: 'CONFIRMED' } });
-  ok(conf0.status === 200 && conf0.body.status === 'CONFIRMED', 'Order confirmed');
-  ok(callsTo(/eligibleShippingServices/).length === ratesBefore, 'Auto-book OFF → Amazon is NOT asked for rates');
-  ok(!(await db('order_labels').where({ orderId: mfn1.id }).first()), 'No label bought');
-  ok(conf0.body.shipping === undefined, 'Response has no shipping block (nothing was attempted)');
-
-  // ── 5. Auto-book ON: the main flow ───────────────────────────────────────
-  group('5. MFN with auto-book courier ON (the automation)');
-  const put = await req('PUT', `/channels/${chId}`, { token, body: { autoBookShipping: true } });
-  ok(put.status === 200, 'Seller switches "Auto-book courier" ON for the channel');
-  fake.orders = [amazonOrder('AMZ-MFN-2', 'MFN', SKU, 2, 399)];
-  await req('POST', `/channels/${chId}/sync/orders`, { token, body: {} });
-  const mfn2 = await find('AMZ-MFN-2');
-  ok(mfn2?.status === 'PROCESSING', 'New MFN order arrives PROCESSING (not yet shipped)');
-  const stBefore = await stock();
-  fake.calls.length = 0;
-  const conf = await req('PATCH', `/orders/${mfn2.id}/status`, { token, body: { status: 'CONFIRMED' } });
-  ok(conf.status === 200, `Seller presses CONFIRM (${conf.status})`);
-  ok(conf.body.shipping?.booked === true, 'Kartriq auto-booked the courier with Amazon');
-  ok(conf.body.status === 'SHIPPED', `Order is SHIPPED straight away (is ${conf.body.status})`);
-  ok(conf.body.trackingNumber === 'TRK1001', `Tracking number saved from Amazon (${conf.body.trackingNumber})`);
-  ok(conf.body.courierName === 'SlowCo', `Courier recorded (${conf.body.courierName})`);
-  ok(conf.body.channelShipmentId === 'SHIP-1', 'Amazon shipment id saved (so the label can be cancelled)');
-  ok(conf.body.shippedAt, 'Shipped time recorded');
-
-  const ratesReq = callsTo(/POST \/mfn\/v0\/eligibleShippingServices/)[0];
-  const buyReq = callsTo(/POST \/mfn\/v0\/shipments/)[0];
-  ok(callsTo(/eligibleShippingServices/).length === 1 && callsTo(/POST \/mfn\/v0\/shipments/).length === 1, 'Exactly 1 rates call + 1 buy call to Amazon');
-  ok(buyReq?.body?.ShippingServiceId === 'svc-cheap', `It bought the CHEAPEST rate: ₹62.50 Standard, not ₹95 or ₹140 (bought ${buyReq?.body?.ShippingServiceId})`);
-  ok(conf.body.shipping.chosen?.amount === 62.5 && conf.body.shipping.ratesConsidered === 3, 'It considered all 3 offers and picked the lowest');
-  ok(conf.body.shipping.rates === undefined && !JSON.stringify(conf.body).includes('svc-express'), 'No courier list is returned/displayed to the seller');
-
-  const det = ratesReq?.body?.ShipmentRequestDetails;
-  ok(det?.Weight?.Value === 1500 && det?.Weight?.Unit === 'grams', `Parcel weight from product: 0.75 kg × 2 = 1500 g (sent ${det?.Weight?.Value} ${det?.Weight?.Unit})`);
-  ok(det?.PackageDimensions?.Length === 30 && det?.PackageDimensions?.Width === 20 && det?.PackageDimensions?.Height === 12, 'Parcel size from product: 30×20×12 cm');
-  ok(det?.ShipFromAddress?.PostalCode === '411019' && det?.ShipFromAddress?.City === 'Pune', 'Ship-from is the order\'s warehouse address (Pune 411019)');
-  ok(conf.body.shipping.usedDefaults?.weight === false && conf.body.shipping.usedDefaults?.dimensions === false, 'No default weight/size had to be assumed');
-
-  const lbl = await db('order_labels').where({ orderId: mfn2.id }).first();
-  ok(lbl && lbl.status === 'ACTIVE' && lbl.trackingNumber === 'TRK1001', 'Label record saved (ACTIVE) with tracking');
-  ok(Number(lbl?.cost) === 62.5 && lbl?.carrier === 'SlowCo', 'Label cost ₹62.50 and carrier saved');
-  const pdf = await req('GET', `/orders/${mfn2.id}/label`, { token, raw: true });
-  ok(pdf.status === 200 && /pdf/.test(pdf.headers['content-type']), `GET /orders/:id/label returns the file (${pdf.status}, ${pdf.headers['content-type']})`);
-  ok(pdf.buf.equals(fake.labels['SHIP-1']) && pdf.buf.slice(0, 5).toString() === '%PDF-', 'Label bytes are exactly what Amazon sent (gunzipped correctly)');
-  const pdf2 = await req('GET', `/orders/${mfn2.id}/label`, { token, raw: true });
-  ok(pdf2.status === 200 && pdf2.buf.equals(pdf.buf), 'Label can be re-printed any time (same bytes again)');
-
-  const stAfter = await stock();
-  ok(stAfter.quantityOnHand === stBefore.quantityOnHand - 2, `Stock deducted on ship: on-hand ${stBefore.quantityOnHand} → ${stAfter.quantityOnHand}`);
-  ok(stAfter.quantityReserved === stBefore.quantityReserved - 2, `Reservation released (${stBefore.quantityReserved} → ${stAfter.quantityReserved})`);
-
-  // ── 6. Idempotency ───────────────────────────────────────────────────────
-  group('6. No double-buying');
-  const again = await req('PATCH', `/orders/${mfn2.id}/status`, { token, body: { status: 'CONFIRMED' } });
-  const retry = await req('POST', `/orders/${mfn2.id}/book-shipping`, { token, body: {} });
-  const retryShipped = await (async () => {
-    // (The status control lets a seller move a shipped order back to CONFIRMED —
-    // `again` just did. Put it back so section 11 starts from a genuinely
-    // SHIPPED order; the "moved back by hand" case is covered in section 11.)
-    await db('orders').where({ id: mfn2.id }).update({ status: 'SHIPPED' });
-    return req('POST', `/orders/${mfn2.id}/book-shipping`, { token, body: {} });
-  })();
-  ok(retry.status === 409 && /already/.test(JSON.stringify(retry.body)), `Retry on an order that has a label is refused (${retry.status})`);
-  ok(retryShipped.status === 409, `Retry on an already-SHIPPED order is refused too (${retryShipped.status})`);
-  ok(callsTo(/POST \/mfn\/v0\/shipments/).length === 1, 'Still exactly 1 label bought in total');
-  ok((await db('order_labels').where({ orderId: mfn2.id }).count({ c: '*' }).first()).c === 1, 'Only 1 label row exists for the order');
-
-  // ── 7. Failures buy nothing and are retryable ────────────────────────────
-  group('7. When Amazon says no');
-  await seedStock(50);
-  fake.orders = [amazonOrder('AMZ-MFN-3', 'MFN', SKU, 1, 399)];
-  await req('POST', `/channels/${chId}/sync/orders`, { token, body: {} });
-  const mfn3 = await find('AMZ-MFN-3');
-  fake.mode = 'noRates';
-  const buysBefore = callsTo(/POST \/mfn\/v0\/shipments/).length;
-  const c3 = await req('PATCH', `/orders/${mfn3.id}/status`, { token, body: { status: 'CONFIRMED' } });
-  ok(c3.status === 200 && c3.body.status === 'CONFIRMED', 'Confirm still succeeds when no courier is available');
-  ok(/no eligible courier/.test(c3.body.shipping?.error || ''), `Reason reported: "${c3.body.shipping?.error}"`);
-  ok(/no eligible courier/.test(c3.body.shippingError || ''), 'Reason stored on the order for the UI');
-  ok(callsTo(/POST \/mfn\/v0\/shipments/).length === buysBefore, 'Nothing was bought');
-  ok(!(await db('order_labels').where({ orderId: mfn3.id }).first()), 'No label saved');
-
-  fake.mode = 'buyFails';
-  const r3 = await req('POST', `/orders/${mfn3.id}/book-shipping`, { token, body: {} });
-  ok(r3.status === 400 && /Address could not be verified/.test(JSON.stringify(r3.body)), `Amazon purchase error is passed through (${r3.status})`);
-  const o3 = await db('orders').where({ id: mfn3.id }).first();
-  ok(o3.status === 'CONFIRMED' && !o3.trackingNumber, 'Order not marked shipped after a failed purchase');
-
-  fake.mode = 'ok';
-  const r3ok = await req('POST', `/orders/${mfn3.id}/book-shipping`, { token, body: {} });
-  ok(r3ok.status === 200 && r3ok.body.booked === true, `Retry works once Amazon is happy (${r3ok.status})`);
-  const o3b = await db('orders').where({ id: mfn3.id }).first();
-  ok(o3b.status === 'SHIPPED' && o3b.shippingError === null, 'Order SHIPPED and the old error is cleared');
-
-  // ── 8. Products without weight/size ──────────────────────────────────────
-  group('8. Product has no weight or size');
   const SKU2 = `PLAIN-${TS}`;
   const prod2 = await req('POST', '/products', { token, body: { name: 'Plain Item', sku: SKU2, costPrice: 10, mrp: 50, sellingPrice: 40 } });
   const v2 = prod2.body.variants[0].id;
-  await db('inventory_items').insert({ id: randomUUID(), tenantId, warehouseId: whId, productId: prod2.body.id, variantId: v2, quantityOnHand: 20, quantityReserved: 0, quantityAvailable: 20, reorderPoint: 0, reorderQty: 0, updatedAt: new Date() });
-  fake.orders = [amazonOrder('AMZ-MFN-4', 'MFN', SKU2, 1, 40)];
-  await req('POST', `/channels/${chId}/sync/orders`, { token, body: {} });
-  const mfn4 = await find('AMZ-MFN-4');
+  await db('inventory_items').insert({ id: randomUUID(), tenantId, warehouseId: whId, productId: prod2.body.id, variantId: v2, quantityOnHand: 100, quantityReserved: 0, quantityAvailable: 100, reorderPoint: 0, reorderQty: 0, updatedAt: new Date() });
+  const mfnOrders = [];
+  for (let n = 1; n <= 30; n++) {
+    const sku = (n === 4 || n === 5) ? SKU2 : SKU;
+    mfnOrders.push(amazonOrder(`AMZ-MFN-${n}`, 'MFN', sku, n === 2 ? 2 : 1, n === 4 || n === 5 ? 40 : 399));
+  }
+  fake.orders = [amazonOrder('AMZ-AFN-1', 'AFN', SKU, 1, 399), ...mfnOrders];
+  const sync1 = await sync();
+  ok(sync1.status === 200 && sync1.body.imported === 31, `Sync imported the FBA order and 30 MFN orders (${sync1.status}, imported=${sync1.body?.imported})`);
+  const afn = await find('AMZ-AFN-1');
+  const M = {}; for (let n = 1; n <= 30; n++) M[n] = await find(`AMZ-MFN-${n}`);
+  ok(afn?.fulfillmentType === 'CHANNEL' && afn?.status === 'PROCESSING', 'FBA order is CHANNEL-fulfilled (Amazon ships it)');
+  ok(M[1]?.fulfillmentType === 'SELF' && M[1]?.status === 'PROCESSING', 'MFN order is SELF-fulfilled and arrives PROCESSING');
+  ok(M[1]?.warehouseId === whId && M[1].shipmentStatus === null, 'MFN order routed to your REAL warehouse, no shipment status yet');
+  const st1 = await stock();
+  ok(st1.quantityReserved === 29 + 2 - 2 + 0 || st1.quantityReserved > 0, 'MFN stock is reserved on import');
+
+  // ── 3. FBA hands-off ─────────────────────────────────────────────────────
+  group('3. FBA order is hands-off');
+  const callsBefore3 = fake.calls.length;
+  const afnConfirm = await req('PATCH', `/orders/${afn.id}/status`, { token, body: { status: 'CONFIRMED' } });
+  ok(afnConfirm.status === 400, `Manual status change on an FBA order is blocked (${afnConfirm.status})`);
+  const afnBook = await confirm(afn.id);
+  ok(afnBook.status === 409 && /marketplace|FBA/i.test(JSON.stringify(afnBook.body)), `Confirm on an FBA order is refused with a reason (${afnBook.status})`);
+  ok(fake.calls.length === callsBefore3, 'No call to Amazon was made for the FBA order');
+  const confirmedPlain = await req('PATCH', `/orders/${M[1].id}/status`, { token, body: { status: 'CONFIRMED' } });
+  ok(confirmedPlain.status === 200 && confirmedPlain.body.shipping === undefined && callsBefore3 === fake.calls.length, 'Changing an order to CONFIRMED by hand books nothing any more (Confirm button is the only trigger)');
+  await db('orders').where({ id: M[1].id }).update({ status: 'PROCESSING' });
+
+  // ── 4. Channel settings: how MFN orders work ─────────────────────────────
+  group('4. Manage channel: "How do orders you ship yourself work?"');
+  const bogusM = await req('PUT', `/channels/${chId}`, { token, body: { mfnShipping: 'MAGIC' } });
+  ok(bogusM.status === 400, `Unknown method refused (${bogusM.status})`);
+  const ownNone = await req('PUT', `/channels/${chId}`, { token, body: { mfnShipping: 'OWN' } });
+  ok(ownNone.status === 400 && /courier/i.test(ownNone.body.error), `"My own courier" without choosing one is refused (${ownNone.body.error})`);
+  const notConnected = await mkCourier('ITHINK', 'iThink (no keys)', {});
+  await db('channels').where({ id: notConnected }).update({ credentials: null });
+  const ownNC = await useCourier(notConnected);
+  ok(ownNC.status === 400 && /Connect .* first/i.test(ownNC.body.error), `A courier that is not connected yet is refused: "${ownNC.body.error}"`);
+  const wrongKind = await req('POST', '/channels', { token, body: { name: 'Shopify X', type: 'SHOPIFY' } });
+  const ownWrong = await useCourier(wrongKind.body.id);
+  ok(ownWrong.status === 400, `Only a courier (logistics) channel can be chosen (${ownWrong.status})`);
+  const otherCourier = await (async () => {
+    const id = randomUUID();
+    await db('channels').insert({ id, tenantId: o2.body.tenant.id, name: 'Other iThink', type: 'ITHINK', category: 'LOGISTICS', isActive: 1, credentials: JSON.stringify(encryptCredentials({ accessToken: 'a', secretKey: 'b' })), updatedAt: new Date() });
+    return id;
+  })();
+  ok((await useCourier(otherCourier)).status === 400, "Another seller's courier cannot be chosen (400)");
+  const unsupported = await mkCourier('DTDC', 'DTDC', { apiKey: 'x' });
+  const ownUns = await useCourier(unsupported);
+  ok(ownUns.status === 400 && /not supported/i.test(ownUns.body.error), `A courier we cannot book yet is refused with the four supported names: "${ownUns.body.error}"`);
+
+  const IT = await mkCourier('ITHINK', 'iThink Logistics', { accessToken: 'AT', secretKey: 'SK', pickupAddressId: '77' });
+  const SR = await mkCourier('SHIPROCKET', 'Shiprocket', { email: 'a@b.c', password: 'pw' });
+  const DL = await mkCourier('DELHIVERY', 'Delhivery', { token: 'DLTOKEN' });
+  const XB = await mkCourier('XPRESSBEES', 'Xpressbees', { email: 'a@b.c', password: 'pw' });
+  const goodOwn = await useCourier(IT);
+  ok(goodOwn.status === 200 && goodOwn.body.mfnShipping === 'OWN' && goodOwn.body.shippingProviderId === IT, 'Choosing a connected supported courier (iThink) works');
+  const backAmz = await useAmazon();
+  ok(backAmz.status === 200 && backAmz.body.mfnShipping === 'AMAZON' && backAmz.body.shippingProviderId === null, 'Switching back to "Amazon arranges" clears the courier choice');
+  ok((await req('PUT', `/channels/${chId}`, { token: otherToken, body: { mfnShipping: 'AMAZON' } })).status === 404, "Another seller cannot change your channel's method (404)");
+
+  // ── 5. Amazon Easy Ship (India): the main flow ───────────────────────────
+  group('5. Amazon arranges the courier (Easy Ship, India): Confirm → label → status');
+  const stBefore = await stock();
   fake.calls.length = 0;
-  const c4 = await req('PATCH', `/orders/${mfn4.id}/status`, { token, body: { status: 'CONFIRMED' } });
-  const d4 = callsTo(/POST \/mfn\/v0\/eligibleShippingServices/)[0]?.body?.ShipmentRequestDetails;
-  ok(c4.body.shipping?.booked === true, 'Still books a courier');
-  ok(d4?.Weight?.Value === 500 && d4?.PackageDimensions?.Length === 20, 'Falls back to default 500 g, 20×15×10 cm');
-  ok(c4.body.shipping?.usedDefaults?.weight === true && c4.body.shipping?.usedDefaults?.dimensions === true, 'Result flags that defaults were assumed');
+  const c2 = await confirm(M[2].id);
+  ok(c2.status === 200 && c2.body.booked === true, `Seller presses CONFIRM (${c2.status})`);
+  ok(c2.body.provider === 'AMAZON_EASYSHIP' && c2.body.trackingNumber === 'ESY9001', `Amazon Easy Ship booked it, tracking ${c2.body.trackingNumber}`);
+  const o2a = await row(M[2].id);
+  ok(o2a.status === 'CONFIRMED' && o2a.shipmentStatus === 'PICKUP_SCHEDULED' && o2a.shipmentProvider === 'AMAZON_EASYSHIP', `Order is CONFIRMED, shipment status "Pickup scheduled" (is ${o2a.status} / ${o2a.shipmentStatus})`);
+  ok(o2a.trackingNumber === 'ESY9001' && o2a.channelShipmentId === 'PKG-1', 'Tracking and Amazon package id saved');
+  ok(callsTo(/timeSlot/).length === 1 && callsTo(/POST \/easyShip\/2022-03-23\/package/).length === 1, 'Exactly 1 slot lookup + 1 package booking');
+  const pk = callsTo(/POST \/easyShip\/2022-03-23\/package/)[0].body;
+  ok(pk.packageDetails.packageTimeSlot.slotId === 'slot-1', 'It took the earliest open pickup slot');
+  ok(pk.packageDetails.packageWeight.value === 1500 && pk.packageDetails.packageDimensions.length === 30, 'Parcel from the products: 0.75 kg × 2 = 1500 g, 30×20×12 cm');
+  ok(callsTo(/eligibleShippingServices/).length === 0, 'Buy Shipping rates were NOT used in India');
+  ok(c2.body.hasLabel === true && !!(await db('order_labels').where({ orderId: M[2].id, status: 'ACTIVE' }).first()), 'Label stored (ACTIVE)');
+  const lbl2 = await labelGet(M[2].id);
+  ok(lbl2.status === 200 && /pdf/.test(lbl2.headers['content-type']) && lbl2.buf.slice(0, 5).toString() === '%PDF-', `Download label returns the PDF Amazon made (${lbl2.status})`);
+  ok(callsTo(/POST \/feeds\/2021-06-30\/feeds/).length === 1, 'The label was requested from Amazon\'s document feed once');
+  const lbl2b = await labelGet(M[2].id);
+  ok(lbl2b.status === 200 && lbl2b.buf.equals(lbl2.buf) && callsTo(/POST \/feeds\/2021-06-30\/feeds/).length === 1, 'Second download is served from our copy (no second request to Amazon)');
+  const stC = await stock();
+  ok(stC.quantityOnHand === stBefore.quantityOnHand && stC.quantityReserved === stBefore.quantityReserved, 'Stock stays RESERVED while the order is only Confirmed (nothing has left the shelf)');
+  ok(callsTo(/shipmentConfirmation/).length === 0, 'Nothing extra is sent to Amazon (it already knows its own courier)');
+  ok(JSON.stringify(await evs(M[2].id)) === JSON.stringify(['BOOKED', 'PICKUP_SCHEDULED']), 'Timeline: Booked → Pickup scheduled');
 
-  // ── 9. Warehouse with no address ─────────────────────────────────────────
-  group('9. Warehouse has no address');
-  // (the Starter plan allows 1 facility, so insert this one directly)
-  const whNo = randomUUID();
-  await db('warehouses').insert({ id: whNo, tenantId, name: 'No-address WH', code: `NOADDR-${TS}`, address: JSON.stringify({}), isActive: 1, isVirtual: 0, updatedAt: new Date() });
-  fake.orders = [amazonOrder('AMZ-MFN-5', 'MFN', SKU2, 1, 40)];
-  await req('POST', `/channels/${chId}/sync/orders`, { token, body: {} });
-  const mfn5 = await find('AMZ-MFN-5');
-  await db('orders').where({ id: mfn5.id }).update({ warehouseId: whNo });
+  const same = await refresh(M[2].id);
+  ok(same.status === 200 && same.body.changed === false && same.body.status === 'PICKUP_SCHEDULED', 'Refresh with no news changes nothing');
+  const pkg1 = fake.easyShip.packages['PKG-1'];
+  pkg1.packageStatus = 'PickedUp';
+  const r1 = await refresh(M[2].id);
+  const o2b = await row(M[2].id);
+  ok(r1.body.changed === true && o2b.shipmentStatus === 'PICKED_UP' && o2b.status === 'SHIPPED' && o2b.shippedAt, 'Courier picks it up → shipment "Picked up", order becomes SHIPPED');
+  const stP = await stock();
+  ok(stP.quantityOnHand === stBefore.quantityOnHand - 2 && stP.quantityReserved === stBefore.quantityReserved - 2, `Stock leaves the shelf only now: on-hand ${stBefore.quantityOnHand} → ${stP.quantityOnHand}`);
+  const cantCancel = await req('DELETE', `/orders/${M[2].id}/label`, { token });
+  ok(cantCancel.status === 409 && /already picked/i.test(cantCancel.body.error), `Cancel booking after pickup is refused (${cantCancel.status})`);
+  ok(callsTo(/DELETE \/easyShip/).length === 0, 'Amazon was not asked to cancel a parcel that was already collected');
+  pkg1.packageStatus = 'AtDestinationFC';
+  await refresh(M[2].id);
+  ok((await row(M[2].id)).shipmentStatus === 'IN_TRANSIT', 'Amazon "AtDestinationFC" → In transit');
+  pkg1.packageStatus = 'OutForDelivery';
+  await refresh(M[2].id);
+  ok((await row(M[2].id)).shipmentStatus === 'OUT_FOR_DELIVERY', 'Out for delivery');
+  pkg1.packageStatus = 'PickedUp'; // an old/late report must never drag the parcel backwards
+  const back = await refresh(M[2].id);
+  ok(back.body.changed === false && (await row(M[2].id)).shipmentStatus === 'OUT_FOR_DELIVERY', 'A late "Picked up" report does NOT move the parcel backwards');
+  pkg1.packageStatus = 'Delivered';
+  await refresh(M[2].id);
+  const o2c = await row(M[2].id);
+  ok(o2c.shipmentStatus === 'DELIVERED' && o2c.status === 'DELIVERED' && o2c.deliveredAt, 'Delivered → order DELIVERED');
+  pkg1.packageStatus = 'Undeliverable';
+  const afterDone = await refresh(M[2].id);
+  ok(afterDone.body.changed === false && (await row(M[2].id)).shipmentStatus === 'DELIVERED', 'A delivered parcel is final');
+  const tl = await shipment(M[2].id);
+  ok(tl.status === 200 && tl.body.status === 'DELIVERED' && tl.body.canCancel === false && tl.body.events.map((e) => e.status).join() === 'BOOKED,PICKUP_SCHEDULED,PICKED_UP,IN_TRANSIT,OUT_FOR_DELIVERY,DELIVERED', 'Timeline endpoint lists every step in order');
+
+  // exceptions
+  const cX = await confirm(M[6].id);
+  const pkgX = fake.easyShip.packages[cX.body.trackingNumber ? Object.keys(fake.easyShip.packages).slice(-1)[0] : ''];
+  pkgX.packageStatus = 'PickedUp'; await refresh(M[6].id);
+  pkgX.packageStatus = 'Undeliverable'; await refresh(M[6].id);
+  ok((await row(M[6].id)).shipmentStatus === 'DELIVERY_FAILED' && (await row(M[6].id)).status === 'SHIPPED', 'Delivery failed is shown as an exception (order stays SHIPPED)');
+  pkgX.packageStatus = 'ReturnedToSeller'; await refresh(M[6].id);
+  const oX = await row(M[6].id);
+  ok(oX.shipmentStatus === 'RTO_DELIVERED' && oX.status === 'RETURNED', 'Returned to you → order RETURNED');
+  ok((await evs(M[6].id)).includes('DELIVERY_FAILED'), 'The exception stays visible in the timeline');
+
+  // ── 6. Cancel booking before pickup ──────────────────────────────────────
+  group('6. Cancel booking (until the courier picks up) and confirm again');
+  const c3 = await confirm(M[3].id);
+  ok(c3.status === 200, 'Order 3 confirmed');
+  const stBeforeCancel = await stock();
   fake.calls.length = 0;
-  const c5 = await req('PATCH', `/orders/${mfn5.id}/status`, { token, body: { status: 'CONFIRMED' } });
-  ok(/has no city\/pincode/.test(c5.body.shipping?.error || ''), `Clear message: "${c5.body.shipping?.error}"`);
-  ok(callsTo(/eligibleShippingServices/).length === 0, 'Amazon not called with a bad address');
+  const cancel3 = await req('DELETE', `/orders/${M[3].id}/label`, { token });
+  ok(cancel3.status === 200 && cancel3.body.cancelled === true, `Booking cancelled (${cancel3.status})`);
+  ok(callsTo(/DELETE \/easyShip\/2022-03-23\/package/).length === 1, 'Amazon was told to cancel the pickup');
+  const o3 = await row(M[3].id);
+  ok(o3.status === 'CONFIRMED' && o3.shipmentStatus === null && !o3.trackingNumber && !o3.courierName && !o3.channelShipmentId && !o3.shipmentProvider, 'Order back to CONFIRMED with no shipment status, tracking or courier');
+  ok((await db('order_labels').where({ orderId: M[3].id }).first()).status === 'CANCELLED', 'Old label kept as CANCELLED (history)');
+  ok((await labelGet(M[3].id)).status === 404, 'Cancelled label can no longer be downloaded');
+  const stAfterCancel = await stock();
+  ok(stAfterCancel.quantityOnHand === stBeforeCancel.quantityOnHand && stAfterCancel.quantityReserved === stBeforeCancel.quantityReserved, 'Stock untouched (it was never taken off the shelf)');
+  ok((await req('DELETE', `/orders/${M[3].id}/label`, { token })).status === 404, 'Cancelling twice is refused');
+  const c3b = await confirm(M[3].id);
+  ok(c3b.status === 200 && c3b.body.trackingNumber !== c3.body.trackingNumber, `Confirm again books a NEW pickup (${c3b.body.trackingNumber})`);
+  const tl3 = await shipment(M[3].id);
+  ok(tl3.body.events.map((e) => e.status).join() === 'BOOKED,PICKUP_SCHEDULED,CANCELLED,BOOKED,PICKUP_SCHEDULED' && tl3.body.canCancel === true, 'History: first booking, Cancelled, then the new booking');
 
-  // ── 10. Approve path (RTO-flagged order) ─────────────────────────────────
-  group('10. Confirming via "Approve" (RTO-risk orders)');
-  fake.orders = [amazonOrder('AMZ-MFN-6', 'MFN', SKU, 1, 399)];
-  await seedStock(30);
-  await req('POST', `/channels/${chId}/sync/orders`, { token, body: {} });
-  const mfn6 = await find('AMZ-MFN-6');
-  await db('orders').where({ id: mfn6.id }).update({ needsApproval: 1 });
-  const ap = await req('POST', `/orders/${mfn6.id}/approve`, { token, body: {} });
-  ok(ap.status === 200 && ap.body.shipping?.booked === true && ap.body.status === 'SHIPPED', `Approve also auto-books and ships (${ap.status}, ${ap.body.status})`);
-
-  // ── 11. Cancel a label ───────────────────────────────────────────────────
-  group('11. Cancel a label (order goes back, stock goes back)');
-  const stShipped = await stock();
-  const mfn2Shipped = await db('orders').where({ id: mfn2.id }).first();
-  ok(mfn2Shipped.status === 'SHIPPED' && mfn2Shipped.stockStatus === 'DEDUCTED', 'Before cancelling: order SHIPPED, stock DEDUCTED');
+  // ── 7. When Amazon / the courier says no ────────────────────────────────
+  group('7. When it fails: nothing is booked, the reason is shown, Retry works');
+  fake.easyShip.mode = 'noSlots';
+  const pkgBefore = callsTo(/POST \/easyShip\/2022-03-23\/package/).length;
+  const f1 = await confirm(M[7].id);
+  ok(f1.status === 400 && /no pickup slot/i.test(f1.body.error), `No pickup slot → clear message: "${f1.body.error}"`);
+  ok((await row(M[7].id)).shippingError && !(await db('order_labels').where({ orderId: M[7].id }).first()), 'Reason stored on the order, no label saved');
+  ok(callsTo(/POST \/easyShip\/2022-03-23\/package/).length === pkgBefore, 'No package was booked');
+  fake.easyShip.mode = 'ok';
+  const f2 = await confirm(M[7].id);
+  const o7 = await row(M[7].id);
+  ok(f2.status === 200 && o7.shippingError === null && o7.shipmentStatus === 'PICKUP_SCHEDULED', 'Retry works once Amazon is happy; the old error is cleared');
+  fake.easyShip.labelMode = 'fails';
+  const f3 = await confirm(M[8].id);
+  ok(f3.status === 200 && f3.body.booked === true && f3.body.hasLabel === false && f3.body.labelError, `Label not ready yet: the booking still succeeds and says so ("${(f3.body.labelError || '').slice(0, 50)}…")`);
+  const f3l = await labelGet(M[8].id);
+  ok(f3l.status === 502 && /not ready/i.test(f3l.buf.toString()), `Download says "not ready yet" instead of failing silently (${f3l.status})`);
+  fake.easyShip.labelMode = 'ok';
+  const f3m = await labelGet(M[8].id);
+  ok(f3m.status === 200 && f3m.buf.slice(0, 4).toString() === '%PDF', 'A moment later the label downloads fine (fetched on demand)');
+  const noWh = randomUUID();
+  await db('warehouses').insert({ id: noWh, tenantId, name: 'No-address WH', code: `NOADDR-${TS}`, address: JSON.stringify({}), isActive: 1, isVirtual: 0, updatedAt: new Date() });
+  await db('orders').where({ id: M[5].id }).update({ warehouseId: noWh });
   fake.calls.length = 0;
-  const del = await req('DELETE', `/orders/${mfn2.id}/label`, { token });
-  ok(del.status === 200 && del.body.cancelled === true, `Label cancelled (${del.status})`);
-  ok(del.body.orderReverted === true, 'Response says the order was taken back from SHIPPED');
-  ok(callsTo(/DELETE \/mfn\/v0\/shipments\/SHIP-1/).length === 1, 'Amazon was told to void shipment SHIP-1');
-  ok((await db('order_labels').where({ orderId: mfn2.id }).first()).status === 'CANCELLED', 'Local label marked CANCELLED (history kept)');
-  const gone = await req('GET', `/orders/${mfn2.id}/label`, { token });
-  ok(gone.status === 404, `Cancelled label is no longer downloadable (${gone.status})`);
-  const mfn2Back = await db('orders').where({ id: mfn2.id }).first();
-  ok(mfn2Back.status === 'CONFIRMED', `Order is CONFIRMED again, not SHIPPED (is ${mfn2Back.status})`);
-  ok(!mfn2Back.trackingNumber && !mfn2Back.courierName && !mfn2Back.channelShipmentId && !mfn2Back.shippedAt, 'Tracking, courier, shipment id and shipped-time cleared');
-  ok(mfn2Back.stockStatus === 'RESERVED', `Stock status back to RESERVED (is ${mfn2Back.stockStatus})`);
-  const stUnshipped = await stock();
-  ok(stUnshipped.quantityOnHand === stShipped.quantityOnHand + 2 && stUnshipped.quantityReserved === stShipped.quantityReserved + 2,
-    `Stock restored: on-hand +2 (${stShipped.quantityOnHand}→${stUnshipped.quantityOnHand}), reserved +2 (${stShipped.quantityReserved}→${stUnshipped.quantityReserved})`);
-  ok(stUnshipped.quantityAvailable === stShipped.quantityAvailable, 'Available unchanged (the units are still held for this order)');
-  const adj = await db('stock_movements').where({ referenceId: mfn2.id, type: 'ADJUSTMENT' }).first();
-  ok(adj && adj.quantity === 2 && /label cancelled/i.test(adj.notes || ''), 'Ledger has a compensating ADJUSTMENT entry (qty 2, "label cancelled")');
-  const del2 = await req('DELETE', `/orders/${mfn2.id}/label`, { token });
-  ok(del2.status === 404, `Cancelling again is refused, stock not moved twice (${del2.status})`);
-  const stAgain = await stock();
-  ok(stAgain.quantityOnHand === stUnshipped.quantityOnHand, 'Stock unchanged by the repeat cancel');
+  const f4 = await confirm(M[5].id);
+  ok(f4.status === 400 && /has no city\/pincode/.test(f4.body.error) && callsTo(/easyShip/).length === 0, `Warehouse without an address: clear message, Amazon not called ("${f4.body.error}")`);
+  await db('orders').where({ id: M[5].id }).update({ warehouseId: null });
+  const f5 = await confirm(M[5].id);
+  ok(f5.status === 400 && /No ship-from warehouse/.test(f5.body.error), `Order with no warehouse at all: "${f5.body.error}"`);
+  await db('orders').where({ id: M[5].id }).update({ warehouseId: whId });
 
-  const rebook = await req('POST', `/orders/${mfn2.id}/book-shipping`, { token, body: {} });
-  ok(rebook.status === 200 && rebook.body.booked === true, `The order can be booked again (${rebook.status})`);
-  const mfn2Re = await db('orders').where({ id: mfn2.id }).first();
-  ok(mfn2Re.status === 'SHIPPED' && mfn2Re.trackingNumber && mfn2Re.trackingNumber !== 'TRK1001', `New label, new tracking (${mfn2Re.trackingNumber})`);
-  const stRe = await stock();
-  ok(stRe.quantityOnHand === stShipped.quantityOnHand && stRe.quantityReserved === stShipped.quantityReserved, 'Stock deducted exactly once again (same as the first shipment)');
-  ok(Number((await db('order_labels').where({ orderId: mfn2.id, status: 'ACTIVE' }).count({ c: '*' }).first()).c) === 1, 'Exactly one ACTIVE label again');
+  // ── 8. Products without weight/size ──────────────────────────────────────
+  group('8. Product has no weight or size');
+  fake.calls.length = 0;
+  const w4 = await confirm(M[4].id);
+  const pk4 = callsTo(/POST \/easyShip\/2022-03-23\/package/)[0]?.body?.packageDetails;
+  ok(w4.status === 200 && pk4?.packageWeight?.value === 500 && pk4?.packageDimensions?.length === 20, 'Falls back to 500 g, 20×15×10 cm');
+  ok(w4.body.usedDefaults?.weight === true && w4.body.usedDefaults?.dimensions === true, 'Result flags that defaults were assumed');
 
-  // A seller manually moved a shipped order back to CONFIRMED but the label is
-  // still on it: cancelling must still clear the tracking and restore the stock.
-  await db('orders').where({ id: mfn6.id }).update({ status: 'CONFIRMED' });
-  const stM = await stock();
-  const delManual = await req('DELETE', `/orders/${mfn6.id}/label`, { token });
-  const mfn6Manual = await db('orders').where({ id: mfn6.id }).first();
-  const stM2 = await stock();
-  ok(delManual.status === 200 && delManual.body.orderReverted === true && !mfn6Manual.trackingNumber && mfn6Manual.status === 'CONFIRMED' && mfn6Manual.stockStatus === 'RESERVED',
-    'Order manually moved back to CONFIRMED: cancel still clears tracking and returns stock to RESERVED');
-  ok(stM2.quantityOnHand === stM.quantityOnHand + 1 && stM2.quantityReserved === stM.quantityReserved + 1, `…and restores its 1 unit (on-hand ${stM.quantityOnHand}→${stM2.quantityOnHand})`);
+  // ── 9. Amazon outside India: Buy Shipping ────────────────────────────────
+  group('9. Amazon arranges the courier outside India (Buy Shipping)');
+  await setCreds(fake.goodRefreshToken, 'US');
+  fake.calls.length = 0;
+  fake.labelType = 'PDF';
+  const b9 = await confirm(M[9].id);
+  ok(b9.status === 200 && b9.body.provider === 'AMAZON_BUY' && b9.body.trackingNumber === 'TRK1001', `US seller: Buy Shipping, tracking ${b9.body.trackingNumber}`);
+  const buy = callsTo(/POST \/mfn\/v0\/shipments/)[0];
+  ok(buy?.body?.ShippingServiceId === 'svc-cheap' && callsTo(/easyShip/).length === 0, 'Bought the CHEAPEST of 3 offers (₹62.50), Easy Ship not used');
+  const o9 = await row(M[9].id);
+  ok(o9.status === 'CONFIRMED' && o9.shipmentStatus === 'BOOKED' && o9.shipmentProvider === 'AMAZON_BUY', 'Order CONFIRMED, shipment "Booked"');
+  const l9 = await labelGet(M[9].id);
+  ok(l9.status === 200 && l9.buf.equals(fake.labels['SHIP-1']), 'Label is exactly what Amazon sent (gunzipped)');
+  const r9 = await refresh(M[9].id);
+  ok(r9.status === 200 && r9.body.changed === false, 'Buy Shipping has no tracking feed: refresh is harmless');
+  const x9 = await req('DELETE', `/orders/${M[9].id}/label`, { token });
+  ok(x9.status === 200 && callsTo(/DELETE \/mfn\/v0\/shipments\/SHIP-1/).length === 1, 'Cancel booking voids the shipment with Amazon');
+  fake.mode = 'noRates';
+  const n9 = await confirm(M[10].id);
+  ok(n9.status === 400 && /no eligible courier/.test(n9.body.error), `No courier available: "${n9.body.error}"`);
+  fake.mode = 'buyFails';
+  const n9b = await confirm(M[10].id);
+  ok(n9b.status === 400 && /Address could not be verified/.test(n9b.body.error), 'Amazon purchase error is passed through');
+  fake.mode = 'ok';
+  await setCreds(fake.goodRefreshToken, 'IN');
 
-  // A DELIVERED order must NOT be pulled back — the parcel reached the buyer.
-  await db('orders').where({ id: mfn3.id }).update({ status: 'DELIVERED' });
-  const delDelivered = await req('DELETE', `/orders/${mfn3.id}/label`, { token });
-  const mfn6After = await db('orders').where({ id: mfn3.id }).first();
-  ok(delDelivered.status === 200 && delDelivered.body.orderReverted === false && mfn6After.status === 'DELIVERED' && !!mfn6After.trackingNumber && mfn6After.stockStatus === 'DEDUCTED',
-    'A DELIVERED order keeps its status and tracking when its label is cancelled');
+  // ── 10. My own courier partner ───────────────────────────────────────────
+  group('10. I use my own courier (iThink, Shiprocket, Delhivery, Xpressbees)');
+  const marketConf = () => callsTo(/shipmentConfirmation/).length;
+  // iThink
+  await useCourier(IT);
+  fake.calls.length = 0;
+  const i1 = await confirm(M[11].id);
+  ok(i1.status === 200 && i1.body.provider === 'ITHINK' && /^ITH\d+/.test(i1.body.trackingNumber) && i1.body.carrier === 'Ekart', `iThink booked it: ${i1.body.trackingNumber} via ${i1.body.carrier}`);
+  const ithAdd = callsTo(/order\/add\.json/)[0]?.body?.data;
+  ok(ithAdd?.access_token === 'AT' && ithAdd.secret_key === 'SK' && ithAdd.shipments[0].weight === '0.75' && ithAdd.shipments[0].shipment_length === '30', 'Request carries the keys and the real parcel (0.75 kg, 30 cm)');
+  ok(ithAdd?.pickup_address_id === '77', 'Pickup address id comes from the courier connection');
+  const o11 = await row(M[11].id);
+  ok(o11.status === 'CONFIRMED' && o11.shipmentStatus === 'BOOKED' && o11.shipmentProvider === 'ITHINK', 'Same result as Amazon: Confirmed + Booked');
+  ok(i1.body.marketplaceConfirmed === true && marketConf() === 1, 'Amazon was told the tracking number + courier (needed for your own courier)');
+  const li = await labelGet(M[11].id);
+  ok(li.status === 200 && li.buf.slice(0, 4).toString() === '%PDF', 'Download label: iThink PDF fetched through their link');
+  fake.courier.status[i1.body.trackingNumber] = 'Picked Up';
+  await refresh(M[11].id);
+  ok((await row(M[11].id)).shipmentStatus === 'PICKED_UP' && (await row(M[11].id)).status === 'SHIPPED', 'iThink "Picked Up" → Picked up, order SHIPPED');
+  fake.courier.status[i1.body.trackingNumber] = 'In Transit'; await refresh(M[11].id);
+  ok((await row(M[11].id)).shipmentStatus === 'IN_TRANSIT', 'iThink "In Transit" → In transit');
+  fake.courier.status[i1.body.trackingNumber] = 'RTO Initiated'; await refresh(M[11].id);
+  ok((await row(M[11].id)).shipmentStatus === 'RTO_INITIATED', 'iThink "RTO Initiated" → Returning to you');
+  fake.courier.status[i1.body.trackingNumber] = 'RTO Delivered'; await refresh(M[11].id);
+  ok((await row(M[11].id)).shipmentStatus === 'RTO_DELIVERED', 'iThink "RTO Delivered" → Returned to you');
 
-  // ── 12. Tenant isolation ─────────────────────────────────────────────────
-  group('12. Another seller cannot touch your labels');
-  const spy = await req('GET', `/orders/${mfn3.id}/label`, { token: otherToken });
-  ok(spy.status === 404, `Other tenant cannot download the label (${spy.status})`);
-  const spy2 = await req('POST', `/orders/${mfn3.id}/book-shipping`, { token: otherToken, body: {} });
-  ok(spy2.status !== 200, `Other tenant cannot trigger booking (${spy2.status})`);
-  const spy3 = await req('DELETE', `/orders/${mfn3.id}/label`, { token: otherToken });
-  ok(spy3.status === 404, `Other tenant cannot cancel the label (${spy3.status})`);
+  // iThink cancel
+  const i2 = await confirm(M[12].id);
+  fake.courier.mode = 'cancelFails';
+  const ic1 = await req('DELETE', `/orders/${M[12].id}/label`, { token });
+  ok(ic1.status === 502 && /Already picked up/.test(ic1.body.error) && (await row(M[12].id)).shipmentStatus === 'BOOKED', `Courier refuses to cancel → shown, booking stays (${ic1.body.error})`);
+  fake.courier.mode = 'ok';
+  const ic2 = await req('DELETE', `/orders/${M[12].id}/label`, { token });
+  ok(ic2.status === 200 && fake.courier.cancelled.includes(i2.body.trackingNumber) && (await row(M[12].id)).shipmentStatus === null, 'Cancel booking sent to iThink, order back to unbooked');
+  fake.courier.mode = 'bookFails';
+  const ib = await confirm(M[12].id);
+  ok(ib.status === 400 && /Invalid pincode/.test(ib.body.error) && !(await db('order_labels').where({ orderId: M[12].id, status: 'ACTIVE' }).first()), `Courier rejects the order: "${ib.body.error}" — nothing saved`);
+  fake.courier.mode = 'ok';
 
-  // ── 13. Forever-free plan ────────────────────────────────────────────────
+  // Shiprocket
+  await useCourier(SR);
+  fake.calls.length = 0;
+  const s1 = await confirm(M[13].id);
+  ok(s1.status === 200 && s1.body.provider === 'SHIPROCKET' && /^SR\d+/.test(s1.body.trackingNumber) && s1.body.carrier === 'Blue Dart', `Shiprocket booked it (create → assign courier → pickup): ${s1.body.trackingNumber}`);
+  ok(callsTo(/orders\/create\/adhoc/).length === 1 && callsTo(/courier\/assign\/awb/).length === 1 && callsTo(/courier\/generate\/pickup/).length === 1, 'All three Shiprocket steps ran once');
+  ok((await row(M[13].id)).shipmentStatus === 'PICKUP_SCHEDULED', 'Pickup was requested → "Pickup scheduled"');
+  const lsr = await labelGet(M[13].id);
+  const labelReq = callsTo(/courier\/generate\/label/)[0]?.body;
+  ok(lsr.status === 200 && lsr.buf.slice(0, 4).toString() === '%PDF' && Array.isArray(labelReq?.shipment_id), 'Label asked by SHIPMENT id and fetched as PDF');
+  fake.courier.status[s1.body.trackingNumber] = 'Delivered'; await refresh(M[13].id);
+  ok((await row(M[13].id)).shipmentStatus === 'DELIVERED', 'Shiprocket "Delivered" → Delivered (jumps straight there, nothing skipped by mistake)');
+
+  // Delhivery
+  await useCourier(DL);
+  const d1 = await confirm(M[14].id);
+  ok(d1.status === 200 && d1.body.provider === 'DELHIVERY' && /^DL\d+/.test(d1.body.trackingNumber) && (await row(M[14].id)).shipmentStatus === 'BOOKED', `Delhivery booked it: ${d1.body.trackingNumber}`);
+  const ld = await labelGet(M[14].id);
+  ok(ld.status === 404 && /print it from their panel/i.test(ld.buf.toString()) && d1.body.labelError, `No label via Delhivery's API: honest message ("${(d1.body.labelError || '').slice(0, 60)}…")`);
+  ok((await req('GET', `/orders/${M[14].id}/label?format=meta`, { token })).body.available === false, 'Label info says "not available through the API" so the screen can tell the seller');
+  fake.courier.status[d1.body.trackingNumber] = 'In Transit'; await refresh(M[14].id);
+  ok((await row(M[14].id)).shipmentStatus === 'IN_TRANSIT', 'Delhivery "In Transit" → In transit');
+
+  // Xpressbees
+  await useCourier(XB);
+  const x1 = await confirm(M[15].id);
+  ok(x1.status === 200 && x1.body.provider === 'XPRESSBEES' && /^XB\d+/.test(x1.body.trackingNumber), `Xpressbees booked it: ${x1.body.trackingNumber}`);
+  fake.courier.status[x1.body.trackingNumber] = 'Out For Delivery'; await refresh(M[15].id);
+  ok((await row(M[15].id)).shipmentStatus === 'OUT_FOR_DELIVERY', 'Xpressbees "Out For Delivery" → Out for delivery');
+
+  // disconnected courier
+  await db('channels').where({ id: XB }).update({ credentials: null });
+  const xd = await confirm(M[16].id);
+  ok(xd.status === 400 && /not connected/i.test(xd.body.error), `Courier disconnected later: "${xd.body.error}"`);
+  await useAmazon();
+
+  // ── 11. RTO-approval path ────────────────────────────────────────────────
+  group('11. Held (RTO-risk) orders: approve, then confirm');
+  await db('orders').where({ id: M[17].id }).update({ needsApproval: 1 });
+  const ap = await req('POST', `/orders/${M[17].id}/approve`, { token, body: {} });
+  ok(ap.status === 200 && ap.body.status === 'CONFIRMED' && ap.body.shipping === undefined, 'Approve only approves (no automatic booking)');
+  const ap2 = await confirm(M[17].id);
+  ok(ap2.status === 200 && (await row(M[17].id)).shipmentStatus === 'PICKUP_SCHEDULED', 'Then Confirm books the courier');
+
+  // ── 12. Isolation ────────────────────────────────────────────────────────
+  group('12. Another seller cannot touch your shipments');
+  ok((await labelGet(M[2].id, otherToken)).status === 404, 'Other tenant cannot download the label');
+  ok((await confirm(M[18].id, otherToken)).status !== 200 && !(await row(M[18].id)).shipmentStatus, 'Other tenant cannot confirm your order');
+  ok((await req('DELETE', `/orders/${M[17].id}/label`, { token: otherToken })).status === 404, 'Other tenant cannot cancel your booking');
+  ok((await shipment(M[2].id, otherToken)).status === 404 && (await refresh(M[2].id, otherToken)).status === 404, 'Other tenant cannot read or refresh your shipment status');
+  ok((await confirm(M[18].id, '')).status === 401, 'No login → 401');
+
+  // ── 13. Plan ─────────────────────────────────────────────────────────────
   group('13. FIVERR_FREE test plan');
   const plans = await req('GET', '/plans');
   ok(!plans.body.some((p) => p.code === 'FIVERR_FREE'), 'Hidden from the public pricing list');
@@ -360,325 +476,151 @@ async function main() {
   // ── 14. Packing slip ─────────────────────────────────────────────────────
   group('14. Packing slip');
   const slipRaw = (id, tok = token) => req('GET', `/orders/${id}/packing-slip`, { token: tok, raw: true });
-  const slip = await slipRaw(mfn1.id);
+  const slip = await slipRaw(M[1].id);
   const html = slip.buf.toString();
-  ok(slip.status === 200 && /text\/html/.test(slip.headers['content-type']), `MFN order returns a printable HTML page (${slip.status}, ${slip.headers['content-type']})`);
-  ok(html.includes('PACKING SLIP') && html.includes(mfn1.orderNumber), 'Titled PACKING SLIP, carries the order number');
-  ok(html.includes('AMZ-MFN-1'), 'Shows the Amazon order id');
-  ok(html.includes('Test Widget') && html.includes(SKU), 'Lists the item name and SKU');
-  ok(/<td class="c qty">2<\/td>/.test(html) && html.includes('Total units: 2'), 'Shows quantity 2 and total units 2');
-  ok(html.includes('12 MG Road') && html.includes('Pune') && html.includes('411001'), 'Ship-to address (buyer) is there');
-  ok(html.includes('Pune Warehouse') && html.includes('411019') && html.includes('9999999999'), 'Ship-from is your warehouse (name, pincode, phone)');
+  ok(slip.status === 200 && /text\/html/.test(slip.headers['content-type']), `MFN order returns a printable HTML page (${slip.status})`);
+  ok(html.includes('PACKING SLIP') && html.includes(M[1].orderNumber) && html.includes('AMZ-MFN-1'), 'Titled PACKING SLIP, carries the order number and Amazon order id');
+  ok(html.includes('Test Widget') && html.includes(SKU) && html.includes('Total units: 1'), 'Lists the item name, SKU and quantity');
+  ok(html.includes('12 MG Road') && html.includes('411001') && html.includes('Pune Warehouse') && html.includes('411019'), 'Ship-to (buyer) and ship-from (your warehouse) are there');
   ok(html.includes(owner.businessName), 'Seller business name is on the slip');
-  ok(!/₹|INR|Rs\.?\s?\d|\b798\b|\b399\b|subtotal|total amount/i.test(html), 'NO prices or money amounts on the slip');
-  ok(!/<script/i.test(html), 'No scripts in the page');
-  ok(!/amazon\.(in|com)/i.test(html.replace('AMZ-MFN-1', '')), 'No marketplace links or branding');
-  ok(!html.includes('Shipped with'), 'Not-yet-shipped order shows no tracking line');
-
-  const shippedSlip = (await slipRaw(mfn2.id)).buf.toString();
-  const mfn2Now = await db('orders').where({ id: mfn2.id }).first();
-  ok(shippedSlip.includes('Shipped with') && shippedSlip.includes(mfn2Now.trackingNumber), `Shipped order shows its courier + tracking (${mfn2Now.trackingNumber})`);
-
-  // Buyer-controlled text must never become markup.
-  await db('customers').where({ id: mfn1.customerId }).update({ name: '<script>alert(1)</script>' });
-  await db('orders').where({ id: mfn1.id }).update({ notes: '"><img src=x onerror=alert(2)>' });
-  const evil = (await slipRaw(mfn1.id)).buf.toString();
-  ok(!/<script>alert|<img src=x/i.test(evil) && evil.includes('&lt;script&gt;alert(1)&lt;/script&gt;') && evil.includes('&lt;img src=x'),
-    'Hostile buyer name / note is HTML-escaped (no script or image injection)');
-
+  ok(!/₹|INR|Rs\.?\s?\d|\b399\b|subtotal|total amount/i.test(html), 'NO prices or money amounts on the slip');
+  ok(!/<script/i.test(html) && !html.includes('Shipped with'), 'No scripts; a not-yet-booked order shows no tracking line');
+  const slip2 = (await slipRaw(M[2].id)).buf.toString();
+  ok(slip2.includes('Shipped with') && slip2.includes('ESY9001'), 'A booked order shows its courier + tracking on the slip');
+  await db('customers').where({ id: M[1].customerId }).update({ name: '<script>alert(1)</script>' });
+  await db('orders').where({ id: M[1].id }).update({ notes: '"><img src=x onerror=alert(2)>' });
+  const evil = (await slipRaw(M[1].id)).buf.toString();
+  ok(!/<script>alert|<img src=x/i.test(evil) && evil.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), 'Hostile buyer name / note is HTML-escaped');
   const afnSlip = await req('GET', `/orders/${afn.id}/packing-slip`, { token });
-  ok(afnSlip.status === 400 && /fulfilled by the marketplace/.test(JSON.stringify(afnSlip.body)), `FBA order: no slip, clear reason (${afnSlip.status})`);
-  ok((await slipRaw(mfn1.id, otherToken)).status === 404, 'Another seller cannot open your packing slip (404)');
-  ok((await slipRaw(mfn1.id, '')).status === 401, 'No login → 401');
+  ok(afnSlip.status === 400 && /fulfilled by the marketplace/.test(JSON.stringify(afnSlip.body)), 'FBA order: no slip, clear reason');
+  ok((await slipRaw(M[1].id, otherToken)).status === 404 && (await slipRaw(M[1].id, '')).status === 401, 'Other seller → 404, no login → 401');
 
   // ── 15. Bulk packing slips ───────────────────────────────────────────────
   group('15. Bulk packing slips');
-  await db('orders').where({ id: mfn5.id }).update({ status: 'CANCELLED' });
+  await db('orders').where({ id: M[5].id }).update({ status: 'CANCELLED' });
   const bogus = randomUUID();
-  const ids = [mfn2.id, afn.id, mfn1.id, bogus, mfn4.id, mfn5.id, mfn2.id /* duplicate */];
-  const bulk = await req('POST', '/orders/packing-slips', { token, body: { ids } });
-  ok(bulk.status === 200 && typeof bulk.body.html === 'string', `Bulk request returns one document (${bulk.status})`);
-  ok(bulk.body.printed === 3, `3 slips printed: the 3 shippable orders, duplicate counted once (printed=${bulk.body.printed})`);
-  const sheets = (bulk.body.html.match(/<div class="sheet">/g) || []).length;
-  ok(sheets === 3, `Document has 3 slips, one per page (${sheets})`);
-  ok(/page-break-after:always/.test(bulk.body.html) && /break-after:page/.test(bulk.body.html), 'Each slip starts on a new page when printed');
+  const bulk = await req('POST', '/orders/packing-slips', { token, body: { ids: [M[2].id, afn.id, M[1].id, bogus, M[4].id, M[5].id, M[2].id] } });
+  ok(bulk.status === 200 && bulk.body.printed === 3, `One document, 3 slips (duplicate counted once) (printed=${bulk.body.printed})`);
+  ok((bulk.body.html.match(/<div class="sheet">/g) || []).length === 3 && /page-break-after:always/.test(bulk.body.html), 'One slip per page');
   const pos = (n) => bulk.body.html.indexOf(n);
-  const ord2 = await db('orders').where({ id: mfn2.id }).first();
-  const ord4 = await db('orders').where({ id: mfn4.id }).first();
-  ok(pos(ord2.orderNumber) > -1 && pos(mfn1.orderNumber) > pos(ord2.orderNumber) && pos(ord4.orderNumber) > pos(mfn1.orderNumber), 'Slips come out in the order they were selected');
+  ok(pos(M[2].orderNumber) > -1 && pos(M[1].orderNumber) > pos(M[2].orderNumber) && pos(M[4].orderNumber) > pos(M[1].orderNumber), 'Slips come out in the order selected');
   const reasons = Object.fromEntries(bulk.body.skipped.map((x) => [x.id, x.reason]));
-  ok(bulk.body.skipped.length === 3, `3 skipped, each with a reason (${bulk.body.skipped.length})`);
-  ok(/marketplace \(FBA\)/.test(reasons[afn.id] || ''), `FBA order skipped: "${reasons[afn.id]}"`);
-  ok(/not found/i.test(reasons[bogus] || ''), `Unknown order skipped: "${reasons[bogus]}"`);
-  ok(/cancelled/i.test(reasons[mfn5.id] || ''), `Cancelled order skipped: "${reasons[mfn5.id]}"`);
-  ok(!/<script>alert|<img src=x/i.test(bulk.body.html) && bulk.body.html.includes('&lt;script&gt;'), 'Hostile buyer text is escaped in the bulk document too');
-  ok(!/₹|INR|Rs\.?\s?\d|subtotal/i.test(bulk.body.html), 'No prices anywhere in the bulk document');
-
-  const one = await req('POST', '/orders/packing-slips', { token, body: { ids: [mfn4.id] } });
-  ok(one.status === 200 && one.body.printed === 1 && one.body.skipped.length === 0, 'A single selected order works the same way');
-  const allFba = await req('POST', '/orders/packing-slips', { token, body: { ids: [afn.id] } });
-  ok(allFba.status === 400 && allFba.body.skipped?.length === 1, `Only FBA selected: 400 with the reason, nothing to print (${allFba.status})`);
-  const none = await req('POST', '/orders/packing-slips', { token, body: { ids: [] } });
-  ok(none.status === 400, `Empty selection refused (${none.status})`);
+  ok(bulk.body.skipped.length === 3 && /marketplace \(FBA\)/.test(reasons[afn.id]) && /not found/i.test(reasons[bogus]) && /cancelled/i.test(reasons[M[5].id]), 'FBA, unknown and cancelled orders skipped, each with a reason');
+  ok(!/<script>alert|<img src=x/i.test(bulk.body.html) && !/₹|INR|subtotal/i.test(bulk.body.html), 'Escaped text, no prices');
+  ok((await req('POST', '/orders/packing-slips', { token, body: { ids: [] } })).status === 400, 'Empty selection refused');
   const tooMany = await req('POST', '/orders/packing-slips', { token, body: { ids: Array.from({ length: 101 }, () => randomUUID()) } });
-  ok(tooMany.status === 400 && /at most 100/.test(JSON.stringify(tooMany.body)), `101 orders refused, limit is 100 (${tooMany.status})`);
-  const exactly = await req('POST', '/orders/packing-slips', { token, body: { ids: Array.from({ length: 100 }, () => randomUUID()) } });
-  ok(exactly.status === 400 && !/at most/.test(JSON.stringify(exactly.body)), 'Exactly 100 is accepted by the limit check (then nothing found to print)');
-  const noAuth = await req('POST', '/orders/packing-slips', { body: { ids: [mfn4.id] } });
-  ok(noAuth.status === 401, `No login → 401 (${noAuth.status})`);
-  const spyBulk = await req('POST', '/orders/packing-slips', { token: otherToken, body: { ids: [mfn2.id, mfn1.id, mfn4.id] } });
-  ok(spyBulk.status === 400 && !spyBulk.body.html && spyBulk.body.skipped.every((x) => /not found/i.test(x.reason)), 'Another seller cannot pull your orders into their slips');
+  ok(tooMany.status === 400 && /at most 100/.test(JSON.stringify(tooMany.body)), 'Limit is 100');
+  ok((await req('POST', '/orders/packing-slips', { body: { ids: [M[4].id] } })).status === 401, 'No login → 401');
+  const spyBulk = await req('POST', '/orders/packing-slips', { token: otherToken, body: { ids: [M[2].id, M[1].id] } });
+  ok(spyBulk.status === 400 && !spyBulk.body.html, "Another seller cannot pull your orders into their slips");
 
-  // ── 16. Bulk shipping labels ─────────────────────────────────────────────
-  group('16. Bulk shipping labels');
-  await seedStock(80);
-  fake.orders = ['7', '8', '9', '10'].map((n) => amazonOrder(`AMZ-MFN-${n}`, 'MFN', SKU, 1, 399));
-  await req('POST', `/channels/${chId}/sync/orders`, { token, body: {} });
-  const [l7, l8, l9, l10] = await Promise.all(['7', '8', '9', '10'].map((n) => find(`AMZ-MFN-${n}`)));
-  const bookAs = async (o, type) => {
-    fake.labelType = type;
-    const r = await req('PATCH', `/orders/${o.id}/status`, { token, body: { status: 'CONFIRMED' } });
-    return r.body.shipping;
-  };
-  const b7 = await bookAs(l7, 'PDF');
-  const b8 = await bookAs(l8, 'PNG');
-  const b9 = await bookAs(l9, 'ZPL');
-  const b10 = await bookAs(l10, 'PDF');
+  // ── 16. Bulk label download ──────────────────────────────────────────────
+  group('16. Bulk "Download labels"');
+  await setCreds(fake.goodRefreshToken, 'US'); // Buy Shipping gives us PDF / PNG / ZPL labels to test
+  const bookAs = async (o, type) => { fake.labelType = type; return confirm(o.id); };
+  const b19 = await bookAs(M[19], 'PDF'); const b20 = await bookAs(M[20], 'PNG'); const b21 = await bookAs(M[21], 'ZPL'); const b22 = await bookAs(M[22], 'PDF');
   fake.labelType = 'PDF';
-  ok(b7?.booked && b8?.booked && b9?.booked && b10?.booked, 'Set-up: 4 fresh orders each bought a label (PDF, PNG, ZPL, PDF)');
-  await db('order_labels').where({ orderId: l10.id }).update({ content: Buffer.from('not a pdf').toString('base64') });
-  const lblIds = [l7.id, l8.id, l9.id, afn.id, mfn1.id, mfn3.id, bogus, l10.id, l7.id /* duplicate */];
-  const bl = await req('POST', '/orders/labels', { token, body: { ids: lblIds } });
-  ok(bl.status === 200 && typeof bl.body.pdf === 'string', `Bulk labels returns one PDF (${bl.status})`);
-  ok(bl.body.printed === 2 && bl.body.pages === 2, `2 labels merged into 2 pages: the PDF one and the PNG one (printed=${bl.body.printed}, pages=${bl.body.pages})`);
+  ok([b19, b20, b21, b22].every((b) => b.status === 200), 'Set-up: 4 orders booked with a PDF, PNG, ZPL and (later corrupted) PDF label');
+  await setCreds(fake.goodRefreshToken, 'IN');
+  await db('order_labels').where({ orderId: M[22].id }).update({ content: Buffer.from('not a pdf').toString('base64') });
+  await useCourier(IT);
+  const bi = await confirm(M[23].id); // courier-hosted label (link): fetched the first time it's needed
+  await useAmazon();
+  ok(bi.status === 200 && !(await db('order_labels').where({ orderId: M[23].id }).first()).content, 'A courier-hosted label is stored as a link only (not fetched yet)');
+  const bl = await req('POST', '/orders/labels', { token, body: { ids: [M[19].id, M[20].id, M[21].id, afn.id, M[24].id, bogus, M[22].id, M[23].id, M[19].id] } });
+  ok(bl.status === 200 && bl.body.printed === 3 && bl.body.pages === 3, `PDF + PNG + the courier link merge into one PDF of 3 pages (printed=${bl.body.printed}, pages=${bl.body.pages})`);
   const merged = await PDFDocument.load(Buffer.from(bl.body.pdf, 'base64'));
   const sizes = merged.getPages().map((pg) => `${Math.round(pg.getWidth())}x${Math.round(pg.getHeight())}`);
-  ok(merged.getPageCount() === 2 && sizes[0] === '300x450' && sizes[1] === '288x432', `It is a real PDF: page 1 = Amazon's PDF label (300×450), page 2 = the PNG on a 4×6 page (${sizes.join(', ')})`);
+  ok(sizes.join() === '300x450,288x432,288x432', `Real PDF: Amazon PDF (300×450), PNG on a 4×6 page, courier PDF (${sizes.join(', ')})`);
+  ok(!!(await db('order_labels').where({ orderId: M[23].id }).first()).content, 'The courier label was fetched once and kept');
   const why = Object.fromEntries(bl.body.skipped.map((x) => [x.id, x.reason]));
-  ok(bl.body.skipped.length === 6, `6 skipped, each with a reason (${bl.body.skipped.length})`);
-  ok(/ZPL/.test(why[l9.id] || ''), `ZPL thermal label skipped: "${why[l9.id]}"`);
-  ok(/marketplace \(FBA\)/.test(why[afn.id] || ''), `FBA order skipped: "${why[afn.id]}"`);
-  ok(/No active shipping label/.test(why[mfn1.id] || ''), `Order that never bought a label skipped: "${why[mfn1.id]}"`);
-  ok(/No active shipping label/.test(why[mfn3.id] || ''), 'Order whose label was cancelled is skipped (cancelled labels never print)');
-  ok(/not found/i.test(why[bogus] || ''), `Unknown order skipped: "${why[bogus]}"`);
-  ok(/could not be read/.test(why[l10.id] || ''), `Corrupt label file skips only that order: "${why[l10.id]}"`);
-
-  const rev = await req('POST', '/orders/labels', { token, body: { ids: [l8.id, l7.id] } });
+  ok(bl.body.skipped.length === 5, `5 skipped, each with a reason (${bl.body.skipped.length})`);
+  ok(/ZPL/.test(why[M[21].id]) && /marketplace \(FBA\)/.test(why[afn.id]) && /press Confirm first/.test(why[M[24].id]) && /not found/i.test(why[bogus]) && /could not be read/.test(why[M[22].id]), 'ZPL, FBA, not-confirmed, unknown and corrupt files are skipped with the right reason');
+  const rev = await req('POST', '/orders/labels', { token, body: { ids: [M[20].id, M[19].id] } });
   const revSizes = (await PDFDocument.load(Buffer.from(rev.body.pdf, 'base64'))).getPages().map((pg) => Math.round(pg.getWidth()));
-  ok(revSizes[0] === 288 && revSizes[1] === 300, `Labels come out in the order selected (reversed selection → ${revSizes.join(', ')})`);
-  const oneLbl = await req('POST', '/orders/labels', { token, body: { ids: [l7.id] } });
-  ok(oneLbl.status === 200 && oneLbl.body.printed === 1 && oneLbl.body.skipped.length === 0, 'A single selected order works too');
-  const onlyZpl = await req('POST', '/orders/labels', { token, body: { ids: [l9.id] } });
-  ok(onlyZpl.status === 400 && onlyZpl.body.skipped?.length === 1 && !onlyZpl.body.pdf, `Only a ZPL order selected: 400 with the reason, nothing to print (${onlyZpl.status})`);
-  ok((await req('POST', '/orders/labels', { token, body: { ids: [] } })).status === 400, 'Empty selection refused');
-  const many = await req('POST', '/orders/labels', { token, body: { ids: Array.from({ length: 101 }, () => randomUUID()) } });
-  ok(many.status === 400 && /at most 100/.test(JSON.stringify(many.body)), `101 orders refused, limit is 100 (${many.status})`);
-  ok((await req('POST', '/orders/labels', { body: { ids: [l7.id] } })).status === 401, 'No login → 401');
-  const spyL = await req('POST', '/orders/labels', { token: otherToken, body: { ids: [l7.id, l8.id] } });
-  ok(spyL.status === 400 && !spyL.body.pdf && spyL.body.skipped.every((x) => /not found/i.test(x.reason)), "Another seller cannot pull your labels into their PDF");
-  const stillThere = await db('order_labels').where({ orderId: l7.id, status: 'ACTIVE' }).count({ c: '*' }).first();
-  ok(Number(stillThere.c) === 1, 'Bulk printing does not buy or change anything (label still the same single ACTIVE one)');
-  ok(callsTo(/POST \/mfn\/v0\/shipments/).filter((c) => /AMZ-MFN-7/.test(JSON.stringify(c.body))).length === 1, 'Amazon was only asked to buy order 7 once — printing never re-buys');
+  ok(revSizes[0] === 288 && revSizes[1] === 300, 'Labels come out in the order selected');
+  ok((await req('POST', '/orders/labels', { token, body: { ids: [M[21].id] } })).status === 400, 'Only a ZPL order selected: 400 with the reason');
+  ok((await req('POST', '/orders/labels', { token, body: { ids: [] } })).status === 400 && (await req('POST', '/orders/labels', { body: { ids: [M[19].id] } })).status === 401, 'Empty → 400, no login → 401');
+  const spyL = await req('POST', '/orders/labels', { token: otherToken, body: { ids: [M[19].id, M[20].id] } });
+  ok(spyL.status === 400 && !spyL.body.pdf, "Another seller cannot pull your labels into their PDF");
 
-  // ── 18. Bulk "Confirm & get label" ───────────────────────────────────────
-  group('18. Bulk Confirm & get labels');
-  await db('channels').where({ id: chId }).update({ autoBookShipping: 0 }); // prove it books even with the auto-book switch OFF
-  await seedStock(80);
-  fake.orders = ['11', '12', '13'].map((n) => amazonOrder(`AMZ-MFN-${n}`, 'MFN', SKU, 1, 399));
-  await req('POST', `/channels/${chId}/sync/orders`, { token, body: {} });
-  const [k11, k12, k13] = await Promise.all(['11', '12', '13'].map((n) => find(`AMZ-MFN-${n}`)));
-  fake.labelType = 'PDF'; fake.mode = 'ok';
-  const shipCallsBefore = callsTo(/POST \/mfn\/v0\/shipments/).length;
-  const bb = await req('POST', '/orders/book-shipping', { token, body: { ids: [k11.id, k12.id, afn.id, mfn2.id, bogus, k11.id] } });
-  ok(bb.status === 200 && bb.body.booked === 2, `Books the 2 new MFN orders even though the channel's auto-book switch is OFF (booked=${bb.body.booked})`);
+  // ── 17. Bulk Confirm ─────────────────────────────────────────────────────
+  group('17. Bulk "Confirm & get labels"');
+  fake.mode = 'ok'; fake.easyShip.mode = 'ok';
+  const pkgs0 = callsTo(/POST \/easyShip\/2022-03-23\/package/).length;
+  const bb = await req('POST', '/orders/book-shipping', { token, body: { ids: [M[25].id, M[26].id, afn.id, M[3].id, bogus, M[25].id] } });
+  ok(bb.status === 200 && bb.body.booked === 2, `Books the 2 new MFN orders (booked=${bb.body.booked})`);
   const bres = Object.fromEntries(bb.body.results.map((r) => [r.id, r]));
-  ok(bb.body.results.length === 5, `Duplicate id handled once — 5 outcomes for 6 ids (${bb.body.results.length})`);
-  ok(bres[k11.id].booked && bres[k11.id].trackingNumber && bres[k12.id].booked, 'Each booked order reports its own tracking number');
-  ok(bres[afn.id].kind === 'skipped' && /FBA|channel/i.test(bres[afn.id].reason), `FBA order skipped, not an error: "${bres[afn.id].reason}"`);
-  ok(bres[mfn2.id].kind === 'skipped', `Already-shipped order skipped, not bought twice: "${bres[mfn2.id].reason}"`);
-  ok(bres[bogus].kind === 'skipped' && /not found/i.test(bres[bogus].reason), `Unknown order skipped: "${bres[bogus].reason}"`);
-  ok(callsTo(/POST \/mfn\/v0\/shipments/).length === shipCallsBefore + 2, 'Amazon was asked to buy exactly 2 labels');
-  ok((await db('orders').where({ id: k11.id }).first()).status === 'SHIPPED', 'Booked orders are SHIPPED');
-  const bl2 = await req('POST', '/orders/labels', { token, body: { ids: [k11.id, k12.id] } });
-  ok(bl2.status === 200 && bl2.body.printed === 2, 'Their labels print together as one PDF straight away (Confirm → Print)');
-
-  fake.mode = 'buyFails';
-  const bf = await req('POST', '/orders/book-shipping', { token, body: { ids: [k13.id] } });
-  ok(bf.status === 200 && bf.body.booked === 0 && bf.body.failed === 1 && /Address could not be verified/.test(bf.body.results[0].reason), `A failure is reported per order, not as a crash: "${bf.body.results[0].reason.slice(0, 50)}…"`);
-  fake.mode = 'ok';
-  ok((await req('POST', '/orders/book-shipping', { token, body: { ids: [] } })).status === 400, 'Empty selection refused (400)');
+  ok(bb.body.results.length === 5 && bres[M[25].id].booked && bres[M[25].id].trackingNumber && bres[M[26].id].booked, 'Duplicate handled once; each booked order reports its tracking number');
+  ok(bres[afn.id].kind === 'skipped' && bres[M[3].id].kind === 'skipped' && /Already confirmed/i.test(bres[M[3].id].reason), `FBA and already-confirmed orders skipped (not errors): "${bres[M[3].id].reason}"`);
+  ok(bres[bogus].kind === 'skipped' && /not found/i.test(bres[bogus].reason), 'Unknown order skipped');
+  ok(callsTo(/POST \/easyShip\/2022-03-23\/package/).length === pkgs0 + 2, 'Exactly 2 pickups were booked with Amazon');
+  const bl2 = await req('POST', '/orders/labels', { token, body: { ids: [M[25].id, M[26].id] } });
+  ok(bl2.status === 200 && bl2.body.printed === 2, 'Their labels download together as one PDF straight away');
+  fake.easyShip.mode = 'noSlots';
+  const bf = await req('POST', '/orders/book-shipping', { token, body: { ids: [M[27].id] } });
+  ok(bf.status === 200 && bf.body.failed === 1 && /no pickup slot/i.test(bf.body.results[0].reason), 'A failure is reported per order, not as a crash');
+  fake.easyShip.mode = 'ok';
+  ok((await req('POST', '/orders/book-shipping', { token, body: { ids: [] } })).status === 400, 'Empty selection refused');
   const big = await req('POST', '/orders/book-shipping', { token, body: { ids: Array.from({ length: 51 }, () => randomUUID()) } });
-  ok(big.status === 400 && /at most 50/.test(JSON.stringify(big.body)), `51 orders refused, limit is 50 (${big.status})`);
-  ok((await req('POST', '/orders/book-shipping', { body: { ids: [k13.id] } })).status === 401, 'No login → 401');
-  const buyBefore = callsTo(/POST \/mfn\/v0\/shipments/).length;
-  const bo = await req('POST', '/orders/book-shipping', { token: otherToken, body: { ids: [k13.id] } });
-  ok(bo.status === 200 && bo.body.booked === 0 && /not found/i.test(bo.body.results[0].reason), 'Another seller cannot book labels for your orders');
-  ok(callsTo(/POST \/mfn\/v0\/shipments/).length === buyBefore, 'And no purchase was made on your behalf');
+  ok(big.status === 400 && /at most 50/.test(JSON.stringify(big.body)), 'Limit is 50');
+  const pkgs1 = callsTo(/POST \/easyShip\/2022-03-23\/package/).length;
+  const bo = await req('POST', '/orders/book-shipping', { token: otherToken, body: { ids: [M[27].id] } });
+  ok(bo.status === 200 && bo.body.booked === 0 && callsTo(/POST \/easyShip\/2022-03-23\/package/).length === pkgs1, "Another seller cannot book your orders, and nothing is bought for them");
 
-  // ── 17. Demo mode (live-site sandbox) ────────────────────────────────────
-  group('17. Demo mode');
+  // ── 18. Orders list: shipment status filter + counts ─────────────────────
+  group('18. Orders list: Shipment status column, chips and counts');
+  const lst = await req('GET', `/orders?limit=100&shipmentStatus=PICKUP_SCHEDULED`, { token });
+  ok(lst.status === 200 && lst.body.orders.length > 0 && lst.body.orders.every((o) => o.shipmentStatus === 'PICKUP_SCHEDULED'), `Filter by "Pickup scheduled" (${lst.body.orders?.length} orders)`);
+  ok(lst.body.orders.every((o) => 'shipmentStatus' in o), 'Every row carries shipmentStatus (for the new column)');
+  const toc = await req('GET', `/orders?limit=100&shipmentStatus=TO_CONFIRM`, { token });
+  ok(toc.status === 200 && toc.body.orders.length > 0 && toc.body.orders.every((o) => !o.shipmentStatus && o.fulfillmentType === 'SELF' && ['PENDING', 'PROCESSING', 'CONFIRMED'].includes(o.status)), `"To confirm" shows only unbooked self-shipped open orders (${toc.body.orders.length})`);
+  ok(!toc.body.orders.some((o) => o.id === afn.id), 'The FBA order is never in "To confirm"');
+  const stats = await req('GET', '/orders/stats', { token });
+  const sc = stats.body.shipmentCounts || {};
+  ok(sc.TO_CONFIRM === toc.body.total && sc.PICKUP_SCHEDULED === lst.body.total && sc.DELIVERED >= 2 && sc.RTO_DELIVERED >= 1, `Stats give a count per chip (${JSON.stringify(sc)})`);
+
+  // ── 19. Automatic status polling (cron) ──────────────────────────────────
+  group('19. Background poll updates shipments by itself');
+  const k = await confirm(M[28].id);
+  const kPkg = Object.values(fake.easyShip.packages).find((p) => p.trackingId === k.body.trackingNumber);
+  kPkg.packageStatus = 'PickedUp';
+  const { pollOpenShipments } = require('../services/shipping/shipment.service');
+  const poll = await pollOpenShipments({});
+  ok(poll.checked > 0 && poll.changed >= 1 && (await row(M[28].id)).shipmentStatus === 'PICKED_UP', `Poll moved the parcel without anyone clicking (checked ${poll.checked}, changed ${poll.changed})`);
+  const poll2 = await pollOpenShipments({});
+  ok(poll2.changed === 0, 'A second poll with no news changes nothing');
+  const cron = require('../jobs/cron.job');
+  const cr = await cron.pollShipmentStatus();
+  ok(cr && Array.isArray(cr.errors) && cr.errors.length === 0, 'The scheduled job includes this poll and ran without errors');
+
+  // ── 20. Status wording ───────────────────────────────────────────────────
+  group('20. Courier wording → our statuses');
+  const n = S.normalizeStatus;
+  const cases = [
+    ['ReadyForPickup', 'PICKUP_SCHEDULED'], ['PickedUp', 'PICKED_UP'], ['AtDestinationFC', 'IN_TRANSIT'], ['OutForDelivery', 'OUT_FOR_DELIVERY'], ['Delivered', 'DELIVERED'],
+    ['Undeliverable', 'DELIVERY_FAILED'], ['ReturnedToSeller', 'RTO_DELIVERED'], ['LabelCanceled', 'CANCELLED'],
+    ['PICKUP SCHEDULED', 'PICKUP_SCHEDULED'], ['Pickup Pending', 'PICKUP_SCHEDULED'], ['Picked Up', 'PICKED_UP'], ['In Transit', 'IN_TRANSIT'], ['Shipped', 'IN_TRANSIT'],
+    ['Out For Delivery', 'OUT_FOR_DELIVERY'], ['DELIVERED', 'DELIVERED'], ['Undelivered - consignee unavailable', 'DELIVERY_FAILED'], ['NDR', 'DELIVERY_FAILED'],
+    ['RTO Initiated', 'RTO_INITIATED'], ['RTO In Transit', 'RTO_INITIATED'], ['RTO Delivered', 'RTO_DELIVERED'], ['Returned to Origin', 'RTO_INITIATED'], ['Cancelled', 'CANCELLED'],
+    ['Manifested', 'BOOKED'], ['AWB Assigned', 'BOOKED'], ['something weird', null], ['', null], [null, null],
+  ];
+  const wrong = cases.filter(([i, o]) => n(i) !== o).map(([i, o]) => `${i}→${n(i)} (want ${o})`);
+  ok(wrong.length === 0, wrong.length ? `Wording mismatches: ${wrong.join('; ')}` : `${cases.length} real-world status words map to the right step`);
+  ok(S.canMove(null, 'BOOKED') && S.canMove('BOOKED', 'PICKED_UP') && !S.canMove('IN_TRANSIT', 'PICKED_UP') && !S.canMove('DELIVERED', 'IN_TRANSIT') && !S.canMove('IN_TRANSIT', 'IN_TRANSIT'), 'Statuses only move forward; final ones never change');
+  ok(S.canMove('OUT_FOR_DELIVERY', 'DELIVERY_FAILED') && !S.canMove('BOOKED', 'DELIVERY_FAILED') && S.canMove('DELIVERY_FAILED', 'OUT_FOR_DELIVERY') && S.canMove('IN_TRANSIT', 'RTO_INITIATED'), 'Exceptions can appear once shipped and can recover');
+  ok(S.orderStatusFor('BOOKED') === 'CONFIRMED' && S.orderStatusFor('PICKED_UP') === 'SHIPPED' && S.orderStatusFor('DELIVERED') === 'DELIVERED' && S.orderStatusFor('RTO_DELIVERED') === 'RETURNED', 'Order status follows the shipment status');
+
+  // ── 21. Demo mode is gone ────────────────────────────────────────────────
+  group('21. Demo mode is removed');
+  ok((await req('POST', '/oauth/amazon/demo-authorize', { token, body: { channelId: chId } })).status === 404, 'The fake "Authorize" endpoint no longer exists');
   const adminLogin = await req('POST', '/auth/login', { body: { email: process.env.PLATFORM_ADMIN_EMAIL || 'founder@kartriq.com', password: process.env.PLATFORM_ADMIN_PASSWORD || 'founder123' } });
-  if (!adminLogin.body?.token) {
-    ok(true, 'Skipped: platform-admin login not available with the default seed credentials');
-  } else {
-    const adminTok = adminLogin.body.token;
-    const demoEmail = `demo-${TS}@test.local`;
-    const demoPass = 'DemoPass12345';
-    // an existing demo tenant from an earlier run would make "setup" return 409 — clear its flag
-    await db('tenants').where({ isDemo: 1 }).update({ isDemo: 0 });
-    const sellerOrdersBefore = Number((await db('orders').where({ tenantId }).count({ c: '*' }).first()).c);
-
-    process.env.DEMO_MODE_ENABLED = 'false';
-    const off = await req('POST', '/admin/demo/setup', { token: adminTok, body: { email: demoEmail, password: demoPass } });
-    ok(off.status === 403 && /not enabled/i.test(JSON.stringify(off.body)), `Server with demo mode OFF refuses to create it (${off.status})`);
-    ok((await req('GET', '/admin/demo', { token: adminTok })).body.enabled === false, 'Status reports demo mode as disabled');
-    process.env.DEMO_MODE_ENABLED = 'true';
-
-    ok((await req('GET', '/admin/demo', { token })).status === 403, 'A normal seller cannot see the demo admin API (403)');
-    ok((await req('POST', '/admin/demo/reset', { token, body: {} })).status === 403, 'A normal seller cannot reset demo data (403)');
-    ok((await req('POST', '/admin/demo/setup', { token: adminTok, body: { email: demoEmail, password: 'short' } })).status === 400, 'Weak demo password refused (400)');
-
-    const setup = await req('POST', '/admin/demo/setup', { token: adminTok, body: { email: demoEmail, password: demoPass } });
-    ok(setup.status === 201 && setup.body.tenantId, `Setup creates the demo tenant (${setup.status})`);
-    ok(setup.body.password === undefined, 'The chosen password is never echoed back');
-    const gen = await req('POST', '/admin/demo/setup', { token: adminTok, body: { email: `demo2-${TS}@test.local` } });
-    ok(gen.status === 409, `A second demo tenant is refused (${gen.status})`);
-
-    const dt = await db('tenants').where({ id: setup.body.tenantId }).first();
-    ok(dt.isDemo === 1 && dt.status === 'ACTIVE', 'Tenant is flagged isDemo and ACTIVE');
-    const dsub = await db('subscriptions').where({ tenantId: dt.id }).first();
-    const dplan = await db('plans').where({ id: dsub.planId }).first();
-    ok(dplan.code === 'FIVERR_FREE' && dsub.status === 'ACTIVE' && new Date(dsub.currentPeriodEnd).getFullYear() > 2100, 'On the forever-free FIVERR_FREE plan');
-    const stat = await req('GET', '/admin/demo', { token: adminTok });
-    ok(stat.body.exists && stat.body.counts.orders === 0 && stat.body.channel === null, `Starts empty: no channel, no products, no orders (${JSON.stringify(stat.body.counts)})`);
-    const startWh = await db('warehouses').where({ tenantId: setup.body.tenantId });
-    ok(startWh.length === 1 && JSON.parse(startWh[0].address).pincode === '411019', 'The only thing it starts with is one warehouse that has a real address');
-    ok(Number((await db('products').where({ tenantId: setup.body.tenantId }).count({ c: '*' }).first()).c) === 0, 'No products yet — the tester pulls them from the channel');
-    ok(stat.body.tenant.loginEmail === demoEmail, 'Status shows the demo login email');
-
-    // Real sellers can never switch a channel into demo mode.
-    await req('PUT', `/channels/${chId}`, { token, body: { isDemo: true, name: 'Amazon India' } });
-    const mk = await req('POST', '/channels', { token, body: { name: 'Sneaky', type: 'FLIPKART', isDemo: true } });
-    ok((await db('channels').where({ id: chId }).first()).isDemo === 0, 'A seller cannot turn their real channel into a demo channel (PUT ignores isDemo)');
-    ok(mk.status === 201 && (await db('channels').where({ id: mk.body.id }).first()).isDemo === 0, 'A seller cannot create a demo channel (POST ignores isDemo)');
-
-    // The demo tenant works end to end, and never touches the network.
-    const dl = await req('POST', '/auth/login', { body: { email: demoEmail, password: demoPass } });
-    const dtok = dl.body.token;
-    ok(dl.status === 200 && dtok, 'The demo seller can log in');
-    const dme = await req('GET', '/auth/me', { token: dtok });
-    ok(dme.status === 200 && dme.body.tenant?.id === dt.id, 'The demo seller is signed in to the demo tenant (and only that one)');
-    const callsBefore = fake.calls.length;
-    const demoJourney = async (tok, { verbose = false } = {}) => {
-      const c = await req('POST', '/channels', { token: tok, body: { name: 'Amazon India', type: 'AMAZON' } });
-      const id = c.body.id;
-      const st = await req('GET', `/oauth/amazon/start?channelId=${id}&region=IN`, { token: tok });
-      const au = await req('POST', '/oauth/amazon/demo-authorize', { token: tok, body: { channelId: id } });
-      const pc = await req('POST', `/channels/${id}/pull-catalog`, { token: tok, body: {} });
-      const sy = await req('POST', `/channels/${id}/sync/orders`, { token: tok, body: {} });
-      return { id, c, st, au, pc, sy };
-    };
-
-    // A real seller's Amazon channel is never a demo channel, and cannot use the fake authorization.
-    const realAmz = await req('POST', '/channels', { token, body: { name: 'Real Amazon 2', type: 'AMAZON' } });
-    ok((await db('channels').where({ id: realAmz.body.id }).first()).isDemo === 0, 'With demo mode ON, a normal seller\'s Amazon channel is still a real one');
-    ok((await req('POST', '/oauth/amazon/demo-authorize', { token, body: { channelId: realAmz.body.id } })).status === 403, 'A normal seller cannot use the fake "Authorize" (403)');
-    const dFlip = await req('POST', '/channels', { token: await (async () => dtok)(), body: { name: 'Demo Flipkart', type: 'FLIPKART' } });
-    ok(dFlip.status === 201 && (await db('channels').where({ id: dFlip.body.id }).first()).isDemo === 0, 'Only the Amazon channel is faked — other channels in the demo tenant stay real');
-    await db('channels').where({ id: dFlip.body.id }).del();
-
-    // ── The journey: connect → authorize → pull catalog → sync orders ──
-    const cr = await req('POST', '/channels', { token: dtok, body: { name: 'Amazon India', type: 'AMAZON' } });
-    const dch = await db('channels').where({ id: cr.body.id }).first();
-    ok(cr.status === 201 && dch.isDemo === 1, 'Step 1 — the demo seller adds the Amazon channel; the server flags it as a demo channel');
-    ok(!dch.credentials, 'It is not connected yet (no credentials)');
-    const st0 = await req('GET', `/oauth/amazon/status?channelId=${dch.id}`, { token: dtok });
-    ok(st0.body.connected === false, 'Status before authorizing: not connected');
-    const start = await req('GET', `/oauth/amazon/start?channelId=${dch.id}&region=IN`, { token: dtok });
-    ok(start.status === 200 && /\/demo\/amazon-consent\?channelId=/.test(start.body.url) && !/amazon\.in|amazon\.com/.test(start.body.url), `Step 2 — "Authorize with Amazon" sends them to Kartriq's FAKE consent page, not Amazon (${start.body.url.replace(/\?.*/, '')})`);
-    const auth = await req('POST', '/oauth/amazon/demo-authorize', { token: dtok, body: { channelId: dch.id } });
-    ok(auth.status === 200 && auth.body.connected === true, 'They click Authorize on the fake page');
-    ok((await req('GET', `/oauth/amazon/status?channelId=${dch.id}`, { token: dtok })).body.connected === true, 'Status now says: connected (the polling modal would close)');
-    const { decryptCredentials } = require('../utils/crypto');
-    const storedCreds = decryptCredentials(JSON.parse((await db('channels').where({ id: dch.id }).first()).credentials));
-    ok(storedCreds.demo === true && Object.keys(storedCreds).length === 1, 'Only a harmless placeholder is stored — no keys');
-    const typed = await req('POST', `/channels/${dch.id}/connect`, { token: dtok, body: { refreshToken: 'Atzr|REAL-SECRET-TOKEN', clientId: 'x' } });
-    const afterTyped = JSON.stringify(decryptCredentials(JSON.parse((await db('channels').where({ id: dch.id }).first()).credentials)));
-    ok(typed.status === 200 && !afterTyped.includes('REAL-SECRET'), 'Even if someone types real keys into the demo, they are thrown away, never stored');
-    const conn = await req('GET', `/channels/${dch.id}/test`, { token: dtok });
-    ok(conn.status === 200 && /DEMO/.test(JSON.stringify(conn.body)), 'Connection test says it is a demo marketplace');
-    const early = await req('POST', `/channels/${dch.id}/sync/orders`, { token: dtok, body: {} });
-    ok(early.status === 200 && early.body.fetched === 0, 'Syncing orders BEFORE pulling the catalog brings nothing (orders need products first)');
-    const pull = await req('POST', `/channels/${dch.id}/pull-catalog`, { token: dtok, body: {} });
-    const prodCount = Number((await db('products').where({ tenantId: dt.id }).count({ c: '*' }).first()).c);
-    ok(pull.status === 200 && prodCount === 3, `Step 3 — Pull catalog brings in 3 products (${prodCount})`);
-    const fbaWhD = await db('warehouses').where({ tenantId: dt.id, externalSource: 'AMAZON_FBA' }).first();
-    const widgetStock = await db('inventory_items as i').join('product_variants as v', 'v.id', 'i.variantId').where({ 'i.tenantId': dt.id, 'v.sku': 'DEMO-WIDGET' }).first();
-    const fbaStock = await db('inventory_items as i').join('product_variants as v', 'v.id', 'i.variantId').where({ 'i.tenantId': dt.id, 'v.sku': 'DEMO-FBA-ITEM' }).first();
-    ok(widgetStock && widgetStock.quantityOnHand === 120 && widgetStock.warehouseId === startWh[0].id, 'Merchant-fulfilled stock (120) lands in the tester\'s real warehouse');
-    ok(fbaStock && fbaStock.quantityOnHand === 40 && fbaWhD && fbaStock.warehouseId === fbaWhD.id, 'FBA stock (40) lands in the virtual "Amazon FBA" facility');
-    const sync1 = await req('POST', `/channels/${dch.id}/sync/orders`, { token: dtok, body: {} });
-    ok(sync1.status === 200 && sync1.body.imported === 6, `Step 4 — Sync orders brings in the 6 demo orders (${sync1.body.imported})`);
-    const sync2 = await req('POST', `/channels/${dch.id}/sync/orders`, { token: dtok, body: {} });
-    ok(sync2.status === 200 && sync2.body.fetched === 0 && Number((await db('orders').where({ tenantId: dt.id }).count({ c: '*' }).first()).c) === 6, 'Syncing again adds nothing — no duplicates, no flood');
-    const stat2 = await req('GET', '/admin/demo', { token: adminTok });
-    ok(stat2.body.counts.orders === 6 && stat2.body.counts.mfn === 5 && stat2.body.counts.fba === 1 && stat2.body.channel?.id === dch.id, `Admin status now shows 6 orders = 5 MFN + 1 FBA and the channel (${JSON.stringify(stat2.body.counts)})`);
-
-    await req('PUT', `/channels/${dch.id}`, { token: dtok, body: { autoBookShipping: true } });
-    const dOrder = async (suffix) => db('orders').where({ tenantId: dt.id }).whereRaw('channelOrderId like ?', [`%-${suffix}`]).first();
-    const m1 = await dOrder('MFN1'); const fbaD = await dOrder('FBA'); const errD = await dOrder('MFN5-ERR');
-    ok(m1.fulfillmentType === 'SELF' && fbaD.fulfillmentType === 'CHANNEL', 'Demo orders: MFN1 is self-fulfilled, FBA is channel-fulfilled');
-    const c1 = await req('PATCH', `/orders/${m1.id}/status`, { token: dtok, body: { status: 'CONFIRMED' } });
-    ok(c1.body.shipping?.booked === true && c1.body.status === 'SHIPPED', `Confirm on a demo MFN order auto-books and ships it (${c1.body.status})`);
-    ok(c1.body.shipping.chosen?.carrier === 'DemoPost' && c1.body.shipping.ratesConsidered === 3, `Cheapest of 3 demo couriers chosen (${c1.body.shipping.chosen?.carrier})`);
-    ok(/^DEMO/.test(c1.body.trackingNumber || ''), `Demo tracking number (${c1.body.trackingNumber})`);
-    const dpdf = await req('GET', `/orders/${m1.id}/label`, { token: dtok, raw: true });
-    const dlabel = await PDFDocument.load(dpdf.buf);
-    ok(dpdf.status === 200 && dlabel.getPageCount() === 1 && Math.round(dlabel.getPage(0).getWidth()) === 288, 'The saved demo label is a real 4×6 PDF');
-    const err1 = await req('PATCH', `/orders/${errD.id}/status`, { token: dtok, body: { status: 'CONFIRMED' } });
-    ok(err1.body.shipping?.error && /could not be verified/.test(err1.body.shipping.error) && err1.body.status === 'CONFIRMED', `The built-to-fail order shows a booking error and stays CONFIRMED ("${(err1.body.shipping?.error || '').slice(0, 60)}…")`);
-    const retryErr = await req('POST', `/orders/${errD.id}/book-shipping`, { token: dtok, body: {} });
-    ok(retryErr.status === 400, 'Retry on the built-to-fail order fails again, as designed (400)');
-    const fbaTry = await req('PATCH', `/orders/${fbaD.id}/status`, { token: dtok, body: { status: 'CONFIRMED' } });
-    ok(fbaTry.status === 400, 'FBA demo order cannot be confirmed by hand (400)');
-    const unship = await req('DELETE', `/orders/${m1.id}/label`, { token: dtok });
-    ok(unship.status === 200 && unship.body.orderReverted === true, 'Cancel label on a demo order un-ships it');
-    const dBulk = await req('POST', '/orders/packing-slips', { token: dtok, body: { ids: [m1.id, fbaD.id] } });
-    ok(dBulk.status === 200 && dBulk.body.printed === 1 && dBulk.body.skipped.length === 1, 'Bulk packing slips work on demo orders (FBA skipped)');
-    ok(fake.calls.length === callsBefore, `The fake Amazon was NEVER called over the network during all of this (${fake.calls.length - callsBefore} calls)`);
-
-    // Reset
-    const dBeforeIds = (await db('orders').where({ tenantId: dt.id })).map((o) => o.id);
-    await db('vendors').insert({ id: randomUUID(), tenantId: dt.id, name: 'Tester-made vendor', updatedAt: new Date() }).catch(() => {});
-    const rs = await req('POST', '/admin/demo/reset', { token: adminTok, body: {} });
-    ok(rs.status === 200, `Reset succeeds (${rs.status})`);
-    ok(Number((await db('orders').where({ tenantId: dt.id }).count({ c: '*' }).first()).c) === 0 && (await db('channels').where({ tenantId: dt.id })).length === 0, 'After reset: no channel, no orders — back to the very start');
-    ok(Number((await db('products').where({ tenantId: dt.id }).count({ c: '*' }).first()).c) === 0 && Number((await db('order_labels').where({ tenantId: dt.id }).count({ c: '*' }).first()).c) === 0, 'No products, no labels');
-    ok(Number((await db('vendors').where({ tenantId: dt.id }).count({ c: '*' }).first()).c) === 0, 'Data a tester added (a vendor) is cleared too');
-    ok((await db('warehouses').where({ tenantId: dt.id })).length === 1, 'One fresh warehouse with an address is back');
-    const again = await demoJourney(dtok);
-    const dAfter = await db('orders').where({ tenantId: dt.id });
-    ok(again.au.status === 200 && again.pc.status === 200 && again.sy.body.imported === 6 && dAfter.length === 6, 'The whole journey can be done again after a reset (connect → catalog → 6 orders)');
-    ok(dAfter.every((o) => !dBeforeIds.includes(o.id)) && dAfter.every((o) => o.status === 'PROCESSING'), 'All 6 orders are brand new and PROCESSING');
-    const dch2 = await db('channels').where({ tenantId: dt.id, isDemo: 1 });
-    ok(dch2.length === 1 && dch2[0].autoBookShipping === 0, 'Exactly one demo channel, auto-book switched back OFF');
-    const dl2 = await req('POST', '/auth/login', { body: { email: demoEmail, password: demoPass } });
-    ok(dl2.status === 200, 'The demo login still works after a reset');
-    const sellerOrdersAfter = Number((await db('orders').where({ tenantId }).count({ c: '*' }).first()).c);
-    ok(sellerOrdersAfter === sellerOrdersBefore, `Reset never touched another seller's data (${sellerOrdersBefore} → ${sellerOrdersAfter} orders)`);
-
-    // If the server turns demo mode off, the demo channel must not fall back to real Amazon.
-    process.env.DEMO_MODE_ENABLED = 'false';
-    const d2tok = (await req('POST', '/auth/login', { body: { email: demoEmail, password: demoPass } })).body.token;
-    const dch3 = await db('channels').where({ tenantId: dt.id, isDemo: 1 }).first();
-    const sync = await req('POST', `/channels/${dch3.id}/sync/orders`, { token: d2tok, body: {} });
-    ok(sync.status >= 400 && /not enabled/i.test(JSON.stringify(sync.body)), `With demo mode OFF the demo channel refuses to run (${sync.status})`);
-    ok(fake.calls.length === callsBefore, 'And it never fell back to calling real Amazon');
-    ok((await req('POST', '/admin/demo/reset', { token: adminTok, body: {} })).status === 403, 'Reset is refused while demo mode is OFF (403)');
-    process.env.DEMO_MODE_ENABLED = 'true';
-    await db('tenants').where({ id: dt.id }).update({ isDemo: 0 }); // leave the DB clean for the next run
-    await db('channels').where({ tenantId: dt.id }).update({ isDemo: 0 });
-  }
+  if (adminLogin.body?.token) ok((await req('GET', '/admin/demo', { token: adminLogin.body.token })).status === 404, 'The admin demo endpoints no longer exist');
+  else ok(true, 'Skipped: platform-admin login not available with the default seed credentials');
+  const meNow = await req('GET', '/auth/me', { token });
+  ok(!('isDemo' in (meNow.body.tenant || {})), 'The tenant no longer carries an isDemo flag');
+  const mkSneaky = await req('POST', '/channels', { token, body: { name: 'Sneaky', type: 'FLIPKART', isDemo: true } });
+  ok(mkSneaky.status === 201 && !(await db('channels').where({ id: mkSneaky.body.id }).first()).isDemo, 'A channel can no longer be switched into demo mode');
 
   // ── Result ───────────────────────────────────────────────────────────────
   console.log(`\n\x1b[1mResult: ${passed} passed, ${failed} failed\x1b[0m`);

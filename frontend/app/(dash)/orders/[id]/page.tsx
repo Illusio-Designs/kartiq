@@ -213,87 +213,6 @@ export default function OrderDetailPage() {
     if (ok) mcfCancelMutation.mutate(order.orderNumber);
   };
 
-  // ── Buy shipping via Amazon (Merchant Fulfilment / Buy Shipping) ────────────
-  // Amazon-partnered carrier label for a self-fulfilled (MFN) Amazon order:
-  // fetch eligible rates, pick one, buy the label. The buy call auto-confirms
-  // the shipment + stamps tracking on the order server-side, so we refetch.
-  const [amznWhId, setAmznWhId] = useState('');
-  const [amznWeight, setAmznWeight] = useState('500');
-  const [amznLength, setAmznLength] = useState('20');
-  const [amznWidth, setAmznWidth] = useState('15');
-  const [amznHeight, setAmznHeight] = useState('10');
-  const [amznRates, setAmznRates] = useState<any[] | null>(null);
-  const [amznServiceId, setAmznServiceId] = useState('');
-  const [amznResult, setAmznResult] = useState<any>(null);
-  const [amznLabelUrl, setAmznLabelUrl] = useState<string | null>(null);
-  // Ship-from: what the seller picked, else the order's own warehouse, else the
-  // first REAL warehouse (never the virtual "Amazon FBA" facility — Amazon ships
-  // MFN parcels from the seller's address). Derived, so it can't go stale or
-  // lock onto whichever list loaded first.
-  const amznWh: string = amznWhId || order?.warehouse?.id || order?.warehouseId || warehouses.find((w: any) => !w.isVirtual)?.id || '';
-
-  const amznWeightPayload = () => ({ value: Number(amznWeight) || 500, unit: 'grams' });
-  const amznDimsPayload = () => ({
-    length: Number(amznLength) || 0,
-    width: Number(amznWidth) || 0,
-    height: Number(amznHeight) || 0,
-    unit: 'centimeters',
-  });
-
-  const amznRatesMutation = useMutation({
-    mutationFn: () =>
-      channelApi
-        .amazonMfnRates(order.channelId || order.channel?.id, {
-          orderId: order.id,
-          warehouseId: amznWh || undefined,
-          weight: amznWeightPayload(),
-          dimensions: amznDimsPayload(),
-        })
-        .then((r) => r.data),
-    onSuccess: (data: any) => {
-      const rates: any[] = Array.isArray(data?.rates) ? data.rates : [];
-      setAmznRates(rates);
-      setAmznServiceId('');
-      setAmznResult(null);
-      setAmznLabelUrl(null);
-    },
-    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not fetch Amazon rates'),
-  });
-
-  const amznBuyMutation = useMutation({
-    mutationFn: () => {
-      const rate = (amznRates || []).find((r) => r.serviceId === amznServiceId);
-      return channelApi
-        .amazonMfnBuy(order.channelId || order.channel?.id, {
-          orderId: order.id,
-          warehouseId: amznWh || undefined,
-          shippingServiceId: amznServiceId,
-          shippingServiceOfferId: rate?.serviceOfferId || undefined,
-          weight: amznWeightPayload(),
-          dimensions: amznDimsPayload(),
-        })
-        .then((r) => r.data);
-    },
-    onSuccess: (data: any) => {
-      setAmznResult(data);
-      let url: string | null = null;
-      if (data?.label?.contentBase64) {
-        try {
-          const blob = new Blob(
-            [Uint8Array.from(atob(data.label.contentBase64), (c) => c.charCodeAt(0))],
-            { type: data.label.mime || 'application/pdf' },
-          );
-          url = URL.createObjectURL(blob);
-        } catch { url = null; }
-      }
-      setAmznLabelUrl(url);
-      qc.invalidateQueries({ queryKey: ['order', id] });
-      qc.invalidateQueries({ queryKey: ['orders'] });
-      toast.success('Amazon shipping label purchased');
-    },
-    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not buy Amazon label'),
-  });
-
   // ── Saved shipping label (auto-booked or bought here) ───────────────────────
   // The label is stored server-side, so it can be printed again any time.
   const { data: savedLabel } = useQuery({
@@ -341,50 +260,48 @@ export default function OrderDetailPage() {
       setSlipLoading(false);
     }
   };
-  // One-click "Confirm & get shipping label" for Amazon orders the seller ships.
-  // (RTO-held orders are approved first, which also confirms them.) Books the
-  // Amazon courier — cheapest rate — and stores the label, ready to print.
-  const getLabelMutation = useMutation({
+  // One-click "Confirm" for orders the seller ships (Amazon courier or your own
+  // courier partner — same button). Held (RTO) orders are approved first.
+  const refreshAll = () => {
+    qc.invalidateQueries({ queryKey: ['order', id] });
+    qc.invalidateQueries({ queryKey: ['order-label', id] });
+    qc.invalidateQueries({ queryKey: ['order-shipment', id] });
+    qc.invalidateQueries({ queryKey: ['orders'] });
+  };
+  const confirmMutation = useMutation({
     mutationFn: async () => {
       const held = !!order?.needsApproval && !['SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED'].includes(String(order?.status || ''));
-      if (held) {
-        const a = await orderApi.approve(id);
-        if (a.data?.shipping?.booked) return a.data.shipping; // approving already booked it
-      }
+      if (held) await orderApi.approve(id);
       return orderApi.bookShipping(id).then((r) => r.data);
     },
     onSuccess: (r: any) => {
-      toast.success(`Shipping label ready${r?.carrier ? ` (${r.carrier})` : ''} — print it and stick it on the parcel`);
-      qc.invalidateQueries({ queryKey: ['order', id] });
-      qc.invalidateQueries({ queryKey: ['order-label', id] });
-      qc.invalidateQueries({ queryKey: ['orders'] });
+      if (r?.labelError) toast.success(`Confirmed with ${r.carrier || 'the courier'}. ${r.labelError}`);
+      else toast.success(`Confirmed${r?.carrier ? ` with ${r.carrier}` : ''} — download the label below`);
+      refreshAll();
     },
     onError: (e: any) => {
-      toast.error(e?.response?.data?.error || e?.response?.data?.skipped || e.message || 'Could not get the shipping label');
-      qc.invalidateQueries({ queryKey: ['order', id] });
+      toast.error(e?.response?.data?.error || e?.response?.data?.skipped || e.message || 'Could not confirm this order');
+      refreshAll();
     },
   });
-  const bookShippingMutation = useMutation({
-    mutationFn: () => orderApi.bookShipping(id).then((r) => r.data),
-    onSuccess: () => {
-      toast.success('Amazon courier booked — label ready to print');
-      qc.invalidateQueries({ queryKey: ['order', id] });
-      qc.invalidateQueries({ queryKey: ['order-label', id] });
-      qc.invalidateQueries({ queryKey: ['orders'] });
-    },
-    onError: (e: any) => {
-      toast.error(e?.response?.data?.error || e?.response?.data?.skipped || e.message || 'Could not book Amazon courier');
-      qc.invalidateQueries({ queryKey: ['order', id] });
-    },
-  });
-  const cancelLabelMutation = useMutation({
+  const cancelBookingMutation = useMutation({
     mutationFn: () => orderApi.cancelLabel(id).then((r) => r.data),
-    onSuccess: () => {
-      toast.success('Label cancelled with Amazon');
-      qc.invalidateQueries({ queryKey: ['order-label', id] });
-      qc.invalidateQueries({ queryKey: ['order', id] });
+    onSuccess: () => { toast.success('Booking cancelled'); refreshAll(); },
+    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not cancel the booking'),
+  });
+  const refreshShipmentMutation = useMutation({
+    mutationFn: () => orderApi.refreshShipment(id).then((r) => r.data),
+    onSuccess: (r: any) => {
+      if (r?.error) toast.error(r.error); else toast.success(r?.changed ? 'Status updated' : 'Already up to date');
+      refreshAll();
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not cancel the label'),
+    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not refresh'),
+  });
+  const { data: shipment } = useQuery({
+    queryKey: ['order-shipment', id],
+    queryFn: () => orderApi.shipment(id).then((r) => r.data).catch(() => null),
+    enabled: !!id,
+    refetchInterval: 60_000,
   });
 
   // ── Video Management (VMS) — packing/dispatch clips ─────────────────────────
@@ -473,8 +390,9 @@ export default function OrderDetailPage() {
   // Amazon seller-account channel, order the seller ships (MFN): the simple
   // "Confirm & get label → Print" flow. (SmartBiz/FBA channels are Amazon-run.)
   const amazonSeller = isAmazonChannel && !['AMAZON_SMARTBIZ', 'AMAZON_FBA'].includes(String(order.channel?.type || '').toUpperCase());
-  const amazonSimple = amazonSeller && order.fulfillmentType === 'SELF';
-  const canGetLabel = amazonSimple && !savedLabel && !['SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED'].includes(String(order.status || ''));
+  const amazonSimple = amazonSeller && order.fulfillmentType === 'SELF'; // MFN: Confirm → label → shipment status
+  const booked = !!savedLabel || !!shipment?.status;
+  const canConfirm = amazonSimple && !booked && !['SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED'].includes(String(order.status || ''));
 
   // ── Review state ────────────────────────────────────────────────────────────
   // (1) RTO approval gate — only meaningful before the order ships. A lingering
@@ -618,26 +536,63 @@ export default function OrderDetailPage() {
         {/* Amazon orders you ship: ONE button. Amazon books the cheapest courier and
             gives the label; then you only print it. Everything manual is tucked
             under "More options" below. */}
-        {canGetLabel && (
-          <Card className="p-5 space-y-3 border-emerald-200">
+        {amazonSimple && order.status !== 'CANCELLED' && (
+          <Card className="p-5 space-y-4 border-emerald-200" data-testid="ship-card">
             <div className="flex items-center gap-2 flex-wrap">
               <PackageCheck size={16} className="text-emerald-600" />
               <span className="text-sm font-bold text-slate-800">Ship this order</span>
-              {order.shippingError ? <Badge variant="rose" dot>Label not booked</Badge> : <Badge variant="emerald" dot>1 step</Badge>}
+              {shipment?.status ? (
+                <span data-testid="shipment-badge"><Badge variant={shipmentVariant(shipment.status)} dot>{SHIPMENT_LABEL[shipment.status] || shipment.status}</Badge></span>
+              ) : order.shippingError ? <Badge variant="rose" dot>Not confirmed</Badge> : <Badge variant="emerald" dot>1 step</Badge>}
             </div>
-            <p className="text-xs text-slate-500">
-              {order.needsApproval
-                ? 'This order was held for review. Approving it also books the shipping label from Amazon.'
-                : 'Amazon books the courier and gives you the shipping label. Then you just print it and stick it on the parcel.'}
-            </p>
-            {order.shippingError && <p className="text-xs text-red-600 break-words">{order.shippingError}</p>}
-            <Button size="lg" leftIcon={<PackageCheck size={16} />} loading={getLabelMutation.isPending} onClick={() => getLabelMutation.mutate()}>
-              {order.shippingError ? 'Try again — get shipping label' : order.needsApproval ? 'Approve & get shipping label' : 'Confirm & get shipping label'}
-            </Button>
+
+            {canConfirm ? (
+              <>
+                <p className="text-xs text-slate-500">
+                  {order.needsApproval
+                    ? 'This order was held for review. Approving it also books the courier.'
+                    : 'Press Confirm — the courier is booked and the shipping label appears right below. Then print it and stick it on the parcel.'}
+                </p>
+                {order.shippingError && <p className="text-xs text-red-600 break-words" data-testid="ship-error">{order.shippingError}</p>}
+                <Button size="lg" data-testid="confirm-btn" leftIcon={<PackageCheck size={16} />} loading={confirmMutation.isPending} onClick={() => confirmMutation.mutate()}>
+                  {order.shippingError ? 'Try again — Confirm' : order.needsApproval ? 'Approve & confirm' : 'Confirm'}
+                </Button>
+              </>
+            ) : booked ? (
+              <>
+                <div className="text-xs text-slate-600">
+                  Confirmed
+                  {savedLabel?.trackingNumber ? <> · tracking <span className="font-mono text-slate-800">{savedLabel.trackingNumber}</span></> : null}
+                  {savedLabel?.carrier ? <span className="text-slate-400"> · {savedLabel.carrier}</span> : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="lg" data-testid="download-label" leftIcon={<Printer size={16} />} onClick={() => openLabel('download')}>Download label</Button>
+                  <Button size="lg" variant="secondary" leftIcon={<Package size={16} />} loading={slipLoading} onClick={printPackingSlip}>Print packing slip</Button>
+                  {shipment?.canCancel && (
+                    <Button
+                      size="lg"
+                      variant="secondary"
+                      data-testid="cancel-booking"
+                      loading={cancelBookingMutation.isPending}
+                      onClick={() => { if (window.confirm('Cancel this booking? You can confirm again afterwards.')) cancelBookingMutation.mutate(); }}
+                    >
+                      Cancel booking
+                    </Button>
+                  )}
+                </div>
+                {savedLabel && savedLabel.available === false && (
+                  <p className="text-xs text-amber-700">{savedLabel.carrier || 'This courier'} does not give the label file through the API — print it from their panel using the tracking number above.</p>
+                )}
+              </>
+            ) : null}
+
+            {shipment?.status ? (
+              <ShipmentTimeline shipment={shipment} refreshing={refreshShipmentMutation.isPending} onRefresh={() => refreshShipmentMutation.mutate()} />
+            ) : null}
           </Card>
         )}
 
-        <MoreOptions when={amazonSimple} title="More options — enter tracking or change the status by hand">
+        <MoreOptions when={amazonSimple} title="More options — enter tracking, pick a courier or change the status by hand">
         {editable ? (
           <Card className="p-5 space-y-4">
             <div className="flex items-center gap-2">
@@ -852,7 +807,7 @@ export default function OrderDetailPage() {
 
         {/* Packing slip — inside-the-parcel sheet (no prices). Self-fulfilled orders only;
             channel-fulfilled (FBA) orders are packed by the marketplace. */}
-        {order.fulfillmentType === 'SELF' && order.status !== 'CANCELLED' && (
+        {order.fulfillmentType === 'SELF' && order.status !== 'CANCELLED' && !amazonSimple && (
           <Card className="p-5">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
@@ -869,207 +824,6 @@ export default function OrderDetailPage() {
           </Card>
         )}
 
-        {/* Saved Amazon shipping label (auto-booked on confirm, or bought below) + any
-            booking error with a Retry. Printing never re-buys: the file is stored. */}
-        {order.fulfillmentType === 'SELF' && isAmazonChannel && (savedLabel || order.shippingError) && (
-          <Card className="p-5 space-y-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Printer size={15} className="text-emerald-600" />
-              <span className="text-sm font-bold text-slate-800">Shipping label</span>
-              {savedLabel ? <Badge variant="emerald" dot>Ready</Badge> : <Badge variant="rose" dot>Not booked</Badge>}
-            </div>
-            {savedLabel && (
-              <>
-                <div className="text-xs text-slate-600">
-                  <span className="font-mono text-slate-800">{savedLabel.trackingNumber || '—'}</span>
-                  {savedLabel.carrier ? <span className="text-slate-400"> · {savedLabel.carrier}</span> : null}
-                  {savedLabel.serviceName ? <span className="text-slate-400"> · {savedLabel.serviceName}</span> : null}
-                  {savedLabel.cost != null ? <span className="text-slate-400"> · {formatCurrency(Number(savedLabel.cost))}</span> : null}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" leftIcon={<Printer size={14} />} onClick={() => openLabel('print')}>Print label</Button>
-                  <Button size="sm" variant="secondary" onClick={() => openLabel('download')}>Download</Button>
-                  {order.status !== 'DELIVERED' && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      loading={cancelLabelMutation.isPending}
-                      onClick={() => {
-                        if (window.confirm('Cancel this label with Amazon? You will need to book a new one to ship this order.')) cancelLabelMutation.mutate();
-                      }}
-                    >
-                      Cancel label
-                    </Button>
-                  )}
-                </div>
-              </>
-            )}
-            {!savedLabel && order.shippingError && (
-              <>
-                <p className="text-xs text-red-600 break-words">{order.shippingError}</p>
-                <Button size="sm" loading={bookShippingMutation.isPending} onClick={() => bookShippingMutation.mutate()}>
-                  Retry booking
-                </Button>
-              </>
-            )}
-          </Card>
-        )}
-
-        {/* Buy shipping via Amazon (Merchant Fulfilment / Buy Shipping) — only
-            for self-fulfilled (MFN) Amazon orders. The Amazon-preferred path:
-            buy a partnered-carrier label that auto-confirms the shipment and
-            keeps valid tracking for Prime & seller metrics. */}
-        <MoreOptions when={amazonSimple} title="More options — choose the Amazon courier yourself">
-        {order.fulfillmentType === 'SELF' && isAmazonChannel && !savedLabel && (
-          <Card className="p-5 space-y-4">
-            <div className="flex items-center gap-2 flex-wrap">
-              <PackageCheck size={15} className="text-emerald-600" />
-              <span className="text-sm font-bold text-slate-800">Buy shipping via Amazon</span>
-              <Badge variant="emerald" dot>Recommended</Badge>
-            </div>
-            <p className="text-xs text-slate-500">
-              Amazon-partnered carrier label — auto-confirms the shipment and keeps valid tracking (best for Prime &amp; metrics).
-            </p>
-
-            {/* Package inputs */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 items-end">
-              <div className="col-span-2 sm:col-span-3 lg:col-span-2">
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Ship from</label>
-                <Select
-                  value={amznWh}
-                  onChange={setAmznWhId}
-                  options={warehouses.filter((w: any) => !w.isVirtual).map((w) => ({ value: w.id, label: w.name }))}
-                  placeholder="Select warehouse…"
-                  fullWidth
-                />
-              </div>
-              <Input
-                id="amzn-weight"
-                label="Weight (g)"
-                type="number"
-                min={1}
-                value={amznWeight}
-                onChange={(e) => setAmznWeight(e.target.value)}
-              />
-              <Input
-                id="amzn-length"
-                label="L (cm)"
-                type="number"
-                min={1}
-                value={amznLength}
-                onChange={(e) => setAmznLength(e.target.value)}
-              />
-              <Input
-                id="amzn-width"
-                label="W (cm)"
-                type="number"
-                min={1}
-                value={amznWidth}
-                onChange={(e) => setAmznWidth(e.target.value)}
-              />
-              <Input
-                id="amzn-height"
-                label="H (cm)"
-                type="number"
-                min={1}
-                value={amznHeight}
-                onChange={(e) => setAmznHeight(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Button
-                leftIcon={<Truck size={14} />}
-                loading={amznRatesMutation.isPending}
-                onClick={() => amznRatesMutation.mutate()}
-              >
-                Get Amazon rates
-              </Button>
-            </div>
-
-            {/* Rates list */}
-            {amznRates !== null && (
-              amznRates.length === 0 ? (
-                <p className="text-sm text-slate-500">No eligible services — check the address/weight.</p>
-              ) : (
-                <div className="space-y-2">
-                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Select a service</div>
-                  {amznRates.map((r: any) => {
-                    const rid = r.serviceId;
-                    const active = amznServiceId === rid;
-                    return (
-                      <button
-                        key={`${rid}-${r.serviceOfferId || ''}`}
-                        type="button"
-                        onClick={() => setAmznServiceId(rid)}
-                        className={`w-full flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-xl border px-3 py-2.5 text-sm text-left transition-colors ${
-                          active
-                            ? 'border-emerald-400 bg-emerald-50/70 dark:border-emerald-500/40 dark:bg-emerald-500/10'
-                            : 'border-slate-200 dark:border-slate-700/60 hover:border-slate-300'
-                        }`}
-                      >
-                        <span className="flex items-center gap-2 min-w-0">
-                          {active
-                            ? <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
-                            : <span className="w-[15px] shrink-0" />}
-                          <span className="font-semibold text-slate-800 truncate">{r.carrier || 'Carrier'}</span>
-                          <span className="text-slate-400">·</span>
-                          <span className="text-slate-600 truncate">{r.name || 'Service'}</span>
-                        </span>
-                        <span className="flex items-center gap-3 shrink-0">
-                          {r.estimatedDelivery && <span className="text-xs text-slate-400">ETA {r.estimatedDelivery}</span>}
-                          <span className="font-bold text-slate-900 tabular-nums">
-                            {r.amount != null ? `${r.amount} ${r.currency || ''}`.trim() : '—'}
-                          </span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                  <div className="pt-1">
-                    <Button
-                      leftIcon={<PackageCheck size={14} />}
-                      loading={amznBuyMutation.isPending}
-                      disabled={!amznServiceId}
-                      onClick={() => amznBuyMutation.mutate()}
-                    >
-                      Buy label
-                    </Button>
-                  </div>
-                </div>
-              )
-            )}
-
-            {/* Purchased label result */}
-            {amznResult && (
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-emerald-200 bg-emerald-50/70 dark:border-emerald-500/30 dark:bg-emerald-500/10 px-3 py-2.5 text-sm">
-                <span className="flex items-center gap-1.5 text-emerald-700 font-semibold">
-                  <CheckCircle2 size={15} /> Label purchased
-                </span>
-                {amznResult.trackingId && (
-                  <div>
-                    <span className="text-slate-400">AWB</span>{' '}
-                    <span className="font-mono text-slate-700">{amznResult.trackingId}</span>
-                    {amznResult.carrier ? <span className="text-slate-400"> · {amznResult.carrier}</span> : null}
-                    {amznResult.serviceName ? <span className="text-slate-400"> · {amznResult.serviceName}</span> : null}
-                  </div>
-                )}
-                {amznLabelUrl ? (
-                  <a
-                    href={amznLabelUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-emerald-700 font-semibold hover:underline"
-                  >
-                    <Printer size={14} /> Print / download label
-                  </a>
-                ) : (
-                  <span className="text-slate-400">Label document not returned — tracking is confirmed above.</span>
-                )}
-              </div>
-            )}
-          </Card>
-        )}
-        </MoreOptions>
 
         {/* Summary cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1298,5 +1052,64 @@ function MoreOptions({ when, title, children }: { when: boolean; title: string; 
       </summary>
       <div className="space-y-4 p-3 pt-1">{children}</div>
     </details>
+  );
+}
+
+
+const SHIPMENT_LABEL: Record<string, string> = {
+  BOOKED: 'Booked', PICKUP_SCHEDULED: 'Pickup scheduled', PICKED_UP: 'Picked up', IN_TRANSIT: 'In transit',
+  OUT_FOR_DELIVERY: 'Out for delivery', DELIVERED: 'Delivered', DELIVERY_FAILED: 'Delivery failed',
+  RTO_INITIATED: 'Returning to you', RTO_DELIVERED: 'Returned to you', CANCELLED: 'Cancelled',
+};
+const SHIPMENT_FLOW = ['BOOKED', 'PICKUP_SCHEDULED', 'PICKED_UP', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED'];
+function shipmentVariant(status: string): 'emerald' | 'amber' | 'rose' | 'slate' | 'blue' {
+  if (status === 'DELIVERED') return 'emerald';
+  if (['DELIVERY_FAILED', 'RTO_INITIATED', 'RTO_DELIVERED'].includes(status)) return 'rose';
+  if (['PICKED_UP', 'IN_TRANSIT', 'OUT_FOR_DELIVERY'].includes(status)) return 'blue';
+  return 'amber';
+}
+
+// Booked → Pickup scheduled → … with the time each step happened; exceptions appear where they occur.
+function ShipmentTimeline({ shipment, onRefresh, refreshing }: { shipment: any; onRefresh: () => void; refreshing: boolean }) {
+  const allEvents: any[] = shipment?.events || [];
+  const lastCancel = allEvents.map((e) => e.status).lastIndexOf('CANCELLED');
+  const events: any[] = lastCancel >= 0 ? allEvents.slice(lastCancel + 1) : allEvents; // only the current booking
+  const reached = new Map<string, any>();
+  for (const e of events) reached.set(e.status, e);
+  const current: string | null = shipment?.status || null;
+  const exception = events.filter((e) => !SHIPMENT_FLOW.includes(e.status) && e.status !== 'CANCELLED');
+  const curIdx = current ? SHIPMENT_FLOW.indexOf(current) : -1;
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4" data-testid="shipment-timeline">
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Shipment status</span>
+        {current && !['DELIVERED', 'RTO_DELIVERED'].includes(current) && (
+          <Button size="sm" variant="secondary" data-testid="refresh-shipment" loading={refreshing} onClick={onRefresh}>Refresh</Button>
+        )}
+      </div>
+      <ol className="space-y-2">
+        {SHIPMENT_FLOW.map((st, i) => {
+          const ev = reached.get(st);
+          const done = !!ev || (curIdx > -1 && i < curIdx);
+          return (
+            <li key={st} className="flex items-center gap-3 text-sm" data-testid={`step-${st}`} data-done={done ? '1' : '0'}>
+              <span className={`h-3 w-3 rounded-full border ${done ? 'bg-emerald-500 border-emerald-500' : 'bg-white border-slate-300'}`} />
+              <span className={done ? 'font-semibold text-slate-800' : 'text-slate-400'}>{SHIPMENT_LABEL[st]}</span>
+              {ev?.createdAt && <span className="text-xs text-slate-400">{new Date(ev.createdAt).toLocaleString()}</span>}
+            </li>
+          );
+        })}
+        {exception.map((ev) => (
+          <li key={ev.id} className="flex items-center gap-3 text-sm text-rose-700" data-testid={`step-${ev.status}`}>
+            <span className="h-3 w-3 rounded-full bg-rose-500" />
+            <span className="font-semibold">{SHIPMENT_LABEL[ev.status] || ev.status}</span>
+            <span className="text-xs text-rose-400">{new Date(ev.createdAt).toLocaleString()}</span>
+          </li>
+        ))}
+      </ol>
+      {lastCancel >= 0 && (
+        <p className="mt-3 text-xs text-slate-400">Earlier booking cancelled {new Date(allEvents[lastCancel].createdAt).toLocaleString()}.</p>
+      )}
+    </div>
   );
 }

@@ -59,6 +59,7 @@ const ORDER_COLUMNS: { key: string; label: string; sortable?: boolean }[] = [
   { key: 'total',       label: 'Total',       sortable: true },
   { key: 'rto',         label: 'RTO',         sortable: true },
   { key: 'status',      label: 'Status',      sortable: true },
+  { key: 'shipment',    label: 'Shipment status' },
   { key: 'date',        label: 'Date',        sortable: true },
 ];
 const ORDER_SORT: Record<string, (o: any) => string | number> = {
@@ -78,6 +79,7 @@ const ORDER_CSV: Record<string, (o: any) => string> = {
   total:       (o) => String(o.total ?? ''),
   rto:         (o) => (o.rtoRiskLevel ? `${o.rtoScore ?? 0} ${o.rtoRiskLevel}` : ''),
   status:      (o) => o.status || '',
+  shipment:    (o) => o.shipmentStatus || '',
   date:        (o) => (o.createdAt ? new Date(o.createdAt).toISOString() : ''),
 };
 const ORDER_COLS_LS_KEY = 'kartriq-orders-hidden-cols';
@@ -162,11 +164,25 @@ const TAB_FULFILLMENT: Record<OrderTab, string | undefined> = {
   manual: 'SELF',
 };
 
+const SHIPMENT_LABEL: Record<string, string> = {
+  BOOKED: 'Booked', PICKUP_SCHEDULED: 'Pickup scheduled', PICKED_UP: 'Picked up', IN_TRANSIT: 'In transit',
+  OUT_FOR_DELIVERY: 'Out for delivery', DELIVERED: 'Delivered', DELIVERY_FAILED: 'Delivery failed',
+  RTO_INITIATED: 'Returning to you', RTO_DELIVERED: 'Returned to you',
+};
+const SHIPMENT_CHIPS = ['BOOKED', 'PICKUP_SCHEDULED', 'PICKED_UP', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'DELIVERY_FAILED', 'RTO_INITIATED', 'RTO_DELIVERED'];
+function shipmentVariant(status: string): 'emerald' | 'amber' | 'rose' | 'blue' {
+  if (status === 'DELIVERED') return 'emerald';
+  if (['DELIVERY_FAILED', 'RTO_INITIATED', 'RTO_DELIVERED'].includes(status)) return 'rose';
+  if (['PICKED_UP', 'IN_TRANSIT', 'OUT_FOR_DELIVERY'].includes(status)) return 'blue';
+  return 'amber';
+}
+
 export default function OrdersPage() {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [status, setStatus] = useState('');
+  const [shipmentFilter, setShipmentFilter] = useState(''); // '' | TO_CONFIRM | a shipment status
   const [risk, setRisk] = useState('');
   // Seed the channel filter from ?channelId= so deep links (e.g. from a channel
   // page's "View orders" link) land pre-filtered.
@@ -244,11 +260,12 @@ export default function OrdersPage() {
   const visibleColumns = ORDER_COLUMNS.filter((c) => !hiddenCols.has(c.key));
 
   const { data, isLoading } = useQuery({
-    queryKey: ['orders', page, pageSize, status, risk, channelId, tab, dateFrom, dateTo],
+    queryKey: ['orders', page, pageSize, status, risk, channelId, tab, dateFrom, dateTo, shipmentFilter],
     queryFn: () => orderApi.list({
       page,
       limit: pageSize,
       status: status || undefined,
+      shipmentStatus: shipmentFilter || undefined,
       risk: risk && risk !== 'APPROVAL' ? risk : undefined,
       needsApproval: risk === 'APPROVAL' ? 'true' : undefined,
       // Server-side channel filter — the orders controller accepts `channelId`.
@@ -337,7 +354,7 @@ export default function OrdersPage() {
     (dateFrom || dateTo) ? { key: 'date', label: dateLabel, clear: () => { setDateFrom(''); setDateTo(''); setPage(1); } } : null,
     search ? { key: 'search', label: `“${search}”`, clear: () => setSearch('') } : null,
   ].filter(Boolean) as { key: string; label: string; clear: () => void }[];
-  const clearFilters = () => { setStatus(''); setRisk(''); setChannelId(''); setDateFrom(''); setDateTo(''); setSearch(''); setPage(1); };
+  const clearFilters = () => { setShipmentFilter(''); setStatus(''); setRisk(''); setChannelId(''); setDateFrom(''); setDateTo(''); setSearch(''); setPage(1); };
 
   // Context-aware empty state — the copy + actions match the active tab and
   // whether a search/filter is narrowing the list, so the Manual tab never
@@ -449,7 +466,7 @@ export default function OrdersPage() {
       setSlipsPending(false);
     }
   };
-  // "Confirm & get labels": books the Amazon courier for every selected order the
+  // "Confirm & get labels": books the courier (Amazon or your own) for every selected order the
   // seller ships, then opens ALL the new labels as one PDF to print. Orders that
   // need nothing (FBA, already shipped) are skipped; failures list the reason.
   const [bookPending, setBookPending] = useState(false);
@@ -475,7 +492,7 @@ export default function OrdersPage() {
       const parts = [
         booked ? `${booked} label${booked !== 1 ? 's' : ''} ready — opened to print` : 'No labels booked',
         failed ? `${failed} failed (${bad}${failed > 2 ? ' …' : ''})` : '',
-        skipped ? `${skipped} skipped (FBA / already shipped)` : '',
+        skipped ? `${skipped} skipped (FBA / already confirmed / shipped)` : '',
       ].filter(Boolean);
       (booked && !failed ? toast.success : toast.error)(parts.join(' · '));
       setSelected(new Set());
@@ -616,6 +633,14 @@ export default function OrdersPage() {
             <div className="truncate" title={o.channel?.name || undefined}>{o.channel?.name}</div>
           </td>
         );
+      case 'shipment': {
+        const st: string | null = o.shipmentStatus || null;
+        return (
+          <td key={key} className="px-2 py-2.5" data-testid="shipment-cell">
+            {st ? <Badge variant={shipmentVariant(st)} dot>{SHIPMENT_LABEL[st] || st}</Badge> : <span className="text-slate-300">—</span>}
+          </td>
+        );
+      }
       case 'fulfillment':
         return (
           <td key={key} className="px-2 py-2.5">
@@ -697,11 +722,30 @@ export default function OrdersPage() {
           { label: 'Cancelled', value: oStat.closed.toLocaleString(), tone: 'rose', icon: <XCircle size={16} />, hint: 'Cancelled · Returned' },
         ]} cols={6} />
 
+        {/* Shipment status chips — what needs confirming and where each parcel is */}
+        {(() => {
+          const sc: Record<string, number> = orderStats?.shipmentCounts || {};
+          const chips = [['TO_CONFIRM', 'To confirm'], ...SHIPMENT_CHIPS.map((k) => [k, SHIPMENT_LABEL[k]])].filter(([k]) => (sc[k] || 0) > 0 || shipmentFilter === k);
+          if (!chips.length) return null;
+          return (
+            <div className="flex flex-wrap items-center gap-2" data-testid="shipment-chips">
+              <button type="button" onClick={() => { setShipmentFilter(''); setPage(1); }}
+                className={`rounded-full border px-3 py-1 text-xs font-semibold ${!shipmentFilter ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>All</button>
+              {chips.map(([k, label]) => (
+                <button key={k} type="button" data-testid={`chip-${k}`} onClick={() => { setShipmentFilter(shipmentFilter === k ? '' : k); setPage(1); }}
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold ${shipmentFilter === k ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>
+                  {label} <span className="text-slate-400">{sc[k] || 0}</span>
+                </button>
+              ))}
+            </div>
+          );
+        })()}
+
         {/* Bulk actions (appears when rows are selected) */}
         <BulkActionBar count={selected.size} onClear={() => setSelected(new Set())}>
           <Button variant="outline" size="sm" leftIcon={<Truck size={13} />} loading={bulkPending} onClick={() => bulkSetStatus('SHIPPED', 'Marked shipped')}>Mark shipped</Button>
           <Button variant="primary" size="sm" leftIcon={<Truck size={13} />} loading={bookPending} onClick={confirmAndGetLabels}>Confirm &amp; get labels</Button>
-          <Button variant="outline" size="sm" leftIcon={<Printer size={13} />} loading={labelsPending} onClick={printSelectedLabels}>Print shipping labels</Button>
+          <Button variant="outline" size="sm" leftIcon={<Printer size={13} />} loading={labelsPending} onClick={printSelectedLabels}>Download labels</Button>
           <Button variant="outline" size="sm" leftIcon={<Printer size={13} />} loading={slipsPending} onClick={printSelectedSlips}>Print packing slips</Button>
           <Button variant="outline" size="sm" leftIcon={<Download size={13} />} onClick={() => exportRows(sortedOrders.filter((o: any) => selected.has(o.id)))}>Export</Button>
           <Button variant="danger" size="sm" leftIcon={<XCircle size={13} />} loading={bulkPending} onClick={cancelSelected}>Cancel</Button>

@@ -147,8 +147,26 @@ class ShipDelightAdapter extends BaseAdapter {
   async trackShipment(awb) { const { data } = await this.client.get(`/tracking/${awb}`); return { status: data?.status, raw: data }; }
 }
 
+// Rapidshyp, Shipmozo, Vamaship, Bigship, Shipyaari — multi-carrier aggregators.
+// Endpoint shapes are best-effort (no public sandbox to verify); listed as
+// "coming soon" in the catalog until smoke-tested with real credentials.
+function aggregator(base, ratesPath, createPath, trackPath) {
+  return class extends BaseAdapter {
+    constructor(creds) { super(creds); this.client = bearerClient(base, creds.apiKey); }
+    async getRates(input) { const { data } = await this.client.post(ratesPath, input); return data?.rates || []; }
+    async createShipment(input) { const { data } = await this.client.post(createPath, input); return { trackingNumber: data?.awb, awbCode: data?.awb, raw: data }; }
+    async trackShipment(awb) { const { data } = await this.client.get(`${trackPath}/${awb}`); return { status: data?.status, currentStatus: data?.status, raw: data }; }
+  };
+}
+const RapidshypAdapter = aggregator('https://api.rapidshyp.com/rapidshyp/apis/v1', '/rates', '/create_order', '/track_order');
+const ShipmozoAdapter  = aggregator('https://shipping-api.com/app/api/v1', '/rate-calculator', '/push-order', '/track-order');
+const VamashipAdapter  = aggregator('https://api.vamaship.com/ext/v1', '/rates', '/bookings', '/track');
+const BigshipAdapter   = aggregator('https://api.bigship.in/api', '/calculator', '/order/add/single', '/tracking');
+const ShipyaariAdapter = aggregator('https://api.shipyaari.com/v1', '/rates', '/orders', '/tracking');
+
 module.exports = {
   AramexAdapter, EkartAdapter, IndiaPostAdapter, GatiAdapter, SafexpressAdapter,
   TrackonAdapter, ProfessionalCouriersAdapter, SmartrAdapter, ShypliteAdapter,
   ICarryAdapter, DotZotAdapter, ShipDelightAdapter,
+  RapidshypAdapter, ShipmozoAdapter, VamashipAdapter, BigshipAdapter, ShipyaariAdapter,
 };

@@ -66,6 +66,12 @@ async function syncChannelOrders() {
       });
     }
   }
+  // Orders booked through Confirm: Amazon Easy Ship / the seller's own courier.
+  try {
+    const open = await require('../services/shipping/shipment.service').pollOpenShipments({});
+    results.shipmentsChecked += open.checked;
+    results.statusChanges += open.changed;
+  } catch (err) { results.errors.push(`shipment poll: ${err.message}`); }
   return results;
 }
 
@@ -177,6 +183,7 @@ async function pollShipmentStatus() {
       status: { in: ['SHIPPED', 'PROCESSING'] },
       awb: { not: null },
       channelId: { not: null },
+      shipmentStatus: null, // orders booked via Confirm are followed by shipment.service below
     },
     include: { channel: true },
     orderBy: { updatedAt: 'asc' },

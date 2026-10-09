@@ -11,8 +11,7 @@ npm start                    # Production start
 npm run db:seed              # Run seed manually
 npm run db:studio            # Prisma Studio GUI (port 5555)
 npm run test:all             # ONE command: runs every check + writes backend/test-report/report.html
-npm run test:amazon-shipping # Amazon FBA/MFN, auto-booked courier, labels, packing slips (fake Amazon)
-npm run demo:amazon-shipping # Click-through demo: real app + fake Amazon + demo seller
+npm run test:amazon-shipping # Amazon FBA/MFN: Confirm → label → shipment status (Amazon Easy Ship / Buy Shipping / own courier), packing slips (fake Amazon + fake couriers)
 npm run test:backend         # Run e2e test suite (requires server running)
 npm run test:backend:server  # Start server with rate limits disabled (for tests)
 npm run cron:run             # Run background sync jobs
@@ -218,9 +217,6 @@ FRONTEND_URL=http://localhost:3000
 # Dev flags
 DEV_AUTH_BYPASS=true
 DISABLE_RATE_LIMIT=true
-# Demo mode (admin → Demo mode): a sandbox tenant with a FAKE Amazon so anyone can click through
-# the Amazon courier/label flows on a live site. Off unless set; platform-admin only.
-DEMO_MODE_ENABLED=true
 ```
 
 ### Frontend (`.env.local`)
@@ -244,3 +240,16 @@ The fallback baseURL in `frontend/lib/api.ts` is `http://localhost:5001/api/v1`.
 - **Self-service vs admin user updates**: `PUT /users/:id` requires `users.update` permission and is for admin managing team members. For the logged-in user updating their own profile, use `PATCH /auth/me` instead.
 - **`PATCH /auth/change-password` OAuth guard**: The endpoint returns `400` if the user's account has no password (Google-only sign-in). The frontend should handle this gracefully.
 - **New columns via migration**: Adding a column to an existing table requires an entry in the `migrations` array inside `backend/src/bootstrap/initDb.js` — not just in `schema.sql.js`. The `schema.sql.js` `CREATE TABLE IF NOT EXISTS` won't add columns to tables that already exist.
+
+---
+
+## Shipping: Confirm → label → shipment status
+
+Self-shipped (MFN) Amazon orders have ONE button, **Confirm**, then **Download label**. Logic lives in `backend/src/services/shipping/shipment.service.js`; status vocabulary in `shipping/status.js`.
+
+- `channels.mfnShipping` = `AMAZON` (Amazon arranges the courier: **Easy Ship** for region IN, **Buy Shipping** elsewhere) or `OWN` (seller's own courier partner: `channels.shippingProviderId` → a connected LOGISTICS channel; supported: iThink, Shiprocket, Delhivery, Xpressbees). Validated server-side in `PUT /channels/:id`.
+- `POST /orders/:id/book-shipping` (Confirm), `GET /orders/:id/label`, `DELETE /orders/:id/label` (cancel booking, only before pickup), `POST /orders/:id/shipment/refresh`, `GET /orders/:id/shipment` (timeline), bulk `POST /orders/book-shipping` and `POST /orders/labels`.
+- `orders.shipmentStatus` (BOOKED → PICKUP_SCHEDULED → PICKED_UP → IN_TRANSIT → OUT_FOR_DELIVERY → DELIVERED; exceptions DELIVERY_FAILED, RTO_INITIATED, RTO_DELIVERED) moves forward only; history in `order_shipment_events`. Order is CONFIRMED when booked, SHIPPED (stock leaves the shelf) when the courier picks up. The cron `pollShipmentStatus` (every ~10 min) and the Refresh button update it.
+- Channel `needsReauth` (Amazon "invalid grant") drives the red banner + **Re-authorise** on the channel's manage page; `/oauth/amazon/status` returns `authorizedAt`.
+- Courier-adapter details (endpoints, status words) were written from public docs and are **unverified against live accounts** — treat as best effort until smoke-tested.
+- New npm packages used lazily (`pdf-lib`, `fflate`): the server must run "NPM install" after deploy.

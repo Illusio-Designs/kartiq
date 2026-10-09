@@ -448,6 +448,7 @@ const CATALOG = [
     credentialsSchema: [
       { key: 'accessToken', label: 'Access Token', type: 'password', required: true },
       { key: 'secretKey',   label: 'Secret Key',   type: 'password', required: true },
+      { key: 'pickupAddressId', label: 'Pickup address ID (from iThink panel → Warehouses)', type: 'text', required: false },
     ],
     applyUrl: 'https://www.ithinklogistics.com',
     docsUrl:  'https://www.ithinklogistics.com/developer',
@@ -973,6 +974,11 @@ const CATALOG = [
       pending('SHYPLITE',        'LOGISTICS', 'Shyplite',          'Multi-carrier shipping aggregator',  { features: ['rates','shipment','tracking'], applyUrl: 'https://shyplite.com' }),
       pending('ICARRY',          'LOGISTICS', 'iCarry',            'Multi-carrier shipping aggregator',  { features: ['rates','shipment','tracking'], applyUrl: 'https://icarry.in' }),
       pending('DOTZOT',          'LOGISTICS', 'DotZot',            'B2B & B2C express delivery',         { features: ['shipment','tracking'], applyUrl: 'https://www.dotzot.in' }),
+      pending('RAPIDSHYP',       'LOGISTICS', 'Rapidshyp',         'Multi-carrier shipping aggregator',  { features: ['rates','shipment','tracking'], applyUrl: 'https://rapidshyp.com' }),
+      pending('SHIPMOZO',        'LOGISTICS', 'Shipmozo',          'Multi-carrier shipping aggregator',  { features: ['rates','shipment','tracking'], applyUrl: 'https://shipmozo.com' }),
+      pending('VAMASHIP',        'LOGISTICS', 'Vamaship',          'Cross-border & domestic shipping',   { features: ['rates','shipment','tracking'], applyUrl: 'https://vamaship.com' }),
+      pending('BIGSHIP',         'LOGISTICS', 'Bigship',           'Multi-carrier shipping aggregator',  { features: ['rates','shipment','tracking'], applyUrl: 'https://bigship.in' }),
+      pending('SHIPYAARI',       'LOGISTICS', 'Shipyaari',         'Multi-carrier shipping aggregator',  { features: ['rates','shipment','tracking'], applyUrl: 'https://shipyaari.com' }),
       pending('SHIPDELIGHT',     'LOGISTICS', 'ShipDelight',       'Shipping & post-ship engagement',    { features: ['rates','shipment','tracking'], applyUrl: 'https://www.shipdelight.com' }),
 
       // ── OWNSTORE additions ─────────────────────────────────────

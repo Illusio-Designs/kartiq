@@ -21,6 +21,7 @@ import { Input, Textarea } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { getSchemaForType } from '@/lib/channel-schemas';
+import { MfnShippingPicker, type MfnChoice } from '@/components/channels/MfnShippingPicker';
 import { domainFor, logoDevUrl, iconHorseUrl, googleFaviconUrl, getChannelInitials } from '@/lib/channel-logos';
 
 const CATEGORY_ORDER = [
@@ -600,6 +601,18 @@ function ConnectModal({
   const [error, setError] = useState('');
   const [phase, setPhase] = useState<'idle' | 'authorizing' | 'waiting' | 'success'>('idle');
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
+  // Amazon asks first how orders you ship yourself (MFN) get their courier.
+  const isAmazon = oauthProvider === 'amazon';
+  const [step, setStep] = useState<'mfn' | 'connect'>(isAmazon ? 'mfn' : 'connect');
+  const [mfn, setMfn] = useState<MfnChoice>({ mfnShipping: 'AMAZON', shippingProviderId: null });
+  const { data: logisticsData } = useQuery({
+    queryKey: ['channels', 'LOGISTICS'],
+    queryFn: () => channelApi.list({ category: 'LOGISTICS' }).then((r) => r.data),
+    enabled: isAmazon,
+  });
+  const courierName = ((Array.isArray(logisticsData) ? logisticsData : logisticsData?.channels) || [])
+    .find((c: any) => c.id === mfn.shippingProviderId)?.name;
+  const mfnReady = mfn.mfnShipping === 'AMAZON' || !!mfn.shippingProviderId;
 
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const popupRef = useRef<Window | null>(null);
@@ -664,6 +677,7 @@ function ConnectModal({
         channelIdRef.current = created.id;
       }
       const channelId = channelIdRef.current!;
+      if (isAmazon) await channelApi.update(channelId, { mfnShipping: mfn.mfnShipping, shippingProviderId: mfn.shippingProviderId });
       const url = await consentUrl(channelId);
 
       // Open the provider's consent screen in a new browser tab.
@@ -692,7 +706,7 @@ function ConnectModal({
             if (selectedAddons.length) {
               try { await channelApi.amazonAddons(channelId, selectedAddons); } catch { /* shown in the channel list */ }
             }
-            setTimeout(onSuccess, 1000);
+            if (!isAmazon) setTimeout(onSuccess, 1000);
             return;
           }
           if (r.data.error) { stopPoll(); setError(r.data.error); setPhase('idle'); return; }
@@ -726,7 +740,15 @@ function ConnectModal({
       size="md"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+          {isAmazon && phase === 'success' ? (
+            <Button variant="primary" onClick={onSuccess}>Done</Button>
+          ) : isAmazon && step === 'mfn' ? (
+            <>
+              <Button variant="ghost" onClick={onClose}>Cancel</Button>
+              <Button variant="primary" disabled={!mfnReady} onClick={() => setStep('connect')}>Next</Button>
+            </>
+          ) : (<>
+          <Button variant="ghost" onClick={isAmazon ? () => setStep('mfn') : onClose} disabled={busy}>{isAmazon ? 'Back' : 'Cancel'}</Button>
           {oauthProvider ? (
             <Button
               variant="primary"
@@ -747,10 +769,29 @@ function ConnectModal({
               {createMutation.isPending ? 'Connecting…' : 'Connect Channel'}
             </Button>
           )}
+          </>)}
         </>
       }
     >
+      {isAmazon && step === 'mfn' ? (
+        <div className="space-y-3" data-testid="connect-mfn-step">
+          <div className="text-xs font-semibold text-slate-500">Step 1 of 2</div>
+          <h3 className="text-base font-bold text-slate-800">How do orders that you ship yourself (MFN) work?</h3>
+          <p className="text-xs text-slate-500">Orders Amazon ships from its own warehouse (FBA) need nothing from you. You can change this later in Manage channel.</p>
+          <MfnShippingPicker value={mfn} onChange={setMfn} />
+        </div>
+      ) : isAmazon && phase === 'success' ? (
+        <div className="space-y-3" data-testid="connect-done-step">
+          <div className="text-center text-3xl">✅</div>
+          <h3 className="text-base font-bold text-slate-800 text-center">Amazon is connected</h3>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 space-y-1">
+            <div>Orders you ship yourself: <b>{mfn.mfnShipping === 'AMAZON' ? 'Amazon arranges the courier' : `Your courier — ${courierName || 'selected'}`}</b></div>
+            <div className="text-xs text-slate-500">On an order, press <b>Confirm</b> and the label appears — just print it.</div>
+          </div>
+        </div>
+      ) : (
       <div className="space-y-4">
+        {isAmazon && <div className="text-xs font-semibold text-slate-500">Step 2 of 2 — Authorise Amazon</div>}
         {entry.requiresApproval && (
           <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl p-3">
             ⚠️ This channel requires seller approval.{' '}
@@ -807,6 +848,7 @@ function ConnectModal({
 
         {error && <p className="text-xs text-rose-600 font-medium">{error}</p>}
       </div>
+      )}
     </Modal>
   );
 }

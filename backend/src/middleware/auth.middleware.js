@@ -40,7 +40,7 @@ async function loadUserContext(userId, { byEmail = false } = {}) {
     },
     tenant: user.tenant ? {
       id: user.tenant.id, slug: user.tenant.slug, status: user.tenant.status,
-      businessName: user.tenant.businessName, gstin: user.tenant.gstin, isDemo: !!user.tenant.isDemo,
+      businessName: user.tenant.businessName, gstin: user.tenant.gstin,
     } : null,
     plan: plan ? {
       id: plan.id, code: plan.code, name: plan.name,
@@ -77,7 +77,7 @@ async function applyImpersonation(req) {
     slug: tenant.slug,
     status: tenant.status,
     businessName: tenant.businessName,
-    gstin: tenant.gstin, isDemo: !!tenant.isDemo,
+    gstin: tenant.gstin,
   };
   const plan = tenant.subscription?.plan || null;
   req.plan = plan ? {

@@ -12,7 +12,6 @@
     "test:backend": "node src/scripts/test.js",
     "test:all": "node src/scripts/run-all-tests.js",
     "test:amazon-shipping": "node src/scripts/test.amazon-shipping.js",
-    "demo:amazon-shipping": "node src/scripts/demo.amazon-shipping.js",
     "test:backend:server": "DISABLE_RATE_LIMIT=true node src/index.js"
   },
   "dependencies": {
@@ -26,6 +25,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.18.3",
     "express-rate-limit": "^7.2.0",
+    "fflate": "^0.8.3",
     "google-auth-library": "^9.11.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
