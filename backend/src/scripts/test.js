@@ -114,6 +114,9 @@ async function main() {
   group('2. Auth');
   const login = await req('POST', '/auth/login', { body: { email: T1.email, password: T1.password } });
   assert(login.status === 200 && login.body.token, 'Login returns token');
+  // One active session per user: logging in signs the sign-up session out
+  // (SESSION_SUPERSEDED), so carry on with the newest token.
+  if (login.body?.token) T1.token = login.body.token;
   assert(login.body.user?.role === 'ADMIN', 'New owner has role=ADMIN');
 
   const badLogin = await req('POST', '/auth/login', { body: { email: T1.email, password: 'wrong' } });
@@ -125,6 +128,11 @@ async function main() {
 
   const logout = await req('POST', '/auth/logout', { token: T1.token });
   assert(logout.status === 200, 'Logout endpoint works');
+  // Logging out ends that session — sign back in so the rest of the suite has a live token.
+  const relogin = await req('POST', '/auth/login', { body: { email: T1.email, password: T1.password } });
+  if (relogin.body?.token) T1.token = relogin.body.token;
+  const meAfterLogout = await req('GET', '/auth/me', { token: logout.status === 200 ? 'x' + T1.token : T1.token });
+  assert(meAfterLogout.status === 401, 'A tampered/old token is rejected (401)');
 
   const noToken = await req('GET', '/auth/me');
   assert(noToken.status === 401, 'Missing token returns 401');
@@ -214,7 +222,11 @@ async function main() {
     token: T1.token,
     body: { amount: 100, description: 'Test topup' },
   });
-  assert(topup.status === 200 && topup.body.balanceAfter === 100, `Topup credited (balance: ${topup.body?.balanceAfter})`);
+  // Direct top-up is refused on purpose: money only enters the wallet through a
+  // verified gateway payment (paymentRef), never by just asking for it.
+  assert(topup.status === 403 && /paymentRef/.test(JSON.stringify(topup.body)), `Top-up without a verified payment is refused (${topup.status})`);
+  const walletAfter = await req('GET', '/billing/wallet', { token: T1.token });
+  assert(walletAfter.status === 200 && walletAfter.body.balance === 0, 'Wallet balance is still 0 after the refused top-up');
 
   // Negative topup should fail
   const badTopup = await req('POST', '/billing/wallet/topup', {
@@ -232,7 +244,7 @@ async function main() {
 
   // Transaction history
   const txns = await req('GET', '/billing/wallet/transactions', { token: T1.token });
-  assert(Array.isArray(txns.body) && txns.body.length >= 1, 'Transactions logged');
+  assert(txns.status === 200 && Array.isArray(txns.body) && txns.body.length === 0, 'Transaction history is empty (no money moved)');
 
   // ── Channels + plan category gating ──────────────────────
   group('7. Channel category gating');
@@ -255,12 +267,18 @@ async function main() {
   });
   assert(ch2.status === 201, 'Second ECOM channel allowed');
 
-  // Now the third channel should be blocked by count limit
-  const chLimit = await req('POST', '/channels', {
+  // STANDARD (Starter) allows 3 channels (see PLANS in seed.js): the third is
+  // fine, the fourth must be blocked by the count limit.
+  const ch3 = await req('POST', '/channels', {
     token: T1.token,
     body: { name: 'My Myntra', type: 'MYNTRA' },
   });
-  assert(chLimit.status === 402, 'Third channel blocked (STANDARD maxChannels: 2)');
+  assert(ch3.status === 201, 'Third ECOM channel allowed (STANDARD maxChannels: 3)');
+  const chLimit = await req('POST', '/channels', {
+    token: T1.token,
+    body: { name: 'My Meesho', type: 'MEESHO' },
+  });
+  assert(chLimit.status === 402, 'Fourth channel blocked (STANDARD maxChannels: 3)');
 
   // ── Catalog endpoint ─────────────────────────────────────
   group('8. Channel catalog');
