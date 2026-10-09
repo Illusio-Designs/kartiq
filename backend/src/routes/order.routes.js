@@ -6,6 +6,7 @@ const {
 } = require('../middleware/auth.middleware');
 const { requestReviewForOrder, processReviewQueue, REVIEW_DELAY_HOURS } = require('../services/review.service');
 const { autoBookAmazonShipping, getActiveLabel, cancelOrderLabel } = require('../services/amazonShipping.service');
+const { buildPackingSlip } = require('../services/packingSlip.service');
 const { rankWarehouses, pickBestWarehouse } = require('../services/routing.service');
 const { scoreAndPersist } = require('../services/rto.service');
 const { VIDEO_TYPES, RETENTION_DAYS, stampRetentionOnDelivery } = require('../services/vms.service');
@@ -194,6 +195,20 @@ router.post('/:id/approve', requirePermission('orders.update'), async (req, res)
       return res.json({ ...(fresh || updated), shipping });
     }
     res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Packing slip (goes inside the parcel; no prices) ─────────────────────────
+// Self-fulfilled orders only. Returns a print-ready HTML page.
+router.get('/:id/packing-slip', requirePermission('orders.read'), async (req, res) => {
+  try {
+    const r = await buildPackingSlip(req.params.id, req.tenant.id);
+    if (r.error) return res.status(r.status).json({ error: r.error });
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(r.html);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

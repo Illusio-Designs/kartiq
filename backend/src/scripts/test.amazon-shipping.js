@@ -355,6 +355,40 @@ async function main() {
   const plan = await db('plans').where({ code: 'FIVERR_FREE' }).first();
   ok(plan && Number(plan.monthlyPrice) === 0 && plan.isPublic === 0, 'Exists in the database, ₹0, not public');
 
+  // ── 14. Packing slip ─────────────────────────────────────────────────────
+  group('14. Packing slip');
+  const slipRaw = (id, tok = token) => req('GET', `/orders/${id}/packing-slip`, { token: tok, raw: true });
+  const slip = await slipRaw(mfn1.id);
+  const html = slip.buf.toString();
+  ok(slip.status === 200 && /text\/html/.test(slip.headers['content-type']), `MFN order returns a printable HTML page (${slip.status}, ${slip.headers['content-type']})`);
+  ok(html.includes('PACKING SLIP') && html.includes(mfn1.orderNumber), 'Titled PACKING SLIP, carries the order number');
+  ok(html.includes('AMZ-MFN-1'), 'Shows the Amazon order id');
+  ok(html.includes('Test Widget') && html.includes(SKU), 'Lists the item name and SKU');
+  ok(/<td class="c qty">2<\/td>/.test(html) && html.includes('Total units: 2'), 'Shows quantity 2 and total units 2');
+  ok(html.includes('12 MG Road') && html.includes('Pune') && html.includes('411001'), 'Ship-to address (buyer) is there');
+  ok(html.includes('Pune Warehouse') && html.includes('411019') && html.includes('9999999999'), 'Ship-from is your warehouse (name, pincode, phone)');
+  ok(html.includes(owner.businessName), 'Seller business name is on the slip');
+  ok(!/₹|INR|Rs\.?\s?\d|\b798\b|\b399\b|subtotal|total amount/i.test(html), 'NO prices or money amounts on the slip');
+  ok(!/<script/i.test(html), 'No scripts in the page');
+  ok(!/amazon\.(in|com)/i.test(html.replace('AMZ-MFN-1', '')), 'No marketplace links or branding');
+  ok(!html.includes('Shipped with'), 'Not-yet-shipped order shows no tracking line');
+
+  const shippedSlip = (await slipRaw(mfn2.id)).buf.toString();
+  const mfn2Now = await db('orders').where({ id: mfn2.id }).first();
+  ok(shippedSlip.includes('Shipped with') && shippedSlip.includes(mfn2Now.trackingNumber), `Shipped order shows its courier + tracking (${mfn2Now.trackingNumber})`);
+
+  // Buyer-controlled text must never become markup.
+  await db('customers').where({ id: mfn1.customerId }).update({ name: '<script>alert(1)</script>' });
+  await db('orders').where({ id: mfn1.id }).update({ notes: '"><img src=x onerror=alert(2)>' });
+  const evil = (await slipRaw(mfn1.id)).buf.toString();
+  ok(!/<script>alert|<img src=x/i.test(evil) && evil.includes('&lt;script&gt;alert(1)&lt;/script&gt;') && evil.includes('&lt;img src=x'),
+    'Hostile buyer name / note is HTML-escaped (no script or image injection)');
+
+  const afnSlip = await req('GET', `/orders/${afn.id}/packing-slip`, { token });
+  ok(afnSlip.status === 400 && /fulfilled by the marketplace/.test(JSON.stringify(afnSlip.body)), `FBA order: no slip, clear reason (${afnSlip.status})`);
+  ok((await slipRaw(mfn1.id, otherToken)).status === 404, 'Another seller cannot open your packing slip (404)');
+  ok((await slipRaw(mfn1.id, '')).status === 401, 'No login → 401');
+
   // ── Result ───────────────────────────────────────────────────────────────
   console.log(`\n\x1b[1mResult: ${passed} passed, ${failed} failed\x1b[0m`);
   if (failed) { console.log('\nFailures:'); failures.forEach((f) => console.log('  - ' + f)); }

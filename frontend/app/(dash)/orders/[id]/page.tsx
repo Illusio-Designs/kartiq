@@ -321,6 +321,26 @@ export default function OrderDetailPage() {
       toast.error(e?.response?.data?.error || e.message || 'Could not load the label');
     }
   };
+  // Packing slip — print-ready page for the parcel (self-fulfilled orders only).
+  const [slipLoading, setSlipLoading] = useState(false);
+  const printPackingSlip = async () => {
+    setSlipLoading(true);
+    try {
+      const r = await orderApi.packingSlip(id);
+      const url = URL.createObjectURL(new Blob([r.data], { type: 'text/html' }));
+      const w = window.open(url, '_blank');
+      if (w) w.addEventListener('load', () => { try { w.print(); } catch { /* user can print manually */ } });
+      else toast.error('Pop-up blocked — allow pop-ups to print the packing slip');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e: any) {
+      // The error body is a Blob when responseType is 'blob' — read the message out of it.
+      let msg = e?.message || 'Could not open the packing slip';
+      try { const t = await e?.response?.data?.text?.(); if (t) msg = JSON.parse(t).error || msg; } catch { /* keep default */ }
+      toast.error(msg);
+    } finally {
+      setSlipLoading(false);
+    }
+  };
   const bookShippingMutation = useMutation({
     mutationFn: () => orderApi.bookShipping(id).then((r) => r.data),
     onSuccess: () => {
@@ -775,6 +795,25 @@ export default function OrderDetailPage() {
                 <span className="font-semibold text-slate-700">{mcfTracking}</span>
               </div>
             )}
+          </Card>
+        )}
+
+        {/* Packing slip — inside-the-parcel sheet (no prices). Self-fulfilled orders only;
+            channel-fulfilled (FBA) orders are packed by the marketplace. */}
+        {order.fulfillmentType === 'SELF' && order.status !== 'CANCELLED' && (
+          <Card className="p-5">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Package size={15} className="text-emerald-600" />
+                  <span className="text-sm font-bold text-slate-800">Packing slip</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">Items, quantities and addresses to put in the parcel. No prices.</p>
+              </div>
+              <Button size="sm" variant="secondary" leftIcon={<Printer size={14} />} loading={slipLoading} onClick={printPackingSlip}>
+                Print packing slip
+              </Button>
+            </div>
           </Card>
         )}
 
