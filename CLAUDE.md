@@ -218,6 +218,9 @@ FRONTEND_URL=http://localhost:3000
 # Dev flags
 DEV_AUTH_BYPASS=true
 DISABLE_RATE_LIMIT=true
+# Demo mode (admin → Demo mode): a sandbox tenant with a FAKE Amazon so anyone can click through
+# the Amazon courier/label flows on a live site. Off unless set; platform-admin only.
+DEMO_MODE_ENABLED=true
 ```
 
 ### Frontend (`.env.local`)

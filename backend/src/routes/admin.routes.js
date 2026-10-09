@@ -6,6 +6,7 @@ const { authenticate, requirePlatformAdmin } = require('../middleware/auth.middl
 const settingsService = require('../services/settings.service');
 const cronJob = require('../jobs/cron.job');
 const { sendTicketReply } = require('../services/email.service');
+const demoService = require('../services/demo.service');
 
 const router = Router();
 router.use(authenticate, requirePlatformAdmin);
@@ -264,6 +265,28 @@ router.post('/tenants/:id/restore', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ── Demo mode (platform admin only) ─────────────────────────────────────────
+// A sandbox tenant with a fake Amazon so anyone can click through the Amazon
+// flows on a live site. See services/demo.service.js for the safety rules.
+const demoSetupSchema = z.object({
+  email: z.string().email().optional(),
+  password: z.string().min(10).max(128).optional(),
+  businessName: z.string().min(1).max(120).optional(),
+});
+const demoFail = (res, err) => {
+  if (err instanceof z.ZodError) return res.status(400).json({ error: err.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join('; ') });
+  return res.status(err.status || 500).json({ error: err.message });
+};
+router.get('/demo', async (_req, res) => {
+  try { res.json(await demoService.getDemoStatus()); } catch (err) { demoFail(res, err); }
+});
+router.post('/demo/setup', async (req, res) => {
+  try { res.status(201).json(await demoService.setupDemo(demoSetupSchema.parse(req.body || {}))); } catch (err) { demoFail(res, err); }
+});
+router.post('/demo/reset', async (_req, res) => {
+  try { res.json(await demoService.resetDemo()); } catch (err) { demoFail(res, err); }
 });
 
 // Force-assign a plan

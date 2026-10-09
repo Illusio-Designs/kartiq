@@ -12,6 +12,7 @@
 process.env.PORT = process.env.TEST_PORT || '5055';
 process.env.DISABLE_CRON = 'true';
 process.env.DISABLE_RATE_LIMIT = 'true';
+process.env.DEMO_MODE_ENABLED = 'true';
 process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 
 const http = require('http');
@@ -478,6 +479,114 @@ async function main() {
   const stillThere = await db('order_labels').where({ orderId: l7.id, status: 'ACTIVE' }).count({ c: '*' }).first();
   ok(Number(stillThere.c) === 1, 'Bulk printing does not buy or change anything (label still the same single ACTIVE one)');
   ok(callsTo(/POST \/mfn\/v0\/shipments/).filter((c) => /AMZ-MFN-7/.test(JSON.stringify(c.body))).length === 1, 'Amazon was only asked to buy order 7 once — printing never re-buys');
+
+  // ── 17. Demo mode (live-site sandbox) ────────────────────────────────────
+  group('17. Demo mode');
+  const adminLogin = await req('POST', '/auth/login', { body: { email: process.env.PLATFORM_ADMIN_EMAIL || 'founder@kartriq.com', password: process.env.PLATFORM_ADMIN_PASSWORD || 'founder123' } });
+  if (!adminLogin.body?.token) {
+    ok(true, 'Skipped: platform-admin login not available with the default seed credentials');
+  } else {
+    const adminTok = adminLogin.body.token;
+    const demoEmail = `demo-${TS}@test.local`;
+    const demoPass = 'DemoPass12345';
+    // an existing demo tenant from an earlier run would make "setup" return 409 — clear its flag
+    await db('tenants').where({ isDemo: 1 }).update({ isDemo: 0 });
+    const sellerOrdersBefore = Number((await db('orders').where({ tenantId }).count({ c: '*' }).first()).c);
+
+    process.env.DEMO_MODE_ENABLED = 'false';
+    const off = await req('POST', '/admin/demo/setup', { token: adminTok, body: { email: demoEmail, password: demoPass } });
+    ok(off.status === 403 && /not enabled/i.test(JSON.stringify(off.body)), `Server with demo mode OFF refuses to create it (${off.status})`);
+    ok((await req('GET', '/admin/demo', { token: adminTok })).body.enabled === false, 'Status reports demo mode as disabled');
+    process.env.DEMO_MODE_ENABLED = 'true';
+
+    ok((await req('GET', '/admin/demo', { token })).status === 403, 'A normal seller cannot see the demo admin API (403)');
+    ok((await req('POST', '/admin/demo/reset', { token, body: {} })).status === 403, 'A normal seller cannot reset demo data (403)');
+    ok((await req('POST', '/admin/demo/setup', { token: adminTok, body: { email: demoEmail, password: 'short' } })).status === 400, 'Weak demo password refused (400)');
+
+    const setup = await req('POST', '/admin/demo/setup', { token: adminTok, body: { email: demoEmail, password: demoPass } });
+    ok(setup.status === 201 && setup.body.tenantId && setup.body.imported === 6, `Setup creates the demo tenant with 6 orders (${setup.status}, imported=${setup.body.imported})`);
+    ok(setup.body.password === undefined, 'The chosen password is never echoed back');
+    const gen = await req('POST', '/admin/demo/setup', { token: adminTok, body: { email: `demo2-${TS}@test.local` } });
+    ok(gen.status === 409, `A second demo tenant is refused (${gen.status})`);
+
+    const dt = await db('tenants').where({ id: setup.body.tenantId }).first();
+    ok(dt.isDemo === 1 && dt.status === 'ACTIVE', 'Tenant is flagged isDemo and ACTIVE');
+    const dsub = await db('subscriptions').where({ tenantId: dt.id }).first();
+    const dplan = await db('plans').where({ id: dsub.planId }).first();
+    ok(dplan.code === 'FIVERR_FREE' && dsub.status === 'ACTIVE' && new Date(dsub.currentPeriodEnd).getFullYear() > 2100, 'On the forever-free FIVERR_FREE plan');
+    const stat = await req('GET', '/admin/demo', { token: adminTok });
+    ok(stat.body.exists && stat.body.counts.orders === 6 && stat.body.counts.mfn === 5 && stat.body.counts.fba === 1, `Status: 6 orders = 5 MFN + 1 FBA (${JSON.stringify(stat.body.counts)})`);
+    ok(stat.body.tenant.loginEmail === demoEmail, 'Status shows the demo login email');
+
+    // Real sellers can never switch a channel into demo mode.
+    await req('PUT', `/channels/${chId}`, { token, body: { isDemo: true, name: 'Amazon India' } });
+    const mk = await req('POST', '/channels', { token, body: { name: 'Sneaky', type: 'FLIPKART', isDemo: true } });
+    ok((await db('channels').where({ id: chId }).first()).isDemo === 0, 'A seller cannot turn their real channel into a demo channel (PUT ignores isDemo)');
+    ok(mk.status === 201 && (await db('channels').where({ id: mk.body.id }).first()).isDemo === 0, 'A seller cannot create a demo channel (POST ignores isDemo)');
+
+    // The demo tenant works end to end, and never touches the network.
+    const dl = await req('POST', '/auth/login', { body: { email: demoEmail, password: demoPass } });
+    const dtok = dl.body.token;
+    ok(dl.status === 200 && dtok, 'The demo seller can log in');
+    const dme = await req('GET', '/auth/me', { token: dtok });
+    ok(dme.status === 200 && dme.body.tenant?.id === dt.id, 'The demo seller is signed in to the demo tenant (and only that one)');
+    const dch = (await db('channels').where({ tenantId: dt.id, isDemo: 1 }))[0];
+    ok(dch && dch.type === 'AMAZON' && dch.isDemo === 1, 'Demo tenant has one demo Amazon channel');
+    const callsBefore = fake.calls.length;
+    const conn = await req('GET', `/channels/${dch.id}/test`, { token: dtok });
+    ok(conn.status === 200 && /DEMO/.test(JSON.stringify(conn.body)), 'Connection test says it is a demo marketplace');
+    await req('PUT', `/channels/${dch.id}`, { token: dtok, body: { autoBookShipping: true } });
+    const dOrder = async (suffix) => db('orders').where({ tenantId: dt.id }).whereRaw('channelOrderId like ?', [`%-${suffix}`]).first();
+    const m1 = await dOrder('MFN1'); const fbaD = await dOrder('FBA'); const errD = await dOrder('MFN5-ERR');
+    ok(m1.fulfillmentType === 'SELF' && fbaD.fulfillmentType === 'CHANNEL', 'Demo orders: MFN1 is self-fulfilled, FBA is channel-fulfilled');
+    const c1 = await req('PATCH', `/orders/${m1.id}/status`, { token: dtok, body: { status: 'CONFIRMED' } });
+    ok(c1.body.shipping?.booked === true && c1.body.status === 'SHIPPED', `Confirm on a demo MFN order auto-books and ships it (${c1.body.status})`);
+    ok(c1.body.shipping.chosen?.carrier === 'DemoPost' && c1.body.shipping.ratesConsidered === 3, `Cheapest of 3 demo couriers chosen (${c1.body.shipping.chosen?.carrier})`);
+    ok(/^DEMO/.test(c1.body.trackingNumber || ''), `Demo tracking number (${c1.body.trackingNumber})`);
+    const dpdf = await req('GET', `/orders/${m1.id}/label`, { token: dtok, raw: true });
+    const dlabel = await PDFDocument.load(dpdf.buf);
+    ok(dpdf.status === 200 && dlabel.getPageCount() === 1 && Math.round(dlabel.getPage(0).getWidth()) === 288, 'The saved demo label is a real 4×6 PDF');
+    const err1 = await req('PATCH', `/orders/${errD.id}/status`, { token: dtok, body: { status: 'CONFIRMED' } });
+    ok(err1.body.shipping?.error && /could not be verified/.test(err1.body.shipping.error) && err1.body.status === 'CONFIRMED', `The built-to-fail order shows a booking error and stays CONFIRMED ("${(err1.body.shipping?.error || '').slice(0, 60)}…")`);
+    const retryErr = await req('POST', `/orders/${errD.id}/book-shipping`, { token: dtok, body: {} });
+    ok(retryErr.status === 400, 'Retry on the built-to-fail order fails again, as designed (400)');
+    const fbaTry = await req('PATCH', `/orders/${fbaD.id}/status`, { token: dtok, body: { status: 'CONFIRMED' } });
+    ok(fbaTry.status === 400, 'FBA demo order cannot be confirmed by hand (400)');
+    const unship = await req('DELETE', `/orders/${m1.id}/label`, { token: dtok });
+    ok(unship.status === 200 && unship.body.orderReverted === true, 'Cancel label on a demo order un-ships it');
+    const dBulk = await req('POST', '/orders/packing-slips', { token: dtok, body: { ids: [m1.id, fbaD.id] } });
+    ok(dBulk.status === 200 && dBulk.body.printed === 1 && dBulk.body.skipped.length === 1, 'Bulk packing slips work on demo orders (FBA skipped)');
+    ok(fake.calls.length === callsBefore, `The fake Amazon was NEVER called over the network during all of this (${fake.calls.length - callsBefore} calls)`);
+
+    // Reset
+    const dBeforeIds = (await db('orders').where({ tenantId: dt.id })).map((o) => o.id);
+    await db('vendors').insert({ id: randomUUID(), tenantId: dt.id, name: 'Tester-made vendor', updatedAt: new Date() }).catch(() => {});
+    const rs = await req('POST', '/admin/demo/reset', { token: adminTok, body: {} });
+    ok(rs.status === 200 && rs.body.imported === 6, `Reset rebuilds 6 fresh orders (${rs.status}, imported=${rs.body.imported})`);
+    const dAfter = await db('orders').where({ tenantId: dt.id });
+    ok(dAfter.length === 6 && dAfter.every((o) => !dBeforeIds.includes(o.id)), 'All demo orders are brand new after reset');
+    ok(dAfter.every((o) => o.status === 'PROCESSING'), 'Every demo order is back to PROCESSING');
+    ok(Number((await db('order_labels').where({ tenantId: dt.id }).count({ c: '*' }).first()).c) === 0, 'Old labels are gone');
+    ok(Number((await db('vendors').where({ tenantId: dt.id }).count({ c: '*' }).first()).c) === 0, 'Data a tester added (a vendor) is cleared too');
+    const dch2 = await db('channels').where({ tenantId: dt.id, isDemo: 1 });
+    ok(dch2.length === 1 && dch2[0].autoBookShipping === 0, 'Exactly one demo channel again, auto-book switched back OFF');
+    const dl2 = await req('POST', '/auth/login', { body: { email: demoEmail, password: demoPass } });
+    ok(dl2.status === 200, 'The demo login still works after a reset');
+    const sellerOrdersAfter = Number((await db('orders').where({ tenantId }).count({ c: '*' }).first()).c);
+    ok(sellerOrdersAfter === sellerOrdersBefore, `Reset never touched another seller's data (${sellerOrdersBefore} → ${sellerOrdersAfter} orders)`);
+
+    // If the server turns demo mode off, the demo channel must not fall back to real Amazon.
+    process.env.DEMO_MODE_ENABLED = 'false';
+    const d2tok = (await req('POST', '/auth/login', { body: { email: demoEmail, password: demoPass } })).body.token;
+    const dch3 = await db('channels').where({ tenantId: dt.id, isDemo: 1 }).first();
+    const sync = await req('POST', `/channels/${dch3.id}/sync/orders`, { token: d2tok, body: {} });
+    ok(sync.status >= 400 && /not enabled/i.test(JSON.stringify(sync.body)), `With demo mode OFF the demo channel refuses to run (${sync.status})`);
+    ok(fake.calls.length === callsBefore, 'And it never fell back to calling real Amazon');
+    ok((await req('POST', '/admin/demo/reset', { token: adminTok, body: {} })).status === 403, 'Reset is refused while demo mode is OFF (403)');
+    process.env.DEMO_MODE_ENABLED = 'true';
+    await db('tenants').where({ id: dt.id }).update({ isDemo: 0 }); // leave the DB clean for the next run
+    await db('channels').where({ tenantId: dt.id }).update({ isDemo: 0 });
+  }
 
   // ── Result ───────────────────────────────────────────────────────────────
   console.log(`\n\x1b[1mResult: ${passed} passed, ${failed} failed\x1b[0m`);

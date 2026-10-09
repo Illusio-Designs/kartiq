@@ -44,6 +44,11 @@ async function initDb() {
     // Amazon "auto-book courier": when ON, confirming an Amazon MFN order buys
     // the cheapest Amazon Buy Shipping rate automatically and stores the label.
     { table: 'channels', column: 'autoBookShipping', ddl: 'TINYINT(1) NOT NULL DEFAULT 0' },
+    // Demo mode (see services/demo.service.js): a sandbox tenant whose single
+    // demo channel talks to a built-in fake Amazon. Only ever set by the
+    // platform-admin demo setup — never by a seller-facing API.
+    { table: 'tenants',  column: 'isDemo',           ddl: 'TINYINT(1) NOT NULL DEFAULT 0' },
+    { table: 'channels', column: 'isDemo',           ddl: 'TINYINT(1) NOT NULL DEFAULT 0' },
     // Why the last automatic booking failed (cleared on success) — shown on the
     // order with a Retry action.
     { table: 'orders',   column: 'shippingError',    ddl: 'TEXT DEFAULT NULL' },
