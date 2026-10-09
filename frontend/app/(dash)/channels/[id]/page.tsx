@@ -119,9 +119,11 @@ export default function ChannelDetailPage() {
   // ── Settings (rename + default fulfilment) ──
   const [nameInput, setNameInput] = useState('');
   const [fulfilment, setFulfilment] = useState<'SELF' | 'CHANNEL'>('SELF');
+  const [autoBook, setAutoBook] = useState(false);
   useEffect(() => {
     if (channel) {
       setNameInput(channel.name || '');
+      setAutoBook(!!channel.autoBookShipping);
       setFulfilment(channel.defaultFulfillmentType === 'CHANNEL' ? 'CHANNEL' : 'SELF');
     }
     // Re-seed only when the channel identity changes, so refetches don't clobber edits.
@@ -129,7 +131,7 @@ export default function ChannelDetailPage() {
   }, [channel?.id]);
 
   const updateChannelMutation = useMutation({
-    mutationFn: (data: { name: string; defaultFulfillmentType: string }) => channelApi.update(id, data),
+    mutationFn: (data: { name: string; defaultFulfillmentType: string; autoBookShipping?: boolean }) => channelApi.update(id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['channel', id] });
       toast.success('Channel settings saved');
@@ -233,6 +235,8 @@ export default function ChannelDetailPage() {
 
   const hasCredentials = !!channel.credentials;
   const isAmazon = channel.type === 'AMAZON_SMARTBIZ' || channel.type === 'AMAZON_FBA';
+  // Buy Shipping (auto-book courier) exists on seller-account Amazon channels, not SmartBiz/FBA.
+  const canAutoBook = String(channel.type || '').startsWith('AMAZON') && !isAmazon;
   const lastSync = channel.lastSyncAt ? formatDateTime(channel.lastSyncAt) : 'never';
   const listingCount = listings?.length || 0;
   const isMapped = (l: any) => !!(l.variantId || l.variant || l.product);
@@ -783,13 +787,39 @@ export default function ChannelDetailPage() {
               ]}
             />
           </div>
+          {canAutoBook && (
+            <div className="mx-5 mb-4 flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div>
+                <div className="text-sm font-bold text-slate-800">Auto-book Amazon courier</div>
+                <p className="text-xs text-slate-500 mt-1 max-w-xl">
+                  When you confirm a self-fulfilled (MFN) order, Kartriq picks the cheapest Amazon courier, buys the
+                  shipping label, saves it, and marks the order shipped. You just print the label. Each label is charged
+                  to your Amazon seller account.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={autoBook}
+                aria-label="Auto-book Amazon courier"
+                onClick={() => setAutoBook((v) => !v)}
+                className={`relative shrink-0 mt-0.5 h-6 w-11 rounded-full transition-colors ${autoBook ? 'bg-emerald-500' : 'bg-slate-300'}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${autoBook ? 'translate-x-5' : ''}`} />
+              </button>
+            </div>
+          )}
           <div className="flex justify-end px-5 pb-5">
             <Button
               size="sm"
               leftIcon={<Save size={14} />}
               loading={updateChannelMutation.isPending}
               disabled={!nameInput.trim()}
-              onClick={() => updateChannelMutation.mutate({ name: nameInput.trim(), defaultFulfillmentType: fulfilment })}
+              onClick={() => updateChannelMutation.mutate({
+                name: nameInput.trim(),
+                defaultFulfillmentType: fulfilment,
+                ...(canAutoBook ? { autoBookShipping: autoBook } : {}),
+              })}
             >
               Save settings
             </Button>

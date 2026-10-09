@@ -114,6 +114,9 @@ async function main() {
   group('2. Auth');
   const login = await req('POST', '/auth/login', { body: { email: T1.email, password: T1.password } });
   assert(login.status === 200 && login.body.token, 'Login returns token');
+  // One active session per user: logging in signs the sign-up session out
+  // (SESSION_SUPERSEDED), so carry on with the newest token.
+  if (login.body?.token) T1.token = login.body.token;
   assert(login.body.user?.role === 'ADMIN', 'New owner has role=ADMIN');
 
   const badLogin = await req('POST', '/auth/login', { body: { email: T1.email, password: 'wrong' } });
@@ -125,6 +128,11 @@ async function main() {
 
   const logout = await req('POST', '/auth/logout', { token: T1.token });
   assert(logout.status === 200, 'Logout endpoint works');
+  // Logging out ends that session — sign back in so the rest of the suite has a live token.
+  const relogin = await req('POST', '/auth/login', { body: { email: T1.email, password: T1.password } });
+  if (relogin.body?.token) T1.token = relogin.body.token;
+  const meAfterLogout = await req('GET', '/auth/me', { token: logout.status === 200 ? 'x' + T1.token : T1.token });
+  assert(meAfterLogout.status === 401, 'A tampered/old token is rejected (401)');
 
   const noToken = await req('GET', '/auth/me');
   assert(noToken.status === 401, 'Missing token returns 401');

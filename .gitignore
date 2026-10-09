@@ -11,3 +11,6 @@ playwright-report/
 test-results/
 .playwright/
 playwright/.cache/
+
+# One-click test runner output
+backend/test-report/

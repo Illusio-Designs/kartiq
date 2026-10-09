@@ -2,6 +2,7 @@ const { z } = require('zod');
 const prisma = require('../utils/prisma');
 const { notifyTenant } = require('../services/notifications.service');
 const { confirmChannelShipment } = require('../services/channel.service');
+const { autoBookAmazonShipping } = require('../services/amazonShipping.service');
 const { applyOrderStock } = require('../services/stock.service');
 const { stampRetentionOnDelivery } = require('../services/vms.service');
 
@@ -365,6 +366,17 @@ const updateOrderStatus = async (req, res) => {
     // they're auto-pruned RETENTION_DAYS later (unless a dispute is open).
     if (status === 'DELIVERED') {
       stampRetentionOnDelivery(order).catch(() => {});
+    }
+
+    // Confirming an Amazon MFN order on a channel with "auto-book courier" ON
+    // buys the cheapest Amazon label and ships it (see amazonShipping.service).
+    // Never fails the status change: the outcome rides along as `shipping`.
+    if (status === 'CONFIRMED') {
+      const shipping = await autoBookAmazonShipping(order.id, { tenantId: tid(req) });
+      if (shipping.booked || shipping.error) {
+        const fresh = await prisma.order.findFirst({ where: { id: order.id, tenantId: tid(req) } });
+        return res.json({ ...(fresh || order), shipping });
+      }
     }
 
     res.json(order);
