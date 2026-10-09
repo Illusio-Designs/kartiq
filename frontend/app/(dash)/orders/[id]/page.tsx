@@ -341,6 +341,29 @@ export default function OrderDetailPage() {
       setSlipLoading(false);
     }
   };
+  // One-click "Confirm & get shipping label" for Amazon orders the seller ships.
+  // (RTO-held orders are approved first, which also confirms them.) Books the
+  // Amazon courier — cheapest rate — and stores the label, ready to print.
+  const getLabelMutation = useMutation({
+    mutationFn: async () => {
+      const held = !!order?.needsApproval && !['SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED'].includes(String(order?.status || ''));
+      if (held) {
+        const a = await orderApi.approve(id);
+        if (a.data?.shipping?.booked) return a.data.shipping; // approving already booked it
+      }
+      return orderApi.bookShipping(id).then((r) => r.data);
+    },
+    onSuccess: (r: any) => {
+      toast.success(`Shipping label ready${r?.carrier ? ` (${r.carrier})` : ''} — print it and stick it on the parcel`);
+      qc.invalidateQueries({ queryKey: ['order', id] });
+      qc.invalidateQueries({ queryKey: ['order-label', id] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+    },
+    onError: (e: any) => {
+      toast.error(e?.response?.data?.error || e?.response?.data?.skipped || e.message || 'Could not get the shipping label');
+      qc.invalidateQueries({ queryKey: ['order', id] });
+    },
+  });
   const bookShippingMutation = useMutation({
     mutationFn: () => orderApi.bookShipping(id).then((r) => r.data),
     onSuccess: () => {
@@ -447,6 +470,11 @@ export default function OrderDetailPage() {
   const editable = order.fulfillmentType !== 'CHANNEL';
   const isClosed = order.status === 'DELIVERED' || order.status === 'CANCELLED';
   const isAmazonChannel = String(order.channel?.type || '').toUpperCase().includes('AMAZON');
+  // Amazon seller-account channel, order the seller ships (MFN): the simple
+  // "Confirm & get label → Print" flow. (SmartBiz/FBA channels are Amazon-run.)
+  const amazonSeller = isAmazonChannel && !['AMAZON_SMARTBIZ', 'AMAZON_FBA'].includes(String(order.channel?.type || '').toUpperCase());
+  const amazonSimple = amazonSeller && order.fulfillmentType === 'SELF';
+  const canGetLabel = amazonSimple && !savedLabel && !['SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED'].includes(String(order.status || ''));
 
   // ── Review state ────────────────────────────────────────────────────────────
   // (1) RTO approval gate — only meaningful before the order ships. A lingering
@@ -587,6 +615,29 @@ export default function OrderDetailPage() {
             generate a real label via a connected logistics courier. Fallback:
             enter tracking manually / mark shipped. FBA orders (below) are
             managed by the marketplace and show a read-only info card instead. */}
+        {/* Amazon orders you ship: ONE button. Amazon books the cheapest courier and
+            gives the label; then you only print it. Everything manual is tucked
+            under "More options" below. */}
+        {canGetLabel && (
+          <Card className="p-5 space-y-3 border-emerald-200">
+            <div className="flex items-center gap-2 flex-wrap">
+              <PackageCheck size={16} className="text-emerald-600" />
+              <span className="text-sm font-bold text-slate-800">Ship this order</span>
+              {order.shippingError ? <Badge variant="rose" dot>Label not booked</Badge> : <Badge variant="emerald" dot>1 step</Badge>}
+            </div>
+            <p className="text-xs text-slate-500">
+              {order.needsApproval
+                ? 'This order was held for review. Approving it also books the shipping label from Amazon.'
+                : 'Amazon books the courier and gives you the shipping label. Then you just print it and stick it on the parcel.'}
+            </p>
+            {order.shippingError && <p className="text-xs text-red-600 break-words">{order.shippingError}</p>}
+            <Button size="lg" leftIcon={<PackageCheck size={16} />} loading={getLabelMutation.isPending} onClick={() => getLabelMutation.mutate()}>
+              {order.shippingError ? 'Try again — get shipping label' : order.needsApproval ? 'Approve & get shipping label' : 'Confirm & get shipping label'}
+            </Button>
+          </Card>
+        )}
+
+        <MoreOptions when={amazonSimple} title="More options — enter tracking or change the status by hand">
         {editable ? (
           <Card className="p-5 space-y-4">
             <div className="flex items-center gap-2">
@@ -747,6 +798,7 @@ export default function OrderDetailPage() {
             )}
           </Card>
         )}
+        </MoreOptions>
 
         {/* Amazon fulfilment (MCF) — only when an AMAZON_SMARTBIZ / AMAZON_FBA
             channel is connected. Lets the seller fulfil this order out of
@@ -867,6 +919,7 @@ export default function OrderDetailPage() {
             for self-fulfilled (MFN) Amazon orders. The Amazon-preferred path:
             buy a partnered-carrier label that auto-confirms the shipment and
             keeps valid tracking for Prime & seller metrics. */}
+        <MoreOptions when={amazonSimple} title="More options — choose the Amazon courier yourself">
         {order.fulfillmentType === 'SELF' && isAmazonChannel && !savedLabel && (
           <Card className="p-5 space-y-4">
             <div className="flex items-center gap-2 flex-wrap">
@@ -1016,6 +1069,7 @@ export default function OrderDetailPage() {
             )}
           </Card>
         )}
+        </MoreOptions>
 
         {/* Summary cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1058,7 +1112,7 @@ export default function OrderDetailPage() {
                       return (
                         <tr key={it.id} className="border-b border-slate-50 last:border-0">
                           <td className="px-5 py-3 text-slate-800 font-medium">{name}</td>
-                          <td className="px-5 py-3 text-slate-500 font-mono text-xs">{sku}</td>
+                          <td className="px-5 py-3 text-slate-500 font-mono text-xs whitespace-nowrap">{sku}</td>
                           <td className="px-5 py-3 text-right text-slate-700">{qty}</td>
                           <td className="px-5 py-3 text-right text-slate-700">{formatCurrency(unit)}</td>
                           <td className="px-5 py-3 text-right font-semibold text-slate-900">{formatCurrency(unit * qty)}</td>
@@ -1230,5 +1284,19 @@ function InfoCard({ label, value, sub }: { label: string; value: string; sub?: s
       <div className="text-sm font-bold text-slate-900 mt-1 truncate">{value}</div>
       {sub && <div className="text-xs text-slate-500 truncate">{sub}</div>}
     </Card>
+  );
+}
+
+// Collapses secondary/manual controls behind a "More options" toggle when `when`
+// is true (the simple Amazon flow); otherwise renders them as normal.
+function MoreOptions({ when, title, children }: { when: boolean; title: string; children: React.ReactNode }) {
+  if (!when) return <>{children}</>;
+  return (
+    <details className="group rounded-2xl border border-slate-200 bg-white/60">
+      <summary className="cursor-pointer select-none list-none px-5 py-3 text-xs font-bold text-slate-500 hover:text-slate-700">
+        <span className="inline-block transition-transform group-open:rotate-90 mr-1.5">›</span>{title}
+      </summary>
+      <div className="space-y-4 p-3 pt-1">{children}</div>
+    </details>
   );
 }

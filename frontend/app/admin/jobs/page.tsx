@@ -176,7 +176,7 @@ export default function AdminJobsPage() {
                 </span>
               </div>
               <div className={`text-3xl font-bold ${isActive ? meta.color : 'text-slate-900'}`}>
-                {stats ? stats[k as keyof Stats].toLocaleString() : '—'}
+                {stats ? (stats[k as keyof Stats] ?? 0).toLocaleString() : '—'}
               </div>
             </button>
           );

@@ -11,13 +11,8 @@
 //   • The demo tenant is on the hidden FIVERR_FREE plan (all features, free).
 
 const crypto = require('crypto');
-const prisma = require('../utils/prisma');
 const db = require('../utils/db');
 const { encryptCredentials } = require('../utils/crypto');
-const { importOrders } = require('./channel.service');
-const AmazonDemoAdapter = require('./channels/ecom/amazon-demo');
-
-const { buildDemoOrders } = AmazonDemoAdapter;
 const demoEnabled = () => process.env.DEMO_MODE_ENABLED === 'true';
 
 class DemoError extends Error {
@@ -79,44 +74,41 @@ async function purgeTenantData(tenantId) {
   if (pending.length) throw new DemoError(500, `Could not clear: ${pending.join(', ')}`);
 }
 
-// Warehouse + product + stock + the demo Amazon channel + fresh demo orders.
+// What the demo tenant starts with: ONLY a warehouse (with a real address, which
+// Amazon needs as the ship-from). Everything else is created by the tester
+// clicking through the real screens — connect the Amazon channel, pull the
+// catalog, sync the orders — so the demo covers the whole journey.
 async function seedDemoData(tenantId) {
-  const now = new Date();
   const whId = crypto.randomUUID();
   await db('warehouses').insert({
     id: whId, tenantId, name: 'Demo Warehouse (Pune)', code: `DEMO-WH-${Date.now().toString(36).toUpperCase()}`,
     address: JSON.stringify({ line1: '5 Industrial Estate', city: 'Pune', state: 'MH', pincode: '411019', country: 'IN' }),
-    phone: '9999999999', isActive: 1, isVirtual: 0, updatedAt: now,
+    phone: '9999999999', isActive: 1, isVirtual: 0, updatedAt: new Date(),
   });
+  return { warehouseId: whId };
+}
 
-  const sku = `DEMO-WIDGET-${Date.now().toString(36).toUpperCase()}`;
-  const productId = crypto.randomUUID();
-  const variantId = crypto.randomUUID();
-  await db('products').insert({
-    id: productId, tenantId, name: 'Demo Widget', sku, weight: 0.75,
-    dimensions: JSON.stringify({ length: 30, width: 20, height: 12 }),
-    images: '[]', tags: '[]', isActive: 1, updatedAt: now,
-  });
-  await db('product_variants').insert({
-    id: variantId, tenantId, productId, sku, name: 'Demo Widget', attributes: '{}',
-    costPrice: 100, mrp: 499, sellingPrice: 399, weight: 0.75, isActive: 1, updatedAt: now,
-  });
-  await db('inventory_items').insert({
-    id: crypto.randomUUID(), tenantId, warehouseId: whId, productId, variantId,
-    quantityOnHand: 200, quantityReserved: 0, quantityAvailable: 200, reorderPoint: 0, reorderQty: 0, updatedAt: now,
-  });
+// Is this tenant THE demo tenant (and is demo mode on)? Used to flag a demo
+// tenant's new Amazon channel as a demo channel — decided by the server from the
+// tenant, never from anything the client sends.
+async function isDemoTenant(tenantId) {
+  if (!demoEnabled() || !tenantId) return false;
+  const t = await db('tenants').where({ id: tenantId, isDemo: 1 }).first();
+  return !!t;
+}
 
-  const ch = await prisma.channel.create({
-    data: { tenantId, name: 'Amazon India (DEMO)', type: 'AMAZON', category: 'ECOM' },
-  });
-  await db('channels').where({ id: ch.id }).update({
-    isDemo: 1, isActive: 1, autoBookShipping: 0,
+// The fake "Authorize with Amazon" step succeeded: mark the channel connected.
+// Real credentials are never stored for a demo channel.
+async function completeDemoConnect(channelId, tenantId) {
+  if (!(await isDemoTenant(tenantId))) throw new DemoError(403, 'Demo authorization is only available in the demo tenant.');
+  const ch = await db('channels').where({ id: channelId, tenantId }).first();
+  if (!ch) throw new DemoError(404, 'Channel not found');
+  if (ch.type !== 'AMAZON') throw new DemoError(400, 'Only the Amazon channel has a demo authorization.');
+  await db('channels').where({ id: channelId }).update({
+    isDemo: 1, isActive: 1, syncError: null,
     credentials: JSON.stringify(encryptCredentials({ demo: true })),
   });
-
-  const raws = buildDemoOrders({ sku });
-  const res = await importOrders(ch.id, raws, { tenantId });
-  return { channelId: ch.id, imported: res.imported, failed: res.failed, errors: res.errors };
+  return { connected: true };
 }
 
 async function setupDemo({ email, password, businessName } = {}) {
@@ -153,8 +145,8 @@ async function setupDemo({ email, password, businessName } = {}) {
     planId: plan.id, status: 'ACTIVE', currentPeriodEnd: farFuture, trialEndsAt: null,
   });
 
-  const seeded = await seedDemoData(tenantId);
-  return { email, password: generated || undefined, passwordWasGenerated: !!generated, tenantId, ...seeded };
+  await seedDemoData(tenantId);
+  return { email, password: generated || undefined, passwordWasGenerated: !!generated, tenantId };
 }
 
 async function resetDemo() {
@@ -163,8 +155,8 @@ async function resetDemo() {
   if (!tenant) throw new DemoError(404, 'There is no demo tenant yet. Create it first.');
   if (!tenant.isDemo) throw new DemoError(403, 'Refusing to reset a non-demo tenant.'); // belt and braces
   await purgeTenantData(tenant.id);
-  const seeded = await seedDemoData(tenant.id);
-  return { tenantId: tenant.id, ...seeded };
+  await seedDemoData(tenant.id);
+  return { tenantId: tenant.id };
 }
 
-module.exports = { getDemoStatus, setupDemo, resetDemo, demoEnabled, DemoError };
+module.exports = { getDemoStatus, setupDemo, resetDemo, demoEnabled, isDemoTenant, completeDemoConnect, DemoError };

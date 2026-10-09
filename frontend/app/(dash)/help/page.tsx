@@ -22,7 +22,7 @@ export default function HelpPage() {
   const [tickets, setTickets] = useState<any[]>([]);
   const [query, setQuery] = useState('');
 
-  const loadTickets = () => ticketApi.list().then((r) => setTickets(r.data || [])).catch(() => {});
+  const loadTickets = () => ticketApi.list().then((r) => setTickets(r.data?.tickets || (Array.isArray(r.data) ? r.data : []))).catch(() => {});
 
   useEffect(() => {
     publicApi.content('HELP_CATEGORY').then((r) => setCategories(r.data || []));

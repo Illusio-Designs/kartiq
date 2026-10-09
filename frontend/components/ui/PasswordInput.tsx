@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, InputHTMLAttributes, useState } from 'react';
+import { forwardRef, InputHTMLAttributes, useId, useState } from 'react';
 import { Eye, EyeOff, Lock, Check, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -32,7 +32,8 @@ const STRENGTH_META = [
 export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
   ({ label, error, hint, showStrength, className, id, value = '', ...props }, ref) => {
     const [visible, setVisible] = useState(false);
-    const autoId = id || `pw-${Math.random().toString(36).substring(2, 8)}`;
+    const uid = useId();
+    const autoId = id || `pw-${uid}`;
     const score = scorePassword(String(value));
     const meta = STRENGTH_META[Math.max(0, score - 1)] || STRENGTH_META[0];
 

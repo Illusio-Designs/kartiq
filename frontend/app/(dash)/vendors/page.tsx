@@ -69,7 +69,7 @@ export default function VendorsPage() {
               </Button>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex-1 min-w-[180px] max-w-sm">
+              <div className="flex-1 min-w-[180px] sm:min-w-[300px] max-w-md">
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}

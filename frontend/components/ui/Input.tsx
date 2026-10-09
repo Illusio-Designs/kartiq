@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react';
+import { forwardRef, useId, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react';
 import { cn } from '@/lib/utils';
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -13,7 +13,8 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ label, error, hint, leftIcon, rightIcon, className, id, ...props }, ref) => {
-    const autoId = id || `input-${Math.random().toString(36).substring(2, 8)}`;
+    const uid = useId();
+    const autoId = id || `input-${uid}`;
     return (
       <div className="w-full">
         {label && (
@@ -64,7 +65,8 @@ interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ label, error, hint, className, id, ...props }, ref) => {
-    const autoId = id || `ta-${Math.random().toString(36).substring(2, 8)}`;
+    const uid = useId();
+    const autoId = id || `ta-${uid}`;
     return (
       <div className="w-full">
         {label && (

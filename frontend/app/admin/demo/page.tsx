@@ -17,13 +17,14 @@ type DemoStatus = {
 };
 
 const STEPS = [
-  'Log in to the web app with the demo email and password.',
-  'Channels → "Amazon India (DEMO)" → Channel settings → turn ON "Auto-book Amazon courier" → Save.',
-  'Orders → open a DEMO-…-MFN order → set Status to Confirmed → Save. It becomes SHIPPED and a Shipping label card appears.',
-  'Click Print label / Download / Cancel label. Cancelling returns the order to Confirmed and restores the stock.',
-  'Orders list → tick several orders → Print packing slips, and Print shipping labels (bulk).',
-  'Open the DEMO-…-FBA order: Amazon ships it, so there is no courier and no label.',
-  'Open the DEMO-…-MFN5-ERR order and Confirm it: the booking fails on purpose so you can see the error and Retry.',
+  'Log in to the web app with the demo email and password. You will see an amber "Demo sandbox" banner.',
+  'Channels → find "Amazon" → Connect → "Authorize with Amazon". A fake Amazon screen opens: click Authorize. The connection completes.',
+  'On the channel page click "Pull now" under Pull Catalog. 3 products arrive (2 you ship, 1 FBA) with their stock.',
+  'Click "Sync now" under Sync Orders. 6 orders arrive: 1 FBA (Amazon ships it) and 5 you ship (MFN).',
+  'Orders → open a DEMO MFN order → click "Confirm & get shipping label". Amazon books the cheapest courier; the order becomes SHIPPED.',
+  'Click Print label (or Download / Cancel label), and Print packing slip.',
+  'Orders list → tick several orders → "Confirm & get labels" books them all and opens one PDF to print. "Print packing slips" works in bulk too.',
+  'Try the order ending in MFN5-ERR: its booking fails on purpose, so you can see the error and "Try again". Open the FBA order: no label is needed.',
 ];
 
 export default function AdminDemoPage() {
@@ -47,7 +48,7 @@ export default function AdminDemoPage() {
       const r = await adminApi.demoSetup({ email: email.trim(), ...(password ? { password } : {}) });
       setCreds({ email: r.data.email, password: r.data.password || (password || undefined) });
       setPassword('');
-      toast.success('Demo tenant created with 6 demo orders');
+      toast.success('Demo tenant created — testers start from an empty account');
       await load();
     } catch (e: any) {
       toast.error(e?.response?.data?.error || e.message || 'Could not create the demo tenant');
@@ -57,15 +58,15 @@ export default function AdminDemoPage() {
   const reset = async () => {
     const ok = await askConfirm({
       title: 'Reset demo data?',
-      description: 'Deletes everything in the DEMO tenant (orders, labels, products, anything testers added) and recreates 6 fresh demo orders. Other tenants are never touched. The demo login keeps working.',
+      description: 'Deletes everything in the DEMO tenant (channel, products, orders, labels, anything testers added) and puts it back to the very start: one warehouse, nothing connected. Other tenants are never touched. The demo login keeps working.',
       confirmLabel: 'Reset demo data',
       variant: 'danger',
     });
     if (!ok) return;
     setBusy(true);
     try {
-      const r = await adminApi.demoReset();
-      toast.success(`Demo data reset — ${r.data.imported} fresh orders`);
+      await adminApi.demoReset();
+      toast.success('Demo data reset — back to the start (nothing connected yet)');
       await load();
     } catch (e: any) {
       toast.error(e?.response?.data?.error || e.message || 'Could not reset the demo data');
@@ -102,7 +103,7 @@ export default function AdminDemoPage() {
       {status && status.enabled && !status.exists && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-4">
           <h2 className="font-bold text-slate-900">Create the demo tenant</h2>
-          <p className="text-sm text-slate-500">Creates a seller on the free Fiverr plan with a warehouse, a product, stock, a demo Amazon channel and 6 demo orders (1 FBA, 5 MFN — one built to fail).</p>
+          <p className="text-sm text-slate-500">Creates a seller on the free Fiverr plan with just one warehouse. The tester does the rest by clicking: connect the (fake) Amazon channel, pull the catalog, sync the orders, then get and print labels.</p>
           <div className="grid sm:grid-cols-2 gap-4">
             <Input label="Demo login email" value={email} onChange={(e) => setEmail(e.target.value)} />
             <Input label="Password (min 10 chars — leave blank to generate one)" type="text" value={password} onChange={(e) => setPassword(e.target.value)} />
@@ -128,7 +129,7 @@ export default function AdminDemoPage() {
               <div>
                 <h2 className="font-bold text-slate-900">{status.tenant?.businessName}</h2>
                 <div className="text-sm text-slate-500 mt-1">Login: <span className="font-mono text-slate-800">{status.tenant?.loginEmail}</span></div>
-                <div className="text-sm text-slate-500">Channel: {status.channel?.name} · auto-book {status.channel?.autoBookShipping ? 'ON' : 'OFF'}</div>
+                <div className="text-sm text-slate-500">{status.channel ? `Channel: ${status.channel.name} · auto-book ${status.channel.autoBookShipping ? 'ON' : 'OFF'}` : 'Channel: not connected yet — the tester connects it'}</div>
               </div>
               <div className="flex gap-2">
                 <a href="/login" target="_blank" rel="noreferrer"><Button variant="secondary" leftIcon={<ExternalLink size={14} />}>Open login</Button></a>
@@ -151,7 +152,7 @@ export default function AdminDemoPage() {
           <div className="bg-white rounded-2xl border border-slate-200 p-6">
             <h2 className="font-bold text-slate-900 mb-3">What testers should click</h2>
             <ol className="list-decimal pl-5 space-y-1.5 text-sm text-slate-700">{STEPS.map((s) => <li key={s}>{s}</li>)}</ol>
-            <p className="text-xs text-slate-400 mt-4">Press <b>Reset demo data</b> whenever the demo orders are used up. Labels are marked “DEMO LABEL — NOT VALID FOR SHIPPING”.</p>
+            <p className="text-xs text-slate-400 mt-4">Press <b>Reset demo data</b> to take the demo back to the very start for the next tester. Labels are marked “DEMO LABEL — NOT VALID FOR SHIPPING”.</p>
           </div>
         </div>
       )}

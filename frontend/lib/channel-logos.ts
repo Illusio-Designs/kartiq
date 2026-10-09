@@ -208,7 +208,7 @@ export const TYPE_DOMAIN: Record<string, string> = {
 // the logo chain still has something to try. Used by ChannelLogo.
 export function domainFor(type: string, name?: string): string {
   if (TYPE_DOMAIN[type]) return TYPE_DOMAIN[type];
-  const slug = (name || type).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const slug = (name || type || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   return `${slug}.com`;
 }
 

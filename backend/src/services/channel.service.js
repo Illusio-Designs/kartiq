@@ -209,7 +209,7 @@ function getAdapter(channel) {
   // rather than silently talking to real Amazon with fake credentials.
   if (channel.isDemo) {
     if (process.env.DEMO_MODE_ENABLED !== 'true') throw new Error('Demo mode is not enabled on this server');
-    return new (require('./channels/ecom/amazon-demo'))();
+    return new (require('./channels/ecom/amazon-demo'))(channel);
   }
 
   let creds = channel.credentials;
