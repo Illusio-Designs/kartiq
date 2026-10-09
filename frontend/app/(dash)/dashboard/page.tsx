@@ -9,7 +9,7 @@ import {
   Tooltip, Badge, Card, Pagination, Dropdown, Avatar,
 } from '@/components/ui';
 import {
-  Wallet, TrendingDown, ShoppingBag, MoreHorizontal, ArrowUp, ArrowDown,
+  Landmark, TrendingDown, ShoppingBag, MoreHorizontal, ArrowUp, ArrowDown,
   ArrowUpRight, Plus, Package, Info, RefreshCw,
 } from 'lucide-react';
 import { StatsSkeleton, CardSkeletonItem, TableRowsSkeleton } from '@/components/Shimmer';
@@ -103,7 +103,7 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 min-w-0">
                 <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
-                  <Wallet size={15} className="text-emerald-600" />
+                  <Landmark size={15} className="text-emerald-600" />
                 </div>
                 <span className="text-sm font-semibold text-slate-600 truncate">Total Revenue</span>
                 <Tooltip content="Sum of all paid orders this month">

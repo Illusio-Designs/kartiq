@@ -151,7 +151,6 @@ const RELATIONS = {
     warehouses: { table: 'warehouses', foreignKey: 'tenantId', type: 'many' },
     vendors: { table: 'vendors', foreignKey: 'tenantId', type: 'many' },
     supportTickets: { table: 'support_tickets', foreignKey: 'tenantId', type: 'many' },
-    usageMeters: { table: 'usage_meters', foreignKey: 'tenantId', type: 'many' },
     invoicesBilling: { table: 'billing_invoices', foreignKey: 'tenantId', type: 'many' },
   },
   users: {
@@ -266,7 +265,6 @@ const RELATIONS = {
   public_content: {},
   platform_settings: {},
   audit_logs: {},
-  usage_meters: {},
   billing_invoices: {
     tenant: { table: 'tenants', foreignKey: 'id', localKey: 'tenantId', type: 'one' },
     subscription: { table: 'subscriptions', foreignKey: 'id', localKey: 'subscriptionId', type: 'one' },
@@ -283,7 +281,7 @@ const RELATIONS = {
 const TABLE_MAP = {
   user: 'users', tenant: 'tenants', plan: 'plans', permission: 'permissions',
   tenantRole: 'tenant_roles', rolePermission: 'role_permissions', userRole: 'user_roles',
-  subscription: 'subscriptions', usageMeter: 'usage_meters', billingInvoice: 'billing_invoices',
+  subscription: 'subscriptions', billingInvoice: 'billing_invoices',
   blogPost: 'blog_posts', seoSetting: 'seo_settings', publicContent: 'public_content',
   platformSetting: 'platform_settings', auditLog: 'audit_logs',
   channelRequest: 'channel_requests', channel: 'channels', channelListing: 'channel_listings',
@@ -293,7 +291,6 @@ const TABLE_MAP = {
   customer: 'customers', order: 'orders', orderItem: 'order_items',
   return: 'returns', invoice: 'invoices', payment: 'payments', shipment: 'shipments',
   supportTicket: 'support_tickets', ticketMessage: 'ticket_messages',
-  tenantWallet: 'tenant_wallets', walletTransaction: 'wallet_transactions',
   lead: 'leads',
   changelogEntry: 'changelog_entries',
   helpFaq: 'help_faqs',
@@ -435,7 +432,7 @@ const JSON_FIELDS = {
   // rtoFactors + missingFields are JSON stored in LONGTEXT columns added via
   // migration (no json_valid CHECK), so they must be listed explicitly here.
   orders: ['shippingAddress', 'billingAddress', 'rtoFactors', 'missingFields'],
-  plans: ['features', 'meteredRates'], billing_invoices: ['lineItems'],
+  plans: ['features'], billing_invoices: ['lineItems'],
   audit_logs: ['metadata'], public_content: ['data'], blog_posts: ['tags'],
 };
 
@@ -443,10 +440,10 @@ const JSON_FIELDS = {
 const NO_UPDATED_AT = new Set([
   'permissions', 'role_permissions', 'user_roles', 'audit_logs',
   'stock_movements', 'order_items', 'purchase_order_items', 'ticket_messages', 'payments',
-  'wallet_transactions', 'notifications',
+  'notifications',
 ]);
 const NO_CREATED_AT = new Set([
-  'role_permissions', 'user_roles', 'order_items', 'purchase_order_items', 'payments', 'usage_meters',
+  'role_permissions', 'user_roles', 'order_items', 'purchase_order_items', 'payments',
   'seo_settings', 'inventory_items',
 ]);
 

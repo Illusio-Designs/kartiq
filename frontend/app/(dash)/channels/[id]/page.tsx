@@ -7,7 +7,7 @@ import { channelApi, productApi, orderApi } from '@/lib/api';
 import {
   ArrowLeft, Upload, Download, RefreshCw,
   Plug, AlertCircle, Trash2, KeyRound, CheckCircle2,
-  ShieldCheck, XCircle, Settings2, Save, Boxes, Search, Check, ChevronDown, Unlink, Wallet, RotateCcw,
+  ShieldCheck, XCircle, Settings2, Save, Boxes, Search, Check, ChevronDown, Unlink, Landmark, RotateCcw,
   ShoppingCart, Clock, Truck, PackageCheck, Ban, Store, Cloud,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -601,7 +601,7 @@ export default function ChannelDetailPage() {
             <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                  <Wallet size={17} />
+                  <Landmark size={17} />
                 </div>
                 <div>
                   <h3 className="font-bold text-slate-900 text-base">Payouts &amp; settlements</h3>

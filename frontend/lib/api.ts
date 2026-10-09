@@ -19,10 +19,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle auth + plan-limit errors globally
-type PlanLimitCallback = (info: any) => void;
-let onPlanLimitHit: PlanLimitCallback | null = null;
-export function setPlanLimitHandler(cb: PlanLimitCallback | null) { onPlanLimitHit = cb; }
+// Handle auth errors globally
 
 api.interceptors.response.use(
   (res) => res,
@@ -40,8 +37,10 @@ api.interceptors.response.use(
         localStorage.removeItem('token');
         localStorage.removeItem('kartriq-auth');
         window.location.href = '/login';
-      } else if (status === 402 && onPlanLimitHit) {
-        onPlanLimitHit(err.response.data || {});
+      } else if (status === 402 && err.response?.data?.upgradeUrl) {
+        // Trial / past-due lockout: send the user to the billing page.
+        const target = String(err.response.data.upgradeUrl);
+        if (!window.location.pathname.startsWith(target)) window.location.href = target;
       }
     }
     return Promise.reject(err);
@@ -86,23 +85,11 @@ export const planApi = {
 export const billingApi = {
   subscription: () => api.get('/billing/subscription'),
   usage: () => api.get('/billing/usage'),
-  changePlan: (data: { planCode: string; billingCycle?: string; payAsYouGo?: boolean }) =>
+  changePlan: (data: { planCode: string; billingCycle?: string }) =>
     api.post('/billing/subscription/change', data),
-  togglePayg: (enabled: boolean) => api.post('/billing/subscription/payg', { enabled }),
   toggleAutoRenew: (enabled: boolean) => api.post('/billing/subscription/auto-renew', { enabled }),
   cancel: () => api.post('/billing/subscription/cancel', {}),
   invoices: () => api.get('/billing/invoices'),
-  // Wallet
-  wallet: () => api.get('/billing/wallet'),
-  walletTransactions: (limit?: number) => api.get('/billing/wallet/transactions', { params: { limit } }),
-  topupWallet: (amount: number, paymentRef?: string) =>
-    api.post('/billing/wallet/topup', { amount, paymentRef }),
-  walletSettings: (body: {
-    lowBalanceThreshold?: number;
-    autoTopupEnabled?: boolean;
-    autoTopupAmount?: number;
-    autoTopupTriggerBelow?: number;
-  }) => api.patch('/billing/wallet/settings', body),
   updateTenant: (data: { businessName?: string; gstin?: string }) =>
     api.patch('/billing/tenant', data),
   // Tenant-visible audit log (own tenant only)
@@ -170,19 +157,13 @@ export const inviteApi = {
 };
 
 // ── SaaS: payments (Razorpay) ──────────────────────────────────────
-// Two flows:
-//   1. Plan checkout: checkout(planCode) → Razorpay → verify({...resp,planCode})
-//   2. Wallet top-up:  walletCheckout(amount) → Razorpay → walletVerify({...resp,amount})
+// Plan checkout: checkout(planCode) → Razorpay → verify({...resp,planCode})
 // Saved methods (cards/UPI tokens) drive the autopay job once a user opts in.
 export const paymentApi = {
   // Plan upgrade
   checkout: (data: { planCode: string; billingCycle?: string; savePaymentMethod?: boolean }) =>
     api.post('/payments/checkout', data),
   verify: (data: any) => api.post('/payments/verify', data),
-  // Wallet top-up
-  walletCheckout: (data: { amount: number; savePaymentMethod?: boolean }) =>
-    api.post('/payments/wallet-checkout', data),
-  walletVerify: (data: any) => api.post('/payments/wallet-verify', data),
   // Saved methods (autopay)
   methods: () => api.get('/payments/methods'),
   setDefaultMethod: (id: string) => api.post(`/payments/methods/${id}/default`, {}),

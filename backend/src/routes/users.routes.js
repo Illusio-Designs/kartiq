@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const prisma = require('../utils/prisma');
 const {
-  authenticate, requireTenant, requirePermission, enforceLimit, invalidateUserCache,
+  authenticate, requireTenant, requirePermission, invalidateUserCache,
 } = require('../middleware/auth.middleware');
 const { audit } = require('../services/audit.service');
 const { sendUserInvite } = require('../services/email.service');
@@ -94,7 +94,6 @@ router.get('/', requirePermission('users.read'), async (req, res) => {
 //      is activated on first use. This is the recommended path.
 router.post('/',
   requirePermission('users.create'),
-  enforceLimit('users'),
   async (req, res) => {
     try {
       const { name, email, password, roleIds = [] } = req.body;

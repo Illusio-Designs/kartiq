@@ -601,7 +601,7 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
   for (const raw of rawOrders) {
     try {
       // Set when we replace an existing empty stub — used to avoid re-counting
-      // the PAYG orders meter (the stub already counted once).
+      // (the stub already exists).
       let isReimport = false;
       const existing = await prisma.order.findFirst({
         where: { tenantId, channelId, channelOrderId: raw.channelOrderId },
@@ -819,21 +819,6 @@ async function importOrders(channelId, rawOrders, { tenantId } = {}) {
           },
         });
         createdOrderId = createdOrder.id;
-
-        // Bump the PAYG "orders" meter — but ONLY for orders the seller actually
-        // fulfils themselves (fulfillmentType SELF): Amazon MFN, Shopify, custom,
-        // Flipkart self-ship, etc. Channel-fulfilled orders (Amazon FBA / dropship)
-        // are processed by the channel, not by Kartriq, so they don't count toward
-        // the plan's order limit or draw wallet overage. Skip re-imports too (the
-        // stub already counted once) to avoid double-billing.
-        if (!isReimport && fulfillmentType === 'SELF') {
-          const period = new Date().toISOString().slice(0, 7);
-          await tx.usageMeter.upsert({
-            where: { tenantId_metric_period: { tenantId, metric: 'orders', period } },
-            update: { count: { increment: 1 } },
-            create: { tenantId, metric: 'orders', period, count: 1 },
-          });
-        }
       });
 
       // Reserve (or, if already shipped at import, deduct) stock for a

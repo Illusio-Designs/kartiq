@@ -236,7 +236,7 @@ function OnboardingInner() {
                     </div>
                     <div className="text-2xl font-bold mt-2">₹{Number(p.monthlyPrice).toLocaleString()}<span className="text-xs text-slate-500">/mo</span></div>
                     <div className="text-xs text-slate-500 mt-1">
-                      {p.maxFacilities ?? '∞'} facility · {p.maxUserRoles ?? '∞'} roles
+                      {p.tagline || 'Unlimited SKUs, orders & users'}
                     </div>
                   </button>
                 ))}

@@ -30,21 +30,21 @@ const PRICING_TEASER = [
     tagline: 'For micro-businesses launching their first online channels.',
     yearly: 14990,
     popular: false,
-    features: ['1 facility', '10,000 SKUs', '3 user roles', '500 orders / month'],
+    features: ['Unlimited SKUs & orders', 'Unlimited warehouses & users', 'Core sales channels'],
   },
   {
     name: 'Growth',
     tagline: 'For growing brands strengthening their multi-channel operations.',
     yearly: 49990,
     popular: true,
-    features: ['2 facilities', '50,000 SKUs', '5 user roles', '2,500 orders / month'],
+    features: ['Unlimited SKUs & orders', 'Unlimited warehouses & users', 'Quick-commerce & Social channels'],
   },
   {
     name: 'Scale',
     tagline: 'For scaling brands that need full omnichannel coverage and warehouse ops.',
     yearly: 149990,
     popular: false,
-    features: ['5 facilities', '200,000 SKUs', '10 user roles', '10,000 orders / month'],
+    features: ['Unlimited SKUs & orders', 'Unlimited warehouses & users', 'All channels + B2B'],
   },
 ];
 const inr = (n: number) => n.toLocaleString('en-IN');
@@ -521,7 +521,7 @@ export default function LandingPage() {
               Simple plans that <span className="gradient-text">scale with you.</span>
             </h2>
             <p className="mt-5 text-base text-slate-600 max-w-xl mx-auto">
-              Start with a 14-day trial. Pay-as-you-go beyond your plan — never a hard wall.
+              Start with a 14-day trial. Unlimited SKUs, orders and users on every plan.
             </p>
           </div>
 

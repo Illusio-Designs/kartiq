@@ -6,141 +6,9 @@ const {
   authenticate, requireTenant, requirePermission, invalidateUserCache,
 } = require('../middleware/auth.middleware');
 const { audit } = require('../services/audit.service');
-const wallet = require('../services/wallet.service');
-const { idempotent } = require('../middleware/idempotency.middleware');
 
 const router = Router();
 router.use(authenticate, requireTenant);
-
-// ── Wallet endpoints ────────────────────────────────────────────────────────
-router.get('/wallet', requirePermission('billing.read'), async (req, res) => {
-  try {
-    const w = await wallet.getOrCreateWallet(req.tenant.id);
-    const low = Number(w.balance) < Number(w.lowBalanceThreshold);
-    // Wallet is manual top-up only — auto-topup fields are intentionally NOT
-    // returned anymore. The DB columns are kept for back-compat but the cron
-    // that consumed them (autopay.job.js) is now a no-op.
-    res.json({
-      id: w.id,
-      balance: Number(w.balance),
-      currency: w.currency,
-      lowBalanceThreshold: Number(w.lowBalanceThreshold),
-      lowBalance: low,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.get('/wallet/transactions', requirePermission('billing.read'), async (req, res) => {
-  try {
-    const limit = Math.min(200, Number(req.query.limit) || 50);
-    const txns = await wallet.history(req.tenant.id, limit);
-    res.json(txns);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Direct wallet top-up — for use by:
-//   1. Platform admins doing manual credits / refunds (audited)
-//   2. Internal callers (autopay job, /payments/wallet-verify) which
-//      pass a verified Razorpay paymentId — checked here against the
-//      Razorpay API before crediting.
-//
-// Tenants cannot self-credit by calling this endpoint directly with an
-// invented paymentRef — the payment is fetched from Razorpay and rejected
-// unless its status === 'captured' AND the amount matches.
-router.post('/wallet/topup', requirePermission('billing.manage'), idempotent(), async (req, res) => {
-  try {
-    const { amount, paymentRef, description } = req.body || {};
-    if (!amount || Number(amount) <= 0) return res.status(400).json({ error: 'amount must be positive' });
-
-    const isPlatformAdmin = !!req.user?.isPlatformAdmin;
-
-    // Non-admins MUST provide a captured Razorpay paymentRef whose amount
-    // matches what they're crediting. This blocks the "free money" attack
-    // where a tenant admin self-credits with a fake paymentRef.
-    if (!isPlatformAdmin) {
-      if (!paymentRef) {
-        return res.status(403).json({ error: 'paymentRef required (verified payment gateway transaction). Use /payments/wallet-checkout to start a Razorpay flow.' });
-      }
-      try {
-        const { getClient, getCreds } = require('../services/payment.service');
-        const client = await getClient();
-        const { isLive } = await getCreds();
-        // In stub/dev mode (no live Razorpay creds) we permit the legacy path
-        // so e2e tests still work; in prod we require verification.
-        if (isLive && client) {
-          const payment = await client.payments.fetch(paymentRef);
-          if (!payment || payment.status !== 'captured') {
-            return res.status(400).json({ error: 'Payment not captured at gateway' });
-          }
-          const expectedPaise = Math.round(Number(amount) * 100);
-          if (Number(payment.amount) !== expectedPaise) {
-            return res.status(400).json({ error: 'Amount mismatch with Razorpay payment' });
-          }
-          // Confirm the payment is for this tenant via order notes
-          if (payment.notes?.tenantId && payment.notes.tenantId !== req.tenant.id) {
-            return res.status(403).json({ error: 'Payment belongs to a different tenant' });
-          }
-        } else if (process.env.ALLOW_UNVERIFIED_WALLET_TOPUP !== 'true') {
-          // Fail CLOSED whenever the gateway can't verify — in every environment,
-          // not just production. The unverified path (for e2e tests) must be
-          // opted into explicitly via ALLOW_UNVERIFIED_WALLET_TOPUP=true, so a
-          // misconfigured/non-live deploy can never let a tenant self-credit.
-          return res.status(503).json({ error: 'Payment gateway not configured; cannot verify topup' });
-        }
-      } catch (err) {
-        return res.status(400).json({ error: 'Failed to verify payment with gateway: ' + (err?.error?.description || err.message) });
-      }
-    }
-
-    const result = await wallet.topup(req.tenant.id, Number(amount), {
-      paymentRef: paymentRef || null,
-      description: description || (isPlatformAdmin ? 'Manual top-up (platform admin)' : 'Top-up'),
-      createdById: req.user.id,
-      type: 'TOPUP',
-    });
-    audit({
-      req,
-      action: isPlatformAdmin ? 'wallet.topup.admin' : 'wallet.topup.razorpay',
-      resource: 'wallet',
-      resourceId: result.transactionId,
-      metadata: { amount, paymentRef, byPlatformAdmin: isPlatformAdmin },
-    });
-    res.json({ ok: true, ...result });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.patch('/wallet/settings', requirePermission('billing.manage'), async (req, res) => {
-  try {
-    // Only the low-balance alert threshold is user-configurable now.
-    // autoTopup* fields are silently ignored — wallet is manual top-up only.
-    // Older clients sending those fields won't fail; we just drop them on
-    // the floor and disable any pre-existing auto-topup so nothing fires.
-    const { lowBalanceThreshold } = req.body || {};
-    const updates = [];
-    const values = [];
-    if (lowBalanceThreshold != null) { updates.push('lowBalanceThreshold = ?'); values.push(Number(lowBalanceThreshold)); }
-    // Defensive: any wallet that still has auto-topup enabled in the DB
-    // gets disabled on the next save so the (already-no-op) cron never
-    // re-activates if someone re-enables it later.
-    updates.push('autoTopupEnabled = 0');
-    if (!updates.length) return res.json({ ok: true });
-
-    values.push(req.tenant.id);
-    await prisma.$executeRawUnsafe(
-      `UPDATE tenant_wallets SET ${updates.join(', ')}, updatedAt = NOW(3) WHERE tenantId = ?`,
-      ...values
-    );
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // Update tenant company info (name, GSTIN)
 router.patch('/tenant', requirePermission('billing.manage'), async (req, res) => {
@@ -166,54 +34,26 @@ router.get('/subscription', requirePermission('billing.read'), async (req, res) 
   res.json(sub);
 });
 
-// Usage snapshot for current period — includes overage + PAYG charges
+// Usage snapshot for the current period — plain counts only (no plan limits).
 router.get('/usage', requirePermission('billing.read'), async (req, res) => {
   const tenantId = req.tenant.id;
   const period = new Date().toISOString().slice(0, 7);
 
   // Load the full subscription row — req.subscription from auth middleware
-  // only carries {id, status, payAsYouGo, currentPeriodEnd}, missing the
-  // auto-renew fields. Hit the DB directly here so the API surfaces them.
+  // only carries {id, status, currentPeriodEnd}, missing the auto-renew
+  // fields. Hit the DB directly here so the API surfaces them.
   const fullSub = await prisma.subscription.findUnique({ where: { tenantId } });
 
-  const [warehouses, products, users, roles, channels, ordersMeter] = await Promise.all([
+  const [warehouses, products, users, roles, channels] = await Promise.all([
     prisma.warehouse.count({ where: { tenantId } }),
     prisma.product.count({ where: { tenantId } }),
     prisma.user.count({ where: { tenantId } }),
     prisma.tenantRole.count({ where: { tenantId, isSystem: false } }),
     prisma.channel.count({ where: { tenantId, isActive: true } }),
-    prisma.usageMeter.findUnique({
-      where: { tenantId_metric_period: { tenantId, metric: 'orders', period } },
-    }),
   ]);
 
   const plan = req.plan || {};
   const subscription = req.subscription || {};
-  const ordersThisPeriod = ordersMeter?.count || 0;
-  const maxOrders = plan.maxOrdersPerMonth;
-  const maxSkus = plan.maxSkus;
-  const maxUsers = plan.maxUsers;
-  const maxFacilities = plan.maxFacilities;
-  const maxChannels = plan.features?.maxChannels ?? null;
-
-  // Calculate overage — each metric over limit, priced per the plan's meteredRates
-  const rates = plan.meteredRates || {};
-  const overage = {
-    orders: maxOrders != null && ordersThisPeriod > maxOrders ? ordersThisPeriod - maxOrders : 0,
-    skus:   maxSkus != null && products > maxSkus ? products - maxSkus : 0,
-    users:  maxUsers != null && users > maxUsers ? users - maxUsers : 0,
-    channels: maxChannels != null && channels > maxChannels ? channels - maxChannels : 0,
-  };
-  const overageCharges = {
-    orders:   overage.orders * Number(rates.extraOrders || 0),
-    skus:     overage.skus * Number(rates.extraSkus || 0),
-    users:    overage.users * Number(rates.extraUsers || 0),
-    channels: overage.channels * Number(rates.extraChannels || 0),
-  };
-  const totalOverageCost = Object.values(overageCharges).reduce((a, b) => a + b, 0);
-
-  // Wallet info (lazy-create if missing)
-  const walletInfo = await wallet.getOrCreateWallet(tenantId).catch(() => null);
 
   // Default payment method (only the most recently saved active default).
   // Used by the lockscreen + billing page to show "we couldn't charge your
@@ -241,7 +81,6 @@ router.get('/usage', requirePermission('billing.read'), async (req, res) => {
     plan,
     subscription: {
       status: subscription.status,
-      payAsYouGo: !!subscription.payAsYouGo,
       autoRenew: !!(fullSub?.autoRenew),
       currentPeriodStart: subscription.currentPeriodStart,
       currentPeriodEnd: subscription.currentPeriodEnd,
@@ -264,45 +103,23 @@ router.get('/usage', requirePermission('billing.read'), async (req, res) => {
       lastFailureReason: defaultMethod.lastFailureReason || null,
       lastFailureAt: defaultMethod.lastFailureAt || null,
     } : null,
-    wallet: walletInfo ? {
-      balance: Number(walletInfo.balance),
-      currency: walletInfo.currency,
-      lowBalance: Number(walletInfo.balance) < Number(walletInfo.lowBalanceThreshold),
-      lowBalanceThreshold: Number(walletInfo.lowBalanceThreshold),
-    } : null,
     used: {
       facilities: warehouses,
       skus: products,
       users,
       roles,
       channels,
-      ordersThisPeriod,
     },
-    limits: {
-      facilities: maxFacilities,
-      skus: maxSkus,
-      users: maxUsers,
-      ordersPerMonth: maxOrders,
-      channels: maxChannels,
-    },
-    overage,
-    overageCharges,
-    totalOverageCost,
-    rates,
   });
 });
 
-// Change plan (upgrade/downgrade). Mid-cycle changes are pro-rated against
-// the wallet:
-//   • Upgrade   → wallet is debited for (newPlanDailyRate - oldPlanDailyRate)
-//                 × daysRemaining. Insufficient balance returns 402 so the
-//                 caller can top up first.
-//   • Downgrade → wallet is credited for (oldPlanDailyRate - newPlanDailyRate)
-//                 × daysRemaining as a refund.
-//   • Cycle keeps its original currentPeriodEnd; the next renewal charges
-//     the full new-plan amount.
+// Change plan (upgrade/downgrade).
+//   • Mid-cycle UPGRADES to a higher-priced plan must be paid through Razorpay
+//     checkout (POST /payments/checkout) — this endpoint answers 402 for them.
+//   • Downgrades, trial and free-plan changes apply immediately; the new price
+//     is charged from the next renewal.
 router.post('/subscription/change', requirePermission('billing.manage'), async (req, res) => {
-  const { planCode, billingCycle, payAsYouGo } = req.body;
+  const { planCode, billingCycle } = req.body;
   const newPlan = await prisma.plan.findUnique({ where: { code: planCode } });
   if (!newPlan) return res.status(404).json({ error: 'Plan not found' });
 
@@ -316,63 +133,16 @@ router.post('/subscription/change', requirePermission('billing.manage'), async (
   const oldPrice = Number(sub.billingCycle === 'YEARLY' ? sub.plan.yearlyPrice : sub.plan.monthlyPrice) || 0;
   const newPrice = Number(newCycle === 'YEARLY' ? newPlan.yearlyPrice : newPlan.monthlyPrice) || 0;
 
-  // Days-remaining maths. We treat MONTHLY as 30 days and YEARLY as 365 to
-  // keep the daily rate stable regardless of which calendar month we're in.
-  const cycleDays = (cycle) => (cycle === 'YEARLY' ? 365 : 30);
   const periodEnd = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null;
   const daysRemaining = periodEnd
     ? Math.max(0, Math.ceil((periodEnd.getTime() - Date.now()) / 86_400_000))
     : 0;
-
-  const oldDaily = oldPrice / cycleDays(sub.billingCycle || 'MONTHLY');
-  const newDaily = newPrice / cycleDays(newCycle);
-  const delta = (newDaily - oldDaily) * daysRemaining; // +ve = upgrade owe, -ve = downgrade refund
-  const proration = Number(delta.toFixed(2));
-
-  const isUpgrade = proration > 0;
-  const isDowngrade = proration < 0;
-  const skipProration = sub.status === 'TRIALING' || daysRemaining === 0 || oldPrice === 0;
-
-  const wallet = require('../services/wallet.service');
-  let walletTxn = null;
-
-  if (!skipProration) {
-    if (isUpgrade) {
-      // Charge the wallet. If balance is short, return 402 so the caller can
-      // surface a "top up first" prompt instead of silently leaving the plan
-      // change incomplete.
-      const balance = await wallet.getBalance(req.tenant.id);
-      if (balance < proration) {
-        return res.status(402).json({
-          error: 'Insufficient wallet balance for prorated upgrade',
-          required: proration,
-          balance,
-          shortfall: Number((proration - balance).toFixed(2)),
-        });
-      }
-      walletTxn = await wallet.debit(req.tenant.id, proration, {
-        description: `Plan upgrade proration (${sub.plan.code} → ${newPlan.code})`,
-        type: 'PLAN_PRORATION',
-        reference: sub.id,
-      });
-      // wallet.debit does NOT throw on insufficient funds — it returns
-      // { ok:false }. The pre-check above is non-atomic (balance can drop under
-      // concurrency), so this is the authoritative guard: if the debit didn't
-      // succeed, do NOT apply the (paid) upgrade.
-      if (!walletTxn?.ok) {
-        return res.status(402).json({
-          error: 'Insufficient wallet balance for prorated upgrade',
-          required: walletTxn?.required ?? proration,
-          balance: walletTxn?.balance,
-        });
-      }
-    } else if (isDowngrade) {
-      walletTxn = await wallet.topup(req.tenant.id, Math.abs(proration), {
-        description: `Plan downgrade refund (${sub.plan.code} → ${newPlan.code})`,
-        type: 'PLAN_REFUND',
-        createdById: req.user.id,
-      });
-    }
+  const isPaidMidCycleUpgrade = newPrice > oldPrice && sub.status !== 'TRIALING' && daysRemaining > 0 && oldPrice > 0;
+  if (isPaidMidCycleUpgrade) {
+    return res.status(402).json({
+      error: 'Upgrading to a higher-priced plan mid-cycle requires payment. Use checkout to upgrade.',
+      useCheckout: true,
+    });
   }
 
   const updated = await prisma.subscription.update({
@@ -380,7 +150,6 @@ router.post('/subscription/change', requirePermission('billing.manage'), async (
     data: {
       planId: newPlan.id,
       billingCycle: newCycle,
-      payAsYouGo: !!payAsYouGo,
       status: 'ACTIVE',
     },
     include: { plan: true },
@@ -395,10 +164,7 @@ router.post('/subscription/change', requirePermission('billing.manage'), async (
       from: sub.plan.code,
       to: planCode,
       billingCycle: newCycle,
-      payAsYouGo,
       daysRemaining,
-      proration,
-      walletTxnId: walletTxn?.transactionId || null,
     },
   });
 
@@ -415,25 +181,6 @@ router.post('/subscription/change', requirePermission('billing.manage'), async (
       console.warn('[referral] conversion failed:', e.message);
     }
   }
-  res.json({
-    ...updated,
-    proration: skipProration ? null : {
-      amount: proration,
-      direction: isUpgrade ? 'charge' : 'refund',
-      daysRemaining,
-      oldDailyRate: Number(oldDaily.toFixed(4)),
-      newDailyRate: Number(newDaily.toFixed(4)),
-    },
-  });
-});
-
-// Toggle pay-as-you-go
-router.post('/subscription/payg', requirePermission('billing.manage'), async (req, res) => {
-  const updated = await prisma.subscription.update({
-    where: { tenantId: req.tenant.id },
-    data: { payAsYouGo: !!req.body.enabled },
-  });
-  invalidateUserCache(req.user.id);
   res.json(updated);
 });
 

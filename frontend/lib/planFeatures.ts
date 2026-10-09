@@ -1,7 +1,7 @@
 // Shared plan-feature presentation.
 //
 // Backend Plan.features keys are machine flags (e.g. returns:'basic', vms:true,
-// barcoding:'sku', maxChannels:8). These helpers turn them into the same
+// barcoding:'sku'). These helpers turn them into the same
 // user-facing labels on both the public pricing page and the in-app billing
 // "Switch plan" cards, so a plan never renders raw keys like `paymentReconciliation`.
 
@@ -50,23 +50,4 @@ export function planFeatureLines(plan: any): PlanFeatureLine[] {
     const included = !!v && v !== false;
     return { key, label, included, tag: included ? featureTag(key, v) : null };
   });
-}
-
-export interface PlanLimit {
-  label: string;
-  value: string;
-}
-
-// Numeric plan ceilings, formatted for humans (null → "Unlimited").
-export function planLimits(plan: any): PlanLimit[] {
-  const fmt = (n: any) =>
-    n === null || n === undefined ? 'Unlimited' : Number(n).toLocaleString();
-  return [
-    { label: 'SKUs', value: fmt(plan?.maxSkus) },
-    { label: 'Orders / month', value: fmt(plan?.maxOrdersPerMonth) },
-    { label: 'Warehouses', value: fmt(plan?.maxFacilities) },
-    { label: 'Sales channels', value: fmt(plan?.features?.maxChannels) },
-    { label: 'Team members', value: fmt(plan?.maxUsers) },
-    { label: 'User roles', value: fmt(plan?.maxUserRoles) },
-  ];
 }

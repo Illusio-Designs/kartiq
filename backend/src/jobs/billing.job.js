@@ -1,7 +1,7 @@
 // Billing cron — run daily (e.g. 02:00).
 // Responsibilities:
 //   1. Roll forward subscriptions whose currentPeriodEnd has passed
-//   2. Snapshot UsageMeter -> BillingInvoice for the ended period
+//   2. Snapshot the ended period into a BillingInvoice
 //   3. Mark expired trials as PAST_DUE
 //   4. Suspend tenants that stay PAST_DUE > GRACE_DAYS
 //
@@ -19,7 +19,7 @@ const settings = require('../services/settings.service');
 
 // Stop retrying a saved card after this many consecutive failures and
 // require the tenant to add a fresh one. Shared between subscription
-// auto-renewal and wallet auto-topup so the threshold is consistent.
+// auto-renewal so the threshold is consistent.
 const MAX_AUTOPAY_FAILURES = 5;
 
 async function getGraceDays() {
@@ -66,53 +66,9 @@ async function snapshotInvoiceForSubscription(sub, period) {
   const plan = sub.plan;
   const base = Number(sub.billingCycle === 'YEARLY' ? plan.yearlyPrice : plan.monthlyPrice);
 
-  // Compute PAYG overage from usage meter vs plan limits
-  const meters = await prisma.usageMeter.findMany({
-    where: { tenantId, period },
-  });
-
-  let overageAmount = 0;
   const lineItems = [{ type: 'base', planCode: plan.code, amount: base }];
 
-  if (sub.payAsYouGo) {
-    const rates = plan.meteredRates || {};
-    // Orders — usage flow, from the monthly meter.
-    for (const m of meters) {
-      if (m.metric === 'orders' && plan.maxOrdersPerMonth !== null) {
-        const over = Math.max(0, m.count - plan.maxOrdersPerMonth);
-        if (over > 0 && rates.extraOrders) {
-          const amt = over * Number(rates.extraOrders);
-          overageAmount += amt;
-          lineItems.push({ type: 'overage', metric: 'orders', qty: over, rate: rates.extraOrders, amount: amt });
-        }
-      }
-    }
-    // Recurring standing add-ons — billed EVERY month they stay over the plan
-    // limit, from the LIVE count (not a meter): extra channels and warehouses.
-    const [chCount, whCount] = await Promise.all([
-      prisma.channel.count({ where: { tenantId, isActive: true } }),
-      prisma.warehouse.count({ where: { tenantId, isVirtual: false } }),
-    ]);
-    const chLimit = plan.features?.maxChannels;
-    if (typeof chLimit === 'number' && rates.extraChannels) {
-      const over = Math.max(0, chCount - chLimit);
-      if (over > 0) {
-        const amt = over * Number(rates.extraChannels);
-        overageAmount += amt;
-        lineItems.push({ type: 'overage', metric: 'channels', qty: over, rate: rates.extraChannels, amount: amt });
-      }
-    }
-    if (plan.maxFacilities !== null && rates.extraFacilities) {
-      const over = Math.max(0, whCount - plan.maxFacilities);
-      if (over > 0) {
-        const amt = over * Number(rates.extraFacilities);
-        overageAmount += amt;
-        lineItems.push({ type: 'overage', metric: 'facilities', qty: over, rate: rates.extraFacilities, amount: amt });
-      }
-    }
-  }
-
-  const totalAmount = base + overageAmount;
+  const totalAmount = base;
   // Deterministic per (tenant, subscription, period) — NO Date.now(). This is
   // what lets the unique invoiceNumber actually prevent a second invoice (and a
   // second card charge) when two billing runs overlap.
@@ -131,7 +87,6 @@ async function snapshotInvoiceForSubscription(sub, period) {
       periodStart: sub.currentPeriodStart,
       periodEnd: sub.currentPeriodEnd,
       baseAmount: base,
-      overageAmount,
       totalAmount,
       currency: plan.currency || 'INR',
       status: 'DUE',
@@ -144,7 +99,7 @@ async function snapshotInvoiceForSubscription(sub, period) {
 function _payment() { return require('../services/payment.service'); }
 function _db() { return require('../utils/db'); }
 
-// Find the tenant's default saved Razorpay token (used for both wallet
+// Find the tenant's default saved Razorpay token (used for
 // auto-topup and subscription auto-renewal — same payment method, two uses).
 async function getDefaultMethod(tenantId) {
   const db = _db();
@@ -303,7 +258,7 @@ async function rollForwardSubscriptions() {
       //  ACTIVE + free                       → roll forward, stay ACTIVE
       //  ACTIVE + autoRenew + charged        → roll forward, stay ACTIVE
       //  ACTIVE + autoRenew + chargeFailed   → DON'T roll (give the
-      //                                         autopay job another chance
+      //                                         renewal another chance
       //                                         later); mark PAST_DUE
       //  ACTIVE + manual (no autoRenew)      → DON'T roll forward; mark
       //                                         PAST_DUE so the tenant
@@ -346,7 +301,7 @@ async function rollForwardSubscriptions() {
 // charge previously failed. Without this, rollForwardSubscriptions never
 // re-picks them up (it filters status IN ['ACTIVE','TRIALING']) and the user
 // stays past-due even after fixing their card. Exponential back-off mirrors
-// the wallet autopay job: 1h → 6h → 1d → 1w.
+// the renewal retries: 1h → 6h → 1d → 1w.
 function renewalBackoffMinutes(failureCount) {
   if (failureCount <= 1) return 60;
   if (failureCount === 2) return 6 * 60;

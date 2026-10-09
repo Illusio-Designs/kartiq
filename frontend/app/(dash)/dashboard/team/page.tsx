@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { userApi, roleApi, billingApi } from '@/lib/api';
+import { userApi, roleApi } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 import { useFilteredBySearch } from '@/lib/useGlobalSearch';
 import { formatDateTime } from '@/lib/utils';
@@ -79,7 +79,6 @@ function UsersTab({ canManage, showNew, setShowNew }: {
   const [loading, setLoading] = useState(true);
   const [uPage, setUPage] = useState(1);
   const uPageSize = 20;
-  const plan = useAuthStore((s) => s.plan);
   const [confirmUi, askConfirm] = useConfirm();
 
   const load = async () => {
@@ -102,8 +101,7 @@ function UsersTab({ canManage, showNew, setShowNew }: {
   // Stat strip figures.
   const activeCount = users.filter((u: any) => u.isActive).length;
   const customRoleCount = roles.filter((r: any) => !r.isSystem).length;
-  const seatCap = plan?.maxUsers ?? null;
-  const seatsLeft = seatCap == null ? '∞' : Math.max(0, seatCap - users.length);
+  const inactiveCount = users.length - activeCount;
 
   const save = async (data: any) => {
     if (data.id) await userApi.update(data.id, data);
@@ -144,7 +142,7 @@ function UsersTab({ canManage, showNew, setShowNew }: {
         { label: 'Team members', value: users.length, tone: 'slate', icon: <Users size={16} /> },
         { label: 'Active', value: activeCount, tone: 'emerald', icon: <Users size={16} /> },
         { label: 'Custom roles', value: customRoleCount, tone: 'violet', icon: <Shield size={16} /> },
-        { label: 'Seats left', value: seatsLeft, tone: 'amber', icon: <Plus size={16} />, hint: seatCap == null ? 'Unlimited on your plan' : `Plan allows ${seatCap} users` },
+        { label: 'Inactive', value: inactiveCount, tone: 'amber', icon: <Users size={16} /> },
       ]} cols={4} />
 
       <Card className="p-0 overflow-hidden">
@@ -363,24 +361,15 @@ function RolesTab({ canManage, showNew, setShowNew }: {
   const [perms, setPerms] = useState<any[]>([]);
   const [editing, setEditing] = useState<any>(null);
   const [confirmUi, askConfirm] = useConfirm();
-  const [usage, setUsage] = useState<{ used: number; limit: number | null } | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
     try {
-      const [r, p, u] = await Promise.all([
+      const [r, p] = await Promise.all([
         roleApi.list(),
         userApi.permissionCatalog(),
-        // Optional — fall back gracefully if the call fails (perms or network)
-        billingApi.usage().catch(() => null),
       ]);
       setRoles(r.data); setPerms(p.data);
-      if (u?.data) {
-        // Custom roles only — system roles don't count against the plan limit
-        const customCount = (r.data || []).filter((x: any) => !x.isSystem).length;
-        const limit = u.data.plan?.maxUserRoles ?? null;
-        setUsage({ used: customCount, limit });
-      }
     } finally {
       setLoading(false);
     }
@@ -394,12 +383,7 @@ function RolesTab({ canManage, showNew, setShowNew }: {
       toast.success(data.id ? 'Role updated' : 'Role created');
       setEditing(null); setShowNew(false); load();
     } catch (err: any) {
-      const e = err?.response?.data?.error;
-      if (err?.response?.status === 402) {
-        toast.error('Plan limit reached — upgrade or enable Pay-As-You-Go to add more custom roles.');
-      } else {
-        toast.error(e || 'Could not save role');
-      }
+      toast.error(err?.response?.data?.error || 'Could not save role');
     }
   };
 
@@ -441,7 +425,6 @@ function RolesTab({ canManage, showNew, setShowNew }: {
 
   const customRoles = roles.filter((r: any) => !r.isSystem);
   const systemRoles = roles.filter((r: any) => r.isSystem);
-  const atLimit = usage?.limit != null && usage.used >= usage.limit;
 
   return (
     <>
@@ -470,17 +453,6 @@ function RolesTab({ canManage, showNew, setShowNew }: {
               <CardTitle>Custom roles</CardTitle>
               <CardDescription>Roles you define with exactly the permissions each job needs</CardDescription>
             </div>
-            {usage && (usage.limit != null ? (
-              <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-full px-3 py-1.5 whitespace-nowrap">
-                <strong className={atLimit ? 'text-rose-700' : 'text-slate-900'}>{usage.used}</strong>{' '}
-                of <strong>{usage.limit}</strong> used
-                {atLimit && <span className="ml-1.5 text-rose-600 font-bold">· at limit</span>}
-              </div>
-            ) : (
-              <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5 whitespace-nowrap">
-                <strong>Unlimited</strong> on your plan
-              </div>
-            ))}
           </CardHeader>
 
           {loading ? (

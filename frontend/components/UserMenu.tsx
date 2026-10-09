@@ -58,7 +58,7 @@ export function UserMenu() {
   //
   // Billing & Usage — billing.read OR billing.manage. Resolves to
   //   { ADMIN, ACCOUNTANT, STAFF } per the matrix. STAFF inclusion is
-  //   intentional: they get read-only insight into the wallet/usage
+  //   intentional: they get read-only insight into the billing
   //   page (no upgrade button server-side gates them out of writes).
   const canSeeBilling = !isFounder && hasPermission('billing.read', 'billing.manage');
   // Team — gated on a WRITE permission so we don't surface a "manage
@@ -181,7 +181,7 @@ export function UserMenu() {
             <MenuItem icon={User}     label="My profile" onClick={() => go('/settings?tab=profile')} />
             <MenuItem icon={Settings} label="Settings"   onClick={() => go('/settings')} />
             {canSeeBilling && (
-              <MenuItem icon={CreditCard} label="Billing & wallet" onClick={() => go('/dashboard/billing')} />
+              <MenuItem icon={CreditCard} label="Billing" onClick={() => go('/dashboard/billing')} />
             )}
             {canSeeTeam && (
               <MenuItem icon={Users} label="Team" onClick={() => go('/dashboard/team')} />

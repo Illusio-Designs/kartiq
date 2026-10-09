@@ -68,8 +68,8 @@ async function createOrder({ amount, currency = 'INR', notes = {}, customerId, s
 
   const orderArgs = { amount: amountPaise, currency, notes };
   // Razorpay Tokenisation: when set, Razorpay returns a `token_id` in the
-  // payment.captured webhook so the wallet can be charged later without the
-  // checkout sheet. Used to build the autopay flow.
+  // payment.captured webhook so the card can be charged later without the
+  // checkout sheet. Used for plan auto-renewal.
   if (savePaymentMethod) {
     orderArgs.payment_capture = 1;
     orderArgs.token = { max_amount: 1000_000_00, expire_at: Math.floor(Date.now()/1000) + 60*60*24*365*5, frequency: 'as_presented' };
@@ -159,7 +159,7 @@ async function createCustomer({ name, email, contact, notes = {} }) {
 }
 
 // ── Charge a saved token without showing the checkout sheet ─────────────────
-// Used by the autopay job to top up wallets and renew plans. Returns the
+// Used by the billing job to renew plans. Returns the
 // payment object on success.
 //
 // Razorpay's recurring-charge endpoint is `POST /v1/payments/create/recurring`.

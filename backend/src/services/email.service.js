@@ -126,7 +126,7 @@ const sendDunningReminder = ({ to, name, daysPastDue, amountDue, currency = 'INR
       <p>Hi ${name}, we couldn't charge your card for ${currency} ${amountDue}.</p>
       ${stage === 'final'
         ? `<p><strong>Your workspace will be suspended in 24 hours</strong> unless we can collect payment. Update your card now to keep things running.</p>`
-        : `<p>Please update your card or top up your wallet to keep your workspace active.</p>`}
+        : `<p>Please update your card to keep your workspace active.</p>`}
       <p><a href="${siteUrl()}/dashboard/billing" style="background:${accents[stage]};color:white;padding:10px 18px;border-radius:8px;text-decoration:none;display:inline-block;">Resolve now</a></p>
       <p style="color:#64748b;font-size:12px;margin-top:24px;">If you've already paid, you can ignore this email — our system will catch up shortly.</p>
     `),
@@ -155,13 +155,13 @@ const sendUserInvite = ({ to, inviterName, businessName, inviteUrl }) => send({
 });
 
 const sendPaymentFailed = ({ to, name, amount, currency = 'INR', reason, kind = 'subscription', cardLast4 }) => {
-  const target = kind === 'wallet' ? 'wallet auto-topup' : 'subscription renewal';
+  const target = 'subscription renewal';
   const cardLine = cardLast4 ? `card ending <strong>${cardLast4}</strong>` : 'saved card';
   return send({
     to,
-    subject: `${kind === 'wallet' ? 'Wallet auto-topup' : 'Payment'} to Kartriq failed`,
+    subject: `Payment to Kartriq failed`,
     html: wrap(`
-      <h2 style="margin-top:0;">${kind === 'wallet' ? 'Auto-topup' : 'Payment'} failed</h2>
+      <h2 style="margin-top:0;">Payment failed</h2>
       <p>Hi ${name}, we couldn't charge your ${cardLine} ${amount ? `for <strong>${currency} ${amount}</strong>` : ''} (${target}).</p>
       ${reason ? `<p style="background:#fef2f2;border-left:3px solid #ef4444;padding:10px 12px;color:#991b1b;font-size:13px;border-radius:0 6px 6px 0;"><strong>Reason from your bank:</strong> ${reason}</p>` : ''}
       <p>We'll retry automatically with a backoff schedule, but you can fix this now to skip the wait:</p>
@@ -178,21 +178,10 @@ const sendCardDeactivated = ({ to, name, cardLast4, failureCount, kind = 'subscr
   subject: 'We stopped retrying your saved card',
   html: wrap(`
     <h2 style="margin-top:0;color:#ef4444;">Saved card disabled</h2>
-    <p>Hi ${name}, after <strong>${failureCount} failed attempts</strong> we stopped trying to charge your ${cardLast4 ? `card ending <strong>${cardLast4}</strong>` : 'saved card'} for ${kind === 'wallet' ? 'wallet auto-topup' : 'subscription renewal'}.</p>
-    <p>This usually means the card has expired, the bank has revoked it, or there were repeatedly insufficient funds. To restore ${kind === 'wallet' ? 'auto-topup' : 'service'}, add a fresh card from the billing page:</p>
+    <p>Hi ${name}, after <strong>${failureCount} failed attempts</strong> we stopped trying to charge your ${cardLast4 ? `card ending <strong>${cardLast4}</strong>` : 'saved card'} for subscription renewal.</p>
+    <p>This usually means the card has expired, the bank has revoked it, or there were repeatedly insufficient funds. To restore service, add a fresh card from the billing page:</p>
     <p><a href="${siteUrl()}/dashboard/billing" style="background:#ef4444;color:white;padding:10px 18px;border-radius:8px;text-decoration:none;display:inline-block;">Add a new card</a></p>
-    <p style="color:#64748b;font-size:12px;margin-top:24px;">Until then, ${kind === 'wallet' ? 'overage charges may be blocked when your wallet runs low' : 'your account will be suspended once the grace period ends'}.</p>
-  `),
-});
-
-const sendPlanLimitAlert = ({ to, name, metric, used, limit }) => send({
-  to,
-  subject: `You're approaching your ${metric} limit`,
-  html: wrap(`
-    <h2 style="margin-top:0;">Plan limit nearing</h2>
-    <p>Hi ${name}, you've used <strong>${used} of ${limit}</strong> ${metric} on your current plan.</p>
-    <p>Enable Pay-As-You-Go in billing to keep going past the limit, or upgrade to a higher plan.</p>
-    <p><a href="${siteUrl()}/usage" style="background:#10b981;color:white;padding:10px 18px;border-radius:8px;text-decoration:none;display:inline-block;">View usage</a></p>
+    <p style="color:#64748b;font-size:12px;margin-top:24px;">Until then, your account will be suspended once the grace period ends.</p>
   `),
 });
 
@@ -220,6 +209,5 @@ module.exports = {
   sendUserInvite,
   sendPaymentFailed,
   sendCardDeactivated,
-  sendPlanLimitAlert,
   sendTicketReply,
 };

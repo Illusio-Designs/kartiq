@@ -22,13 +22,7 @@ const planSchema = z.object({
   isPublic: z.boolean().optional(),
   isActive: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
-  maxFacilities: z.number().int().min(0).nullable().optional(),
-  maxSkus: z.number().int().min(0).nullable().optional(),
-  maxUserRoles: z.number().int().min(0).nullable().optional(),
-  maxUsers: z.number().int().min(0).nullable().optional(),
-  maxOrdersPerMonth: z.number().int().min(0).nullable().optional(),
   features: z.record(z.any()).optional(),
-  meteredRates: z.record(z.any()).optional(),
 });
 const planPartial = planSchema.partial();
 
@@ -48,7 +42,6 @@ const tenantUpdateSchema = z.object({
 const assignPlanSchema = z.object({
   planCode: z.enum(['STANDARD', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE', 'FIVERR_FREE']),
   billingCycle: z.enum(['MONTHLY', 'YEARLY']).optional(),
-  payAsYouGo: z.boolean().optional(),
 });
 
 // Whitelist the real `blog_posts` columns so a raw body can't mass-assign
@@ -269,7 +262,7 @@ router.post('/tenants/:id/restore', async (req, res) => {
 // Force-assign a plan
 router.post('/tenants/:id/assign-plan', async (req, res) => {
   try {
-    const { planCode, billingCycle, payAsYouGo } = assignPlanSchema.parse(req.body);
+    const { planCode, billingCycle } = assignPlanSchema.parse(req.body);
     const plan = await prisma.plan.findUnique({ where: { code: planCode } });
     if (!plan) return res.status(404).json({ error: 'Plan not found' });
     const periodEnd = new Date();
@@ -280,10 +273,10 @@ router.post('/tenants/:id/assign-plan', async (req, res) => {
 
     const sub = await prisma.subscription.upsert({
       where: { tenantId: req.params.id },
-      update: { planId: plan.id, billingCycle: billingCycle || 'MONTHLY', payAsYouGo: !!payAsYouGo, status: 'ACTIVE', currentPeriodEnd: periodEnd },
+      update: { planId: plan.id, billingCycle: billingCycle || 'MONTHLY', status: 'ACTIVE', currentPeriodEnd: periodEnd },
       create: {
         tenantId: req.params.id, planId: plan.id, billingCycle: billingCycle || 'MONTHLY',
-        payAsYouGo: !!payAsYouGo, status: 'ACTIVE', currentPeriodEnd: periodEnd,
+        status: 'ACTIVE', currentPeriodEnd: periodEnd,
       },
       include: { plan: true },
     });
@@ -447,7 +440,7 @@ const SETTINGS_CATALOG = [
   { key: 'reviews.delayHours', category: 'reviews', label: 'Review request delay (hours)', isSecret: false },
 
   // Referral / affiliate program
-  { key: 'referral.rewardAmount',   category: 'referral', label: 'Reward per conversion', isSecret: false, description: 'Wallet credit (in INR) given to the referrer when their invitee converts to a paid plan. Default: 500.' },
+  { key: 'referral.rewardAmount',   category: 'referral', label: 'Reward per conversion', isSecret: false, description: 'Reward (in INR) recorded for the referrer when their invitee converts to a paid plan. Default: 500.' },
   { key: 'referral.rewardCurrency', category: 'referral', label: 'Reward currency',       isSecret: false, description: 'Currency the reward is denominated in. Default: INR.' },
 
   // Analytics & Tracking
@@ -775,7 +768,6 @@ router.post('/email/test', async (req, res) => {
     ['password-reset',   () => e.sendPasswordReset({ to, name: 'Test User', resetUrl: `${siteUrl}/login?reset=test` })],
     ['user-invite',      () => e.sendUserInvite({ to, inviterName: 'Test Admin', businessName: 'Test Co.', inviteUrl: `${siteUrl}/login?email=${encodeURIComponent(to)}` })],
     ['payment-failed',   () => e.sendPaymentFailed({ to, name: 'Test User', amount: '999.00', reason: 'Card declined (test)' })],
-    ['plan-limit-alert', () => e.sendPlanLimitAlert({ to, name: 'Test User', metric: 'orders', used: 950, limit: 1000 })],
     ['ticket-reply',     () => e.sendTicketReply({ to, name: 'Test User', ticketSubject: 'Demo ticket', ticketUrl: `${siteUrl}/help/test`, replyPreview: 'Thanks for reaching out…' })],
   ];
 

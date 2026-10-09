@@ -174,68 +174,8 @@ async function main() {
     assert(fetchedAsT2.status === 404, 'Injected tenantId ignored (customer still in T1)');
   }
 
-  // ── Plan limits ───────────────────────────────────────────
-  group('5. Plan limits (enforceLimit)');
-  // STANDARD plan → maxFacilities: 1 (T1 already has 1 via wh1)
-  const wh2 = await req('POST', '/warehouses', {
-    token: T1.token,
-    body: { name: 'T1 Second WH', code: `WH${TIMESTAMP}B` },
-  });
-  assert(wh2.status === 402, 'Second warehouse blocked by plan (402)');
-
-  // STANDARD plan → maxUsers: 2 (owner + 1). Add a team member.
-  const addUser = await req('POST', '/users', {
-    token: T1.token,
-    body: {
-      name: 'Team Mate',
-      email: `tm-${TIMESTAMP}@test.local`,
-      password: 'test12345',
-    },
-  });
-  assert(addUser.status === 201, 'Team member added within plan limit');
-
-  const addUser2 = await req('POST', '/users', {
-    token: T1.token,
-    body: {
-      name: 'Third User',
-      email: `tm2-${TIMESTAMP}@test.local`,
-      password: 'test12345',
-    },
-  });
-  assert(addUser2.status === 402, 'Third user blocked (STANDARD maxUsers: 2)');
-
-  // ── Wallet / PAYG ────────────────────────────────────────
-  group('6. Wallet + Pay-As-You-Go');
-  const walletBefore = await req('GET', '/billing/wallet', { token: T1.token });
-  assert(walletBefore.status === 200 && walletBefore.body.balance === 0, 'New tenant wallet balance = 0');
-
-  // Top up 100
-  const topup = await req('POST', '/billing/wallet/topup', {
-    token: T1.token,
-    body: { amount: 100, description: 'Test topup' },
-  });
-  assert(topup.status === 200 && topup.body.balanceAfter === 100, `Topup credited (balance: ${topup.body?.balanceAfter})`);
-
-  // Negative topup should fail
-  const badTopup = await req('POST', '/billing/wallet/topup', {
-    token: T1.token,
-    body: { amount: -50 },
-  });
-  assert(badTopup.status === 400, 'Negative topup rejected');
-
-  // Enable PAYG
-  const payg = await req('POST', '/billing/subscription/payg', {
-    token: T1.token,
-    body: { enabled: true },
-  });
-  assert(payg.status === 200, 'PAYG enabled');
-
-  // Transaction history
-  const txns = await req('GET', '/billing/wallet/transactions', { token: T1.token });
-  assert(Array.isArray(txns.body) && txns.body.length >= 1, 'Transactions logged');
-
   // ── Channels + plan category gating ──────────────────────
-  group('7. Channel category gating');
+  group('5. Channel category gating');
   const ch1 = await req('POST', '/channels', {
     token: T1.token,
     body: { name: 'My Amazon', type: 'AMAZON' },
@@ -248,19 +188,11 @@ async function main() {
   });
   assert(chB2B.status === 402 && chB2B.body?.requiredPlan, 'B2B channel blocked on STANDARD (402 with requiredPlan)');
 
-  // Create the second allowed channel first (so we've used maxChannels: 2 quota)
   const ch2 = await req('POST', '/channels', {
     token: T1.token,
     body: { name: 'My Flipkart', type: 'FLIPKART' },
   });
   assert(ch2.status === 201, 'Second ECOM channel allowed');
-
-  // Now the third channel should be blocked by count limit
-  const chLimit = await req('POST', '/channels', {
-    token: T1.token,
-    body: { name: 'My Myntra', type: 'MYNTRA' },
-  });
-  assert(chLimit.status === 402, 'Third channel blocked (STANDARD maxChannels: 2)');
 
   // ── Catalog endpoint ─────────────────────────────────────
   group('8. Channel catalog');

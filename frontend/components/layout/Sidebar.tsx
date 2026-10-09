@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Package, ShoppingCart,
   Store, BarChart2, Settings, LogOut,
   Plug, HelpCircle, Sparkles, PanelLeftClose, PanelLeftOpen, X,
-  Wallet, UserCog, ChevronDown, Activity, Gift, ClipboardList, Truck, RotateCcw, Scale,
+  CreditCard, UserCog, ChevronDown, Activity, Gift, ClipboardList, Truck, RotateCcw, Scale,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth.store';
 import { useUIStore } from '@/store/ui.store';
@@ -54,7 +54,7 @@ const DEFAULT_NAV_GROUPS: SidebarNavGroup[] = [
     items: [
       { label: 'Warehouses',  href: '/warehouses',   icon: Store },
       { label: 'Team',        href: '/dashboard/team',    icon: UserCog },
-      { label: 'Billing',     href: '/dashboard/billing', icon: Wallet },
+      { label: 'Billing',     href: '/dashboard/billing', icon: CreditCard },
       { label: 'Activity log', href: '/audit',       icon: Activity },
       { label: 'Refer & earn', href: '/referrals',   icon: Gift },
       { label: 'Settings',    href: '/settings',     icon: Settings },

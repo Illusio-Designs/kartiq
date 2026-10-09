@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const {
-  authenticate, requireTenant, requirePermission, requireFeature, enforceLimit,
+  authenticate, requireTenant, requirePermission, requireFeature,
 } = require('../middleware/auth.middleware');
 const prisma = require('../utils/prisma');
 const { encryptCredentials, decryptCredentials, maskCredentials } = require('../utils/crypto');
@@ -13,7 +13,6 @@ router.use(authenticate, requireTenant);
 // ── Plan-based channel access ───────────────────────────────────────────
 // The plan's features.channelCategories array lists which categories are unlocked.
 // A null/undefined value means "all categories allowed" (ENTERPRISE).
-// The plan's features.maxChannels is the hard count limit (null = unlimited).
 const CATEGORY_PLAN_HINT = {
   // Minimum plan tier commonly needed for each category — used for user messaging
   ECOM: 'STANDARD',
@@ -95,7 +94,6 @@ router.get('/catalog', requirePermission('channels.read'), async (req, res) => {
 
     const planCode = getTenantPlanCode(req);
     const isPlatformAdmin = !!req.user?.isPlatformAdmin;
-    const maxChannels = req.plan?.features?.maxChannels;
     const usedChannels = userChannels.length;
 
     const entries = getCatalogByCategory(category).map((entry) => {
@@ -130,7 +128,6 @@ router.get('/catalog', requirePermission('channels.read'), async (req, res) => {
       plan_locked: entries.filter((e) => e.status === 'plan_locked').length,
       not_available: entries.filter((e) => e.status === 'not_available').length,
       currentPlan: planCode,
-      maxChannels: maxChannels ?? null,
       usedChannels,
     };
 
@@ -331,7 +328,6 @@ router.get('/:id', requirePermission('channels.read'), async (req, res) => {
 
 router.post('/',
   requirePermission('channels.create'),
-  enforceLimit('channels'),
   async (req, res) => {
     try {
       const { name, type, category } = req.body;

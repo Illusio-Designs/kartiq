@@ -21,12 +21,8 @@ function planToView(p: any) {
       excluded.push(label);
     }
   }
-  // Limits
-  features.unshift(
-    `${p.maxFacilities ?? 'Unlimited'} Facility/Facilities`,
-    `${p.maxSkus ? p.maxSkus.toLocaleString() : 'Unlimited'} SKUs`,
-    `${p.maxUserRoles ?? 'Unlimited'} User Roles`,
-  );
+  // No usage limits on any plan
+  features.unshift('Unlimited SKUs, orders, warehouses & users');
   return {
     code: p.code,
     name: p.name,
@@ -49,11 +45,8 @@ const FALLBACK_PLANS = [
     cta: 'Start 14-day Trial',
     highlight: false,
     features: [
-      '3 sales channels',
-      '500 self-fulfilled orders/month',
-      '1 warehouse',
-      '2 users · 3 roles',
-      '10,000 SKUs',
+      'Unlimited SKUs, orders, warehouses & users',
+      'Core sales channels',
       'Payment reconciliation · mobile app',
     ],
     excluded: ['Video management (VMS)', 'Purchase management', 'Custom reports'],
@@ -65,11 +58,8 @@ const FALLBACK_PLANS = [
     cta: 'Start 14-day Trial',
     highlight: true,
     features: [
-      '8 channels · +Quick-commerce & Social',
-      '2,500 self-fulfilled orders/month',
-      '3 warehouses',
-      '6 users · 6 roles',
-      '50,000 SKUs',
+      'Unlimited SKUs, orders, warehouses & users',
+      'Core channels · +Quick-commerce & Social',
       'Video management (VMS) · enhanced returns',
       'Purchase management · SKU barcoding',
     ],
@@ -82,11 +72,8 @@ const FALLBACK_PLANS = [
     cta: 'Start 14-day Trial',
     highlight: false,
     features: [
-      '20 channels · +B2B',
-      '10,000 self-fulfilled orders/month',
-      '6 warehouses',
-      '20 users · 12 roles',
-      '250,000 SKUs',
+      'Unlimited SKUs, orders, warehouses & users',
+      'All channels · +B2B',
       'Custom reports · advanced warehouse ops',
       'Vendor management · full omnichannel',
     ],
@@ -117,12 +104,8 @@ const FAQ = [
 const COMPARE_COLUMNS = ['Starter', 'Growth', 'Scale', 'Enterprise'];
 type CompareCell = string | boolean;
 const COMPARE_ROWS: Array<[string, CompareCell, CompareCell, CompareCell, CompareCell]> = [
-  ['SKUs', '10,000', '50,000', '250,000', 'Unlimited'],
-  ['Warehouses', '1', '3', '6', 'Unlimited'],
-  ['User roles', '3', '6', '12', 'Unlimited'],
-  ['Self-fulfilled orders / month', '500', '2,500', '10,000', 'Unlimited'],
-  ['Sales channels', '3', '8', '20', 'All'],
-  ['Pay-as-you-go', false, true, true, true],
+  ['SKUs, orders, warehouses & users', 'Unlimited', 'Unlimited', 'Unlimited', 'Unlimited'],
+  ['Sales channels', 'Core', 'Core + Quick-commerce & Social', 'All + B2B', 'All'],
   ['Payment reconciliation', true, true, true, true],
   ['Purchase management', false, true, true, true],
   ['Video management (VMS)', false, true, true, true],

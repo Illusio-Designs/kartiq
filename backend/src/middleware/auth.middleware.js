@@ -2,9 +2,6 @@ const jwt = require('jsonwebtoken');
 const prisma = require('../utils/prisma');
 const { isSessionActive } = require('../services/session.service');
 
-// Plan-limit alerts are throttled to once per (tenant, metric) per day so a
-// busy import job doesn't trigger a flood of emails.
-const limitAlertsSent = new Map(); // `${tenantId}:${metric}:${YYYY-MM-DD}` -> true
 
 // ── In-process cache for permissions/plan to avoid hitting DB on every req
 const ctxCache = new Map(); // userId -> { ts, ctx }
@@ -47,16 +44,11 @@ async function loadUserContext(userId, { byEmail = false } = {}) {
     } : null,
     plan: plan ? {
       id: plan.id, code: plan.code, name: plan.name,
-      maxFacilities: plan.maxFacilities, maxSkus: plan.maxSkus,
-      maxUserRoles: plan.maxUserRoles, maxUsers: plan.maxUsers,
-      maxOrdersPerMonth: plan.maxOrdersPerMonth,
       features: plan.features || {},
-      meteredRates: plan.meteredRates || {},
     } : null,
     subscription: user.tenant?.subscription ? {
       id: user.tenant.subscription.id,
       status: user.tenant.subscription.status,
-      payAsYouGo: user.tenant.subscription.payAsYouGo,
       currentPeriodEnd: user.tenant.subscription.currentPeriodEnd,
     } : null,
     permissions,
@@ -90,16 +82,11 @@ async function applyImpersonation(req) {
   const plan = tenant.subscription?.plan || null;
   req.plan = plan ? {
     id: plan.id, code: plan.code, name: plan.name,
-    maxFacilities: plan.maxFacilities, maxSkus: plan.maxSkus,
-    maxUserRoles: plan.maxUserRoles, maxUsers: plan.maxUsers,
-    maxOrdersPerMonth: plan.maxOrdersPerMonth,
     features: plan.features || {},
-    meteredRates: plan.meteredRates || {},
   } : null;
   req.subscription = tenant.subscription ? {
     id: tenant.subscription.id,
     status: tenant.subscription.status,
-    payAsYouGo: tenant.subscription.payAsYouGo,
     currentPeriodEnd: tenant.subscription.currentPeriodEnd,
   } : null;
   req.impersonating = true;
@@ -246,192 +233,6 @@ const requirePlatformAdmin = (req, res, next) => {
   next();
 };
 
-// Standing resources billed RECURRING monthly on the invoice (per extra unit,
-// every month it exists) rather than once at create: channels and facilities
-// (warehouses). Users and SKUs are ONE-TIME add-ons charged here at create.
-// Orders are a monthly usage flow handled separately.
-const RECURRING_OVERAGE_METRICS = new Set(['channels', 'facilities']);
-
-// Register a one-shot hook that, when the create request finishes with a 2xx,
-// charges the tenant's wallet ONCE for a one-time add-on (users, SKUs). For
-// recurring metrics (channels, facilities) it does nothing here — the monthly
-// billing job bills those from the live count. Orders are handled in their own
-// controller.
-function chargeOverageOnFinish(req, res, tenantId) {
-  res.once('finish', () => {
-    if (res.statusCode < 200 || res.statusCode >= 300) return; // create failed → no charge
-    const ov = req.overage;
-    if (!ov || ov.metric === 'orders' || RECURRING_OVERAGE_METRICS.has(ov.metric) || req._overageCharged) return;
-    req._overageCharged = true;
-    const wallet = require('../services/wallet.service');
-    const period = new Date().toISOString().slice(0, 7);
-    // Best-effort, off the response path — never delay the client.
-    Promise.resolve().then(async () => {
-      try {
-        if (ov.unitRate > 0) {
-          await wallet.debit(tenantId, ov.unitRate, {
-            description: `Overage: 1 extra ${ov.metric}`,
-            type: 'OVERAGE',
-            reference: ov.metric,
-          });
-        }
-        await prisma.usageMeter.upsert({
-          where: { tenantId_metric_period: { tenantId, metric: ov.metric, period } },
-          update: { count: { increment: 1 } },
-          create: { tenantId, metric: ov.metric, period, count: 1 },
-        });
-      } catch (e) { console.warn('[enforceLimit] overage charge failed:', e.message); }
-    });
-  });
-}
-
-// ── Plan-limit enforcer for create operations
-// Usage: enforceLimit('warehouses' | 'skus' | 'users' | 'roles' | 'orders' | 'channels')
-const enforceLimit = (resource) => async (req, res, next) => {
-  if (req.user?.isPlatformAdmin) return next();
-  const plan = req.plan;
-  if (!plan) return res.status(402).json({ error: 'No active subscription' });
-  const tenantId = req.tenant.id;
-
-  try {
-    let limit = null;
-    let used = 0;
-    let metric = null;
-
-    switch (resource) {
-      case 'warehouses':
-        limit = plan.maxFacilities;
-        // Virtual facilities (e.g. the pooled "Amazon FBA" location) are
-        // Amazon-managed, not seller warehouses — never count against the plan.
-        used = await prisma.warehouse.count({ where: { tenantId, isVirtual: false } });
-        metric = 'facilities';
-        break;
-      case 'skus':
-        limit = plan.maxSkus;
-        used = await prisma.product.count({ where: { tenantId } });
-        metric = 'skus';
-        break;
-      case 'users':
-        limit = plan.maxUsers;
-        used = await prisma.user.count({ where: { tenantId } });
-        metric = 'users';
-        break;
-      case 'roles':
-        limit = plan.maxUserRoles;
-        used = await prisma.tenantRole.count({ where: { tenantId, isSystem: false } });
-        metric = 'roles';
-        break;
-      case 'orders': {
-        limit = plan.maxOrdersPerMonth;
-        const period = new Date().toISOString().slice(0, 7);
-        const meter = await prisma.usageMeter.findUnique({
-          where: { tenantId_metric_period: { tenantId, metric: 'orders', period } },
-        });
-        used = meter?.count || 0;
-        metric = 'orders';
-        break;
-      }
-      case 'channels': {
-        // Channel limit is stored in plan.features.maxChannels (null = unlimited)
-        const maxChannels = plan.features?.maxChannels;
-        limit = typeof maxChannels === 'number' ? maxChannels : null;
-        used = await prisma.channel.count({ where: { tenantId, isActive: true } });
-        metric = 'channels';
-        break;
-      }
-      default:
-        return next();
-    }
-
-    // ── 80% threshold — fire-and-forget plan-limit alert (once per day)
-    if (limit !== null && limit > 0 && used >= Math.floor(limit * 0.8) && used < limit) {
-      const dayKey = `${tenantId}:${metric}:${new Date().toISOString().slice(0, 10)}`;
-      if (!limitAlertsSent.has(dayKey)) {
-        limitAlertsSent.set(dayKey, true);
-        // Trim cache to keep it bounded; older keys get cleaned up daily anyway.
-        if (limitAlertsSent.size > 5000) {
-          const today = new Date().toISOString().slice(0, 10);
-          for (const k of limitAlertsSent.keys()) if (!k.endsWith(today)) limitAlertsSent.delete(k);
-        }
-        // Best-effort — never delay the request on email send.
-        Promise.resolve().then(async () => {
-          try {
-            const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
-            if (!tenant?.ownerEmail) return;
-            const { sendPlanLimitAlert } = require('../services/email.service');
-            await sendPlanLimitAlert({
-              to: tenant.ownerEmail,
-              name: tenant.ownerName || 'there',
-              metric,
-              used,
-              limit,
-            });
-          } catch (e) { console.warn('[enforceLimit] alert email failed:', e.message); }
-        });
-      }
-    }
-
-    if (limit !== null && used >= limit) {
-      // PAYG with wallet: check if the tenant has enough balance for one overage unit
-      if (req.subscription?.payAsYouGo) {
-        const rates = plan.meteredRates || {};
-        const rateKey =
-          metric === 'orders' ? 'extraOrders' :
-          metric === 'skus' ? 'extraSkus' :
-          metric === 'users' ? 'extraUsers' :
-          metric === 'channels' ? 'extraChannels' :
-          metric === 'facilities' ? 'extraFacilities' : null;
-        const unitRate = Number((rateKey && rates[rateKey]) || 0);
-
-        if (unitRate > 0) {
-          // Load wallet balance (lazy — only when we're actually over the limit)
-          const wallet = require('../services/wallet.service');
-          const balance = await wallet.getBalance(tenantId);
-          if (balance < unitRate) {
-            return res.status(402).json({
-              error: 'Wallet balance too low for overage',
-              metric,
-              limit,
-              used,
-              unitRate,
-              walletBalance: balance,
-              topupUrl: '/dashboard/billing',
-            });
-          }
-          // Enough balance — stash the debit intent.
-          req.overage = { metric, used, limit, unitRate, walletBalance: balance };
-        } else {
-          // Free overage (rate = 0) — meter it, no charge.
-          req.overage = { metric, used, limit, unitRate: 0 };
-        }
-        // Charge + meter the overage centrally AFTER a successful (2xx) create,
-        // so EVERY metric is billed — not just orders. Orders keep their own
-        // controller-side debit (which also handles order-specific bookkeeping),
-        // so skip 'orders' here to avoid double-charging.
-        chargeOverageOnFinish(req, res, tenantId);
-        return next();
-      }
-      return res.status(402).json({
-        error: 'Plan limit reached',
-        metric,
-        limit,
-        used,
-        upgradeTo: 'Enable Pay-As-You-Go with a funded wallet, or upgrade your plan',
-      });
-    }
-    next();
-  } catch (e) {
-    // Fail closed — silently allowing the request through on a DB blip
-    // would let tenants on capped plans burst past their limits whenever
-    // anything in the limit-check pipeline (count query, wallet read,
-    // meter lookup) errors. Better to 503 and let them retry.
-    console.error('enforceLimit error', e);
-    return res.status(503).json({
-      error: 'Plan limit check temporarily unavailable. Please retry shortly.',
-    });
-  }
-};
-
 // ── Tenant-scoped Prisma helper: builds {tenantId} filter automatically
 function scopeWhere(req, where = {}) {
   if (req.user?.isPlatformAdmin && !req.tenant?.id) return where;
@@ -445,7 +246,6 @@ module.exports = {
   requireFeature,
   requireTenant,
   requirePlatformAdmin,
-  enforceLimit,
   scopeWhere,
   invalidateUserCache,
 };

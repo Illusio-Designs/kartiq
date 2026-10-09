@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const prisma = require('../utils/prisma');
 const {
-  authenticate, requireTenant, requirePermission, enforceLimit, invalidateUserCache,
+  authenticate, requireTenant, requirePermission, invalidateUserCache,
 } = require('../middleware/auth.middleware');
 
 const router = Router();
@@ -16,7 +16,7 @@ router.get('/', requirePermission('roles.read'), async (req, res) => {
   res.json(roles);
 });
 
-router.post('/', requirePermission('roles.create'), enforceLimit('roles'), async (req, res) => {
+router.post('/', requirePermission('roles.create'), async (req, res) => {
   try {
     const { code, name, description, permissionCodes = [] } = req.body;
     const role = await prisma.tenantRole.create({

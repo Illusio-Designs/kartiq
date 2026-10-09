@@ -23,7 +23,7 @@ const POSTS = [
   { date: 'Aug 2026', tag: 'Playbook', title: 'Cut RTO on COD orders with address scoring' },
   { date: 'Jul 2026', tag: 'Case study', title: 'How Bloom & Bee scaled to 6 channels' },
   { date: 'Jul 2026', tag: 'Docs', title: 'Inventory & bundles: how shared stock stays accurate' },
-  { date: 'Jun 2026', tag: 'Guide', title: 'PAYG & wallet, demystified — no billing surprises' },
+  { date: 'Jun 2026', tag: 'Guide', title: 'Choosing the right plan for your channels' },
 ];
 
 export default function ResourcesPage() {

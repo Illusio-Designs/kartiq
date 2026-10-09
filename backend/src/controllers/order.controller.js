@@ -302,57 +302,8 @@ const createOrder = async (req, res) => {
         include: { items: true },
       });
 
-      // Increment monthly orders usage meter for billing / PAYG
-      const period = new Date().toISOString().slice(0, 7);
-      await tx.usageMeter.upsert({
-        where: { tenantId_metric_period: { tenantId, metric: 'orders', period } },
-        update: { count: { increment: 1 } },
-        create: { tenantId, metric: 'orders', period, count: 1 },
-      });
-
       return created;
     });
-
-    // Debit wallet if this order was an overage (PAYG flow).
-    // If the debit fails (insufficient funds race, DB error), roll back the order.
-    if (req.overage?.unitRate > 0) {
-      const wallet = require('../services/wallet.service');
-      let debitResult;
-      try {
-        debitResult = await wallet.debit(tid(req), req.overage.unitRate, {
-          metric: 'orders',
-          quantity: 1,
-          reference: order.id,
-          description: `Overage: order ${order.orderNumber}`,
-          createdById: req.user?.id,
-        });
-      } catch (e) {
-        console.error('[wallet] debit failed, rolling back order', e.message);
-      }
-      if (!debitResult?.ok) {
-        // Roll back: delete the order we just created + decrement the usage meter
-        try {
-          await prisma.$transaction([
-            prisma.orderItem.deleteMany({ where: { orderId: order.id } }),
-            prisma.order.delete({ where: { id: order.id } }),
-          ]);
-          const period = new Date().toISOString().slice(0, 7);
-          await prisma.usageMeter.updateMany({
-            where: { tenantId, metric: 'orders', period, count: { gt: 0 } },
-            data: { count: { decrement: 1 } },
-          });
-        } catch (rollbackErr) {
-          console.error('[wallet] rollback failed', rollbackErr.message);
-        }
-        return res.status(402).json({
-          error: 'Wallet debit failed — order not created',
-          metric: 'orders',
-          unitRate: req.overage.unitRate,
-          walletBalance: debitResult?.balance ?? null,
-          topupUrl: '/dashboard/billing',
-        });
-      }
-    }
 
     notifyTenant(tenantId, {
       type: 'order.new',

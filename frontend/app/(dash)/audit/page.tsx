@@ -43,7 +43,6 @@ const VERB_VARIANT: Record<string, BadgeTint> = {
   connect:  'emerald',
   pay:      'emerald',
   enable:   'emerald',
-  topup:    'emerald',
   update:   'blue',
   reply:    'blue',
   reset:    'blue',

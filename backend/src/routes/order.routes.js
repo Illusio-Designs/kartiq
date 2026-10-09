@@ -2,7 +2,7 @@ const { Router } = require('express');
 const { randomUUID } = require('crypto');
 const { getOrders, getOrder, getOrderStats, createOrder, updateOrderStatus, cancelOrder } = require('../controllers/order.controller');
 const {
-  authenticate, requireTenant, requirePermission, requireFeature, enforceLimit,
+  authenticate, requireTenant, requirePermission, requireFeature,
 } = require('../middleware/auth.middleware');
 const { requestReviewForOrder, processReviewQueue, REVIEW_DELAY_HOURS } = require('../services/review.service');
 const { rankWarehouses, pickBestWarehouse } = require('../services/routing.service');
@@ -397,7 +397,7 @@ router.delete('/:id/videos/:videoId', requirePermission('orders.update'), requir
 router.get('/',              requirePermission('orders.read'),    getOrders);
 router.get('/stats',         requirePermission('orders.read'),    getOrderStats);
 router.get('/:id',           requirePermission('orders.read'),    getOrder);
-router.post('/',             requirePermission('orders.create'),  enforceLimit('orders'), createOrder);
+router.post('/',             requirePermission('orders.create'),  createOrder);
 router.patch('/:id/status',  requirePermission('orders.update'),  updateOrderStatus);
 router.patch('/:id/cancel',  requirePermission('orders.cancel'),  cancelOrder);
 

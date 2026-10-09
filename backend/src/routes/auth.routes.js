@@ -320,8 +320,8 @@ router.get('/me/export', authenticate, requirePermission('billing.manage'), asyn
     // operations → financial).
     const TENANT_TABLES = [
       'users', 'tenant_roles', 'user_roles', 'role_permissions',
-      'subscriptions', 'usage_meters', 'billing_invoices',
-      'tenant_wallets', 'wallet_transactions', 'tenant_payment_methods',
+      'subscriptions', 'billing_invoices',
+      'tenant_payment_methods',
       'brands', 'categories', 'products', 'product_variants',
       'warehouses', 'inventory_items', 'stock_movements',
       'channels', 'channel_listings', 'channel_requests',

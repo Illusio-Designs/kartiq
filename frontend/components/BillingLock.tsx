@@ -10,7 +10,7 @@
  *
  * Pass-through allowed for two paths so the user can actually fix the
  * problem:
- *   • /dashboard/billing   — pick plan, top up wallet, save card
+ *   • /dashboard/billing   — pick plan, save card
  *   • /settings            — update email / phone, change password, 2FA
  *
  * The component refreshes /billing/usage every 5 minutes so a long-open

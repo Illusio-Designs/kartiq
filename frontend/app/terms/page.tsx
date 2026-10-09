@@ -37,7 +37,6 @@ export default function TermsPage() {
                 <li>Paid plans are billed monthly or annually as selected at checkout.</li>
                 <li>Prices are in INR and exclusive of applicable taxes (GST).</li>
                 <li>Upgrades take effect immediately; downgrades apply at the next billing cycle.</li>
-                <li>Pay-as-you-go overages are billed at the rates specified in your plan.</li>
                 <li>Failed payments may result in account suspension after a {process.env.BILLING_GRACE_DAYS || '7'}-day grace period.</li>
               </ul>
             </Section>

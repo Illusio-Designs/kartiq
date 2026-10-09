@@ -320,7 +320,7 @@ export default function SettingsPage() {
                   </div>
                   <h2 className="font-bold text-lg text-slate-900 mb-1">Billing &amp; Subscription</h2>
                   <p className="text-sm text-slate-500 max-w-md">
-                    Manage your plan, wallet, pay-as-you-go, usage limits, saved cards and invoices
+                    Manage your plan, saved cards and invoices
                     from the dedicated billing page.
                   </p>
                   <Link href="/dashboard/billing" className="inline-block mt-5">
