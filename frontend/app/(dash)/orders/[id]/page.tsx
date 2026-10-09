@@ -1058,7 +1058,7 @@ export default function OrderDetailPage() {
                       return (
                         <tr key={it.id} className="border-b border-slate-50 last:border-0">
                           <td className="px-5 py-3 text-slate-800 font-medium">{name}</td>
-                          <td className="px-5 py-3 text-slate-500 font-mono text-xs">{sku}</td>
+                          <td className="px-5 py-3 text-slate-500 font-mono text-xs whitespace-nowrap">{sku}</td>
                           <td className="px-5 py-3 text-right text-slate-700">{qty}</td>
                           <td className="px-5 py-3 text-right text-slate-700">{formatCurrency(unit)}</td>
                           <td className="px-5 py-3 text-right font-semibold text-slate-900">{formatCurrency(unit * qty)}</td>

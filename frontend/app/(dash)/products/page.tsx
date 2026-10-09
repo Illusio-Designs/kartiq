@@ -270,7 +270,7 @@ export default function ProductsPage() {
                 ) : <Package size={14} className="text-slate-300" />}
               </div>
               <span className="min-w-0">
-                <span className="block font-semibold text-slate-800 group-hover:text-emerald-600 truncate max-w-[320px]">{p.name}</span>
+                <span className="block font-semibold text-slate-800 group-hover:text-emerald-600 truncate max-w-[170px]">{p.name}</span>
                 <span className="block text-[11px] text-slate-400 font-mono">{p.sku}</span>
               </span>
             </Link>
@@ -403,7 +403,7 @@ export default function ProductsPage() {
             onChange={setSearch}
             placeholder="Search products, SKUs, brands…"
             shortcut="/"
-            className="flex-1 min-w-[180px] max-w-sm"
+            className="flex-1 min-w-[180px] sm:min-w-[300px] max-w-md"
           />
           <div className="hidden sm:block flex-1" />
 

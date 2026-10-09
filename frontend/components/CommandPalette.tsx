@@ -105,7 +105,7 @@ export function CommandPalette() {
         // Platform pages
         { id: 'admin-overview',   group: 'Platform', label: 'Overview',       icon: LayoutDashboard, run: go('/admin') },
         { id: 'admin-tenants-p',  group: 'Platform', label: 'Tenants',        icon: Building2,       run: go('/admin/tenants') },
-        { id: 'admin-plans',      group: 'Platform', label: 'Subscriptions',  keywords: 'plans pricing billing tiers', icon: CreditCard, run: go('/admin/plans') },
+        { id: 'admin-plans',      group: 'Platform', label: 'Plans',  keywords: 'plans pricing billing tiers', icon: CreditCard, run: go('/admin/plans') },
         { id: 'admin-tickets-p',  group: 'Platform', label: 'Tickets',        icon: LifeBuoy,        run: go('/admin/tickets') },
         { id: 'admin-leads-p',    group: 'Platform', label: 'Leads',          keywords: 'demo contact form inquiries', icon: Inbox, run: go('/admin/leads') },
         { id: 'admin-analytics',  group: 'Platform', label: 'Analytics',      icon: BarChart3,       run: go('/admin/analytics') },

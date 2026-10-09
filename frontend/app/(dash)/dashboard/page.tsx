@@ -273,7 +273,7 @@ export default function DashboardPage() {
                           <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
                             <Package size={13} className="text-emerald-600" />
                           </div>
-                          <div className="min-w-0">
+                          <div className="min-w-0 max-w-[260px]">
                             <div className="font-bold text-slate-900 text-xs truncate">{o.channelOrderId || o.orderNumber}</div>
                             <div className="text-[10px] text-slate-500 truncate">{o.customer?.name}</div>
                           </div>

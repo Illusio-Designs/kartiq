@@ -101,7 +101,7 @@ export default function ChannelRequestsPage() {
         <Card className="p-0 overflow-hidden">
           {/* Header: search + status filter */}
           <div className="p-3 sm:p-4 flex items-center gap-3 flex-wrap border-b border-slate-100">
-            <div className="flex items-center gap-2 flex-1 min-w-[180px] max-w-sm px-3 py-2 rounded-xl bg-slate-50 border border-slate-200">
+            <div className="flex items-center gap-2 flex-1 min-w-[180px] sm:min-w-[300px] max-w-md px-3 py-2 rounded-xl bg-slate-50 border border-slate-200">
               <Search size={16} className="text-slate-400 flex-shrink-0" />
               <input
                 value={search}
