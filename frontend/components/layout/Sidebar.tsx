@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutDashboard, Package, ShoppingCart,
   Store, BarChart2, Settings, LogOut,
@@ -136,6 +136,25 @@ export function Sidebar({
   // rendered expanded (as a drawer) regardless of the persisted preference.
   const c = sidebarCollapsed;
 
+  // Scroll cue: the nav scrolls when the window is short, and the footer (plan card + log out)
+  // sits right below it, so show a fade at the bottom while more items are hidden.
+  const navRef = useRef<HTMLElement>(null);
+  const [navHasMore, setNavHasMore] = useState(false);
+  const updateNavMore = useCallback(() => {
+    const el = navRef.current;
+    if (!el) return;
+    setNavHasMore(el.scrollHeight - el.scrollTop - el.clientHeight > 4);
+  }, []);
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+    updateNavMore();
+    const ro = new ResizeObserver(updateNavMore);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, [updateNavMore, navGroups, c]);
+
   return (
     <>
       {/* Mobile backdrop */}
@@ -225,7 +244,12 @@ export function Sidebar({
         )}
 
         {/* ── Nav ────────────────────────────────────────── */}
-        <nav className="flex-1 px-3 py-2 space-y-3 overflow-y-auto overflow-x-hidden">
+        <div className="relative flex-1 min-h-0">
+        <nav
+          ref={navRef}
+          onScroll={updateNavMore}
+          className="h-full px-3 py-2 space-y-3 overflow-y-auto overflow-x-hidden"
+        >
           {navGroups.map((group) => {
             // Auto-expand the group containing the active route, even if user
             // previously collapsed it. Otherwise honor the persisted state.
@@ -327,6 +351,15 @@ export function Sidebar({
             );
           })}
         </nav>
+        <div
+          aria-hidden="true"
+          className={cn(
+            'pointer-events-none absolute inset-x-0 bottom-0 h-10 transition-opacity duration-200',
+            navHasMore ? 'opacity-100' : 'opacity-0'
+          )}
+          style={{ background: 'linear-gradient(to top, var(--surface), transparent)' }}
+        />
+        </div>
 
         {/* ── Upgrade / Plan card ────────────────────────────────────── */}
         {showUpgradeCard && (() => {
@@ -345,7 +378,7 @@ export function Sidebar({
           // On the top tier (Enterprise) — show a flat "you're on Enterprise" pill instead of an upgrade card
           if (!nextCode) {
             return (
-              <div className={cn('px-3 mb-3', c && 'lg:hidden')}>
+              <div className={cn('px-3 mb-3 [@media(max-height:979px)]:hidden', c && 'lg:hidden')}>
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-emerald-700">
                   <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider">
                     <Sparkles size={12} /> Enterprise plan
@@ -358,7 +391,7 @@ export function Sidebar({
             );
           }
           return (
-            <div className={cn('px-3 mb-3', c && 'lg:hidden')}>
+            <div className={cn('px-3 mb-3 [@media(max-height:979px)]:hidden', c && 'lg:hidden')}>
               <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 p-4 text-white shadow-lg shadow-emerald-500/30">
                 <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full bg-white/10 blur-xl" />
                 <div className="relative">
