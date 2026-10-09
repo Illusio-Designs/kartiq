@@ -115,7 +115,7 @@ function OnboardingInner() {
   };
 
   return (
-    <div className="min-h-screen relative bg-gradient-to-br from-slate-50 via-emerald-50/60 to-white">
+    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-slate-50 via-emerald-50/60 to-white">
       <div className="pointer-events-none absolute -top-40 -left-32 w-[480px] h-[480px] rounded-full bg-[#0B1220]/[0.05] blur-3xl" />
       <div className="pointer-events-none absolute -bottom-40 -right-32 w-[480px] h-[480px] rounded-full bg-[#06D4B8]/[0.10] blur-3xl" />
       <div className="max-w-3xl mx-auto px-6 py-16">
