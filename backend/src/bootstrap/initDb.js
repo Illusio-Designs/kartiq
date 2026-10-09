@@ -63,6 +63,9 @@ async function initDb() {
     // A label may be a courier-hosted file instead of bytes we hold.
     // Everything Amazon returned for the order (header, items, address, buyer) — for the "Amazon data" download.
     { table: 'orders',   column: 'channelData',      ddl: 'LONGTEXT DEFAULT NULL' },
+    // Last quantity we pushed to the marketplace — unchanged stock is not re-sent every cycle.
+    { table: 'channel_listings', column: 'lastPushedQty', ddl: 'INT DEFAULT NULL' },
+    { table: 'channel_listings', column: 'lastPushedAt',  ddl: 'DATETIME(3) DEFAULT NULL' },
     { table: 'order_labels', column: 'url',            ddl: 'TEXT DEFAULT NULL' },
     // Why the last automatic booking failed (cleared on success) — shown on the
     // order with a Retry action.

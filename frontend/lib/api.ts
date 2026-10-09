@@ -553,6 +553,8 @@ export const channelApi = {
     api.post('/channels', data),
   update: (id: string, data: any) => api.put(`/channels/${id}`, data),
   delete: (id: string) => api.delete(`/channels/${id}`),
+  // What this Amazon connection is allowed to do (one harmless probe per capability)
+  amazonAccess: (id: string) => api.get(`/channels/${id}/amazon/access`),
   // Enable FBA / Smart Biz on a connected Amazon channel (reuses its credentials)
   amazonAddons: (id: string, types: string[]) => api.post(`/channels/${id}/amazon-addons`, { types }),
 

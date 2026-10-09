@@ -62,6 +62,10 @@ async function getAppCredentials(creds) {
 // .env — see backend/src/config/channel-endpoints.js. Set CHANNEL_MODE=sandbox
 // while your production app is still in Sandbox status on the Amazon
 // Developer Console; switch to CHANNEL_MODE=production after approval.
+// Process-wide memory (survives adapter instances, which are rebuilt per request).
+const RDT_REFUSED = new Map();        // key -> time until we ask again
+const ORDERS_COOLDOWN = new Map();    // seller -> time until we call getOrders again
+
 class AmazonAdapter {
   constructor(credentials) {
     this.creds = credentials || {};
@@ -114,18 +118,32 @@ class AmazonAdapter {
   // address) on the orders endpoints — but only if the seller has authorized
   // the app for the PII role. Request one scoped to exactly the resources we
   // need; callers fall back to the normal token when this throws (no role).
-  async _getRestrictedToken(restrictedResources) {
+  async _getRestrictedToken(restrictedResources, { fresh = false } = {}) {
+    // Amazon answers 400/403 for ALL of these requests when the app lacks the buyer-data
+    // role, and every attempt still counts against our quota. Remember a refusal for a
+    // few hours instead of asking again on every sync (the access check passes fresh).
+    const who = this.creds.sellerId || String(this.creds.refreshToken || '').slice(-8);
+    const key = `${who}|${JSON.stringify(restrictedResources).replace(/\/orders\/v0\/orders\/[^/"]+\//g, '/orders/v0/orders/:id/')}`;
+    const until = RDT_REFUSED.get(key);
+    if (!fresh && until && until > Date.now()) throw new Error('Amazon refused buyer-data access recently (cached) — add the buyer-information role to the app and re-authorise');
     const token = await this._getAccessToken();
-    const { data } = await axios.post(
-      `${this.endpoint}/tokens/2021-03-01/restrictedDataToken`,
-      { restrictedResources },
-      { headers: { 'x-amz-access-token': token, 'Content-Type': 'application/json' } }
-    );
-    return data.restrictedDataToken;
+    try {
+      const { data } = await axios.post(
+        `${this.endpoint}/tokens/2021-03-01/restrictedDataToken`,
+        { restrictedResources },
+        { headers: { 'x-amz-access-token': token, 'Content-Type': 'application/json' } }
+      );
+      RDT_REFUSED.delete(key);
+      return data.restrictedDataToken;
+    } catch (err) {
+      const st = err.response?.status;
+      if (st === 400 || st === 403) RDT_REFUSED.set(key, Date.now() + 6 * 3600 * 1000);
+      throw err;
+    }
   }
 
-  async _request(method, path, params = {}, tokenOverride = null) {
-    const MAX_RETRIES = 4;
+  async _request(method, path, params = {}, tokenOverride = null, { maxRetries = 4 } = {}) {
+    const MAX_RETRIES = maxRetries;
     let attempt = 0;
     let refreshedOn403 = false;
     for (;;) {
@@ -178,10 +196,50 @@ class AmazonAdapter {
     }
   }
 
+  _cooldownKey() { return this.creds.sellerId || String(this.creds.refreshToken || '').slice(-8); }
+
   async testConnection() {
     const data = await this._request('GET', '/sellers/v1/marketplaceParticipations');
     const participations = data.payload || [];
     return { success: true, marketplaces: participations.map(p => p.marketplace?.name) };
+  }
+
+  // "What can this connection do?" — tries one harmless call per capability and reports
+  // allowed / denied in plain words. 403 = Amazon has not granted that role to the app
+  // (or the seller must re-authorise after it was added). Nothing is created or changed.
+  async checkAccess({ sampleOrderId = null } = {}) {
+    const code = (e) => e.response?.status || Number((String(e.message).match(/\((\d{3})\)/) || [])[1]) || Number((String(e.message).match(/status code (\d{3})/) || [])[1]) || 0;
+    const checks = [];
+    const probe = async (key, label, needs, fn, { okOn = [] } = {}) => {
+      try { await fn(); checks.push({ key, label, status: 'ok' }); }
+      catch (e) {
+        const c = code(e);
+        if (okOn.includes(c)) return checks.push({ key, label, status: 'ok', detail: 'Access works (Amazon only complained about this particular order).' });
+        if (c === 429) return checks.push({ key, label, status: 'unknown', detail: 'Amazon is limiting requests right now — try again in a minute.' });
+        if (c === 401 || c === 403) return checks.push({ key, label, status: 'denied', needs, detail: `Amazon refused access${needs ? ` — the app needs the role "${needs}"` : ''}. After Amazon approves it: add it to the app, then Re-authorise.` });
+        checks.push({ key, label, status: 'unknown', detail: String(e.message).slice(0, 200) });
+      }
+    };
+    await probe('connection', 'Connected to your seller account', null, () => this._request('GET', '/sellers/v1/marketplaceParticipations'));
+    await probe('orders', 'Read orders (without buyer details)', 'Inventory and Order Tracking', () =>
+      this._request('GET', '/orders/v0/orders', { MarketplaceIds: this.marketplaceId, CreatedAfter: new Date(Date.now() - 86400000).toISOString(), MaxResultsPerPage: 1 }));
+    await probe('inventory', 'Read inventory', 'Inventory and Order Tracking', () =>
+      this._request('GET', '/fba/inventory/v1/summaries', { granularityType: 'Marketplace', granularityId: this.marketplaceId, marketplaceIds: this.marketplaceId }));
+    const sample = sampleOrderId || '000-0000000-0000000';
+    await probe('buyer', 'Buyer name, address and phone', 'Direct-to-Consumer Delivery (Restricted)', () =>
+      this._getRestrictedToken([{ method: 'GET', path: `/orders/v0/orders/${encodeURIComponent(sample)}/address`, dataElements: ['shippingAddress'] }], { fresh: true }));
+    if (this.region === 'IN') {
+      if (sampleOrderId) {
+        await probe('easyship', 'Easy Ship: schedule pickups', 'Direct-to-Consumer Shipping (Restricted)', () =>
+          this._easyShipCall('POST', '/easyShip/2022-03-23/timeSlot', { data: { marketplaceId: this.marketplaceId, amazonOrderId: sampleOrderId, ...this._easyShipParcel({}) } }), { okOn: [400, 404] });
+      } else checks.push({ key: 'easyship', label: 'Easy Ship: schedule pickups', status: 'unknown', detail: 'Needs at least one order you ship yourself to test with.' });
+      await probe('labels', 'Easy Ship: download labels', 'Direct-to-Consumer Shipping (Restricted)', () =>
+        this._request('GET', '/feeds/2021-06-30/feeds', { feedTypes: 'POST_EASYSHIP_DOCUMENTS', pageSize: 10 }));
+    } else {
+      await probe('buyshipping', 'Buy Shipping: book couriers and labels', 'Direct-to-Consumer Shipping (Restricted)', () =>
+        this._request('GET', '/mfn/v0/shipments/AAAAAAAA'), { okOn: [400, 404] });
+    }
+    return { region: this.region, checks };
   }
 
   async fetchOrders(sinceDate) {
@@ -192,6 +250,8 @@ class AmazonAdapter {
     let since = sinceDate;
     if (since && typeof since === 'object' && !(since instanceof Date)) since = since.since;
     if (!since) since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const cd = ORDERS_COOLDOWN.get(this._cooldownKey());
+    if (cd && cd > Date.now()) throw new Error(`Amazon SP-API GET /orders/v0/orders failed (429): cooling down — Amazon limits order requests; trying again in ${Math.ceil((cd - Date.now()) / 1000)}s`);
     const sinceIso = since instanceof Date ? since.toISOString() : new Date(since).toISOString();
 
     // Use LastUpdatedAfter (not CreatedAfter) so an incremental sync also
@@ -233,7 +293,14 @@ class AmazonAdapter {
       const reqParams = nextToken
         ? { MarketplaceIds: this.marketplaceId, NextToken: nextToken }
         : params;
-      const data = await this._request('GET', '/orders/v0/orders', reqParams, ordersToken);
+      let data;
+      try { data = await this._request('GET', '/orders/v0/orders', reqParams, ordersToken, { maxRetries: 1 }); }
+      catch (e) {
+        // Amazon allows ~1 order-list call a minute. When it says slow down, stop asking for a while —
+        // every extra attempt is another refused call that makes the throttling worse.
+        if (/\(429\)/.test(e.message)) ORDERS_COOLDOWN.set(this._cooldownKey(), Date.now() + 3 * 60 * 1000);
+        throw e;
+      }
       const pageOrders = data.payload?.Orders || [];
       rawOrders.push(...pageOrders);
       nextToken = data.payload?.NextToken || null;

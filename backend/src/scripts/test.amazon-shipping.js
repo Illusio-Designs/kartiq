@@ -656,6 +656,22 @@ async function main() {
   ok((await ad([M[1].id], '', '')).status === 401, 'No login → 401');
   ok((await ad([])).status === 400, 'Empty selection refused');
 
+  // ── 23. "What can my Amazon connection do?" ──────────────────────────────
+  group('23. Amazon access check');
+  fake.noPii = false; fake.deny = [];
+  const acc1 = await req('GET', `/channels/${chId}/amazon/access`, { token });
+  const byKey = (r) => Object.fromEntries((r.body.checks || []).map((c) => [c.key, c]));
+  const a1 = byKey(acc1);
+  ok(acc1.status === 200 && a1.connection?.status === 'ok' && a1.orders?.status === 'ok' && a1.buyer?.status === 'ok' && a1.easyship?.status === 'ok' && a1.labels?.status === 'ok' && a1.inventory?.status === 'ok', `All good when Amazon allows everything (${(acc1.body.checks || []).map((c) => c.key + ':' + c.status).join(', ')})`);
+  fake.deny = [/POST \/easyShip/, /GET \/feeds\/2021-06-30\/feeds$/]; fake.noPii = true;
+  const a2 = byKey(await req('GET', `/channels/${chId}/amazon/access`, { token }));
+  ok(a2.easyship?.status === 'denied' && /Direct-to-Consumer Shipping/.test(a2.easyship.needs) && /Re-authorise/.test(a2.easyship.detail), `Easy Ship refused → shows "denied" with the role to ask Amazon for ("${a2.easyship?.needs}")`);
+  ok(a2.labels?.status === 'denied' && a2.buyer?.status === 'denied' && a2.orders?.status === 'ok' && a2.connection?.status === 'ok', 'Labels and buyer details denied, orders still fine — each capability reported separately');
+  fake.deny = []; fake.noPii = false;
+  ok((await req('GET', `/channels/${chId}/amazon/access`, { token: otherToken })).status === 404, "Another seller cannot run the check on your channel (404)");
+  const flk = await req('POST', '/channels', { token, body: { name: 'Shop', type: 'SHOPIFY' } });
+  ok((await req('GET', `/channels/${flk.body.id}/amazon/access`, { token })).status >= 400, 'Only Amazon channels have this check');
+
   // ── Result ───────────────────────────────────────────────────────────────
   console.log(`\n\x1b[1mResult: ${passed} passed, ${failed} failed\x1b[0m`);
   if (failed) { console.log('\nFailures:'); failures.forEach((f) => console.log('  - ' + f)); }

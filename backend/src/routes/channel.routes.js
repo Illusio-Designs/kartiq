@@ -527,6 +527,20 @@ router.post('/:id/connect', requirePermission('channels.update'), async (req, re
   }
 });
 
+// What can this Amazon connection do? One harmless probe per capability.
+router.get('/:id/amazon/access', requirePermission('channels.read'), async (req, res) => {
+  try {
+    const channel = await loadTenantChannel(req);
+    if (!channel) return res.status(404).json({ error: 'Channel not found' });
+    const adapter = getAdapter(channel);
+    if (typeof adapter.checkAccess !== 'function') return res.status(400).json({ error: 'This channel has no access check' });
+    const sample = await db('orders').where({ tenantId: req.tenant.id, channelId: channel.id, fulfillmentType: 'SELF' }).whereNotNull('channelOrderId').orderBy('createdAt', 'desc').first();
+    res.json(await adapter.checkAccess({ sampleOrderId: sample?.channelOrderId || null }));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 router.get('/:id/test', requirePermission('channels.read'), async (req, res) => {
   try {
     const channel = await loadTenantChannel(req);
@@ -579,7 +593,7 @@ router.post('/:id/sync/inventory', requirePermission('channels.sync'), async (re
   try {
     const channel = await loadTenantChannel(req);
     if (!channel) return res.status(404).json({ error: 'Channel not found' });
-    const results = await pushInventoryToChannel(channel, { tenantId: req.tenant.id });
+    const results = await pushInventoryToChannel(channel, { tenantId: req.tenant.id, force: true });
     await prisma.channel.update({
       where: { id: channel.id },
       data: { lastSyncAt: new Date(), syncError: null },

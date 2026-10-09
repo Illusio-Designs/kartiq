@@ -367,6 +367,8 @@ export default function ChannelDetailPage() {
           </div>
         </Card>
 
+        {channel.type === 'AMAZON' && hasCredentials && <AmazonAccessCard channelId={id} />}
+
         {/* Status banner */}
         {channel.needsReauth && canReauth && (
           <div data-testid="reauth-banner" className="flex items-start gap-3 bg-rose-50 border border-rose-200 text-rose-800 text-sm rounded-xl p-4">
@@ -1092,4 +1094,41 @@ function ActionTile({
 // prototype's 56px rounded tile.
 function ChannelLogo({ type, name }: { type: string; name: string }) {
   return <SharedChannelLogo type={type} name={name} className="w-14 h-14 rounded-2xl" />;
+}
+
+
+// "What can Kartriq do with my Amazon connection?" — runs harmless test calls and shows
+// which permissions Amazon has granted to the app, in plain words.
+function AmazonAccessCard({ channelId }: { channelId: string }) {
+  const [res, setRes] = useState<any>(null);
+  const run = useMutation({
+    mutationFn: () => channelApi.amazonAccess(channelId).then((r) => r.data),
+    onSuccess: setRes,
+    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not check'),
+  });
+  const mark = (st: string) => st === 'ok' ? <CheckCircle2 size={16} className="text-emerald-600" /> : st === 'denied' ? <XCircle size={16} className="text-rose-600" /> : <AlertCircle size={16} className="text-amber-500" />;
+  return (
+    <Card data-testid="access-card">
+      <div className="p-5 flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div className="text-sm font-bold text-slate-800">What can Kartriq do with your Amazon connection?</div>
+          <p className="text-xs text-slate-500 mt-1">Tests each permission Amazon has given the app. Nothing is created or changed.</p>
+        </div>
+        <Button size="sm" variant="secondary" loading={run.isPending} onClick={() => run.mutate()}>{res ? 'Check again' : 'Check now'}</Button>
+      </div>
+      {res && (
+        <ul className="px-5 pb-5 space-y-2">
+          {res.checks.map((c: any) => (
+            <li key={c.key} data-testid={`access-${c.key}`} data-status={c.status} className="flex items-start gap-2 text-sm">
+              <span className="mt-0.5">{mark(c.status)}</span>
+              <div>
+                <span className={c.status === 'denied' ? 'font-semibold text-rose-700' : 'text-slate-800'}>{c.label}</span>
+                {c.detail && <p className="text-xs text-slate-500 mt-0.5">{c.detail}</p>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
 }

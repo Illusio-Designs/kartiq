@@ -14,6 +14,7 @@ const fake = {
   goodRefreshToken: 'Atzr|GOOD',
   nextShipment: 1,
   labelType: 'PDF',     // PDF | PNG | ZPL — what the next purchased label is
+  deny: [],             // regexes of `METHOD /path` that answer 403 (missing role)
   labels: {},           // shipmentId -> the exact bytes Amazon "sent"
   easyShip: { mode: 'ok', nextPkg: 1, packages: {}, labelMode: 'ok' }, // mode: ok | noSlots ; labelMode: ok | fails
   courier: { mode: 'ok', n: 1, status: {}, cancelled: [], labelMode: 'ok' }, // status: awb -> raw status text
@@ -138,6 +139,7 @@ function fakeEasyShip(config, url, method, path, body) {
     const pkg = e.packages[config.params?.packageId]; if (pkg) pkg.packageStatus = 'LabelCanceled';
     return amazonResponse(config, 204, {});
   }
+  if (method === 'GET' && path === '/feeds/2021-06-30/feeds') return amazonResponse(config, 200, { feeds: [] });
   if (method === 'POST' && path === '/feeds/2021-06-30/documents') return amazonResponse(config, 200, { feedDocumentId: 'FD-IN', url: 'https://tm-s3.amazonaws.com/upload/FD-IN' });
   if (method === 'PUT' && /\/upload\//.test(path)) return amazonResponse(config, 200, {});
   if (method === 'POST' && path === '/feeds/2021-06-30/feeds') { fake.feedBody = body; return amazonResponse(config, 200, { feedId: 'FEED-1' }); }
@@ -165,6 +167,7 @@ function fakeAdapter(config) {
   let body = config.data;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { /* leave */ } }
   fake.calls.push({ method, path, body, params: config.params });
+  if (fake.deny.some((re) => re.test(`${method} ${path}`))) return amazonResponse(config, 403, { errors: [{ code: 'Unauthorized', message: 'Access to requested resource is denied.' }] });
   { const es = fakeEasyShip(config, url, method, path, body); if (es) return es; }
 
   // Login with Amazon (token exchange)
@@ -179,6 +182,8 @@ function fakeAdapter(config) {
   }
   if (/restrictedDataToken/.test(path)) { if (fake.noPii && /address|buyerInfo/.test(JSON.stringify(body))) return amazonResponse(config, 403, { errors: [{ message: 'Unauthorized: PII role missing' }] }); return amazonResponse(config, 200, { restrictedDataToken: 'RDT' }); }
 
+  if (method === 'GET' && path === '/fba/inventory/v1/summaries') return amazonResponse(config, 200, { payload: { inventorySummaries: [] } });
+  if (method === 'GET' && /^\/mfn\/v0\/shipments\//.test(path)) return amazonResponse(config, 404, { errors: [{ message: 'not found' }] });
   if (method === 'GET' && path === '/orders/v0/orders') {
     return amazonResponse(config, 200, { payload: { Orders: fake.orders } });
   }

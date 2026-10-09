@@ -893,7 +893,7 @@ function sellableQty(inventoryItems, realIds) {
   );
 }
 
-async function pushInventoryToChannel(channel, { tenantId } = {}) {
+async function pushInventoryToChannel(channel, { tenantId, force = false } = {}) {
   const adapter = getAdapter(channel);
   const scopedTenantId = tenantId || channel.tenantId;
 
@@ -919,8 +919,13 @@ async function pushInventoryToChannel(channel, { tenantId } = {}) {
     if (listing.fulfillmentType === 'CHANNEL') { results.skipped++; continue; }
     try {
       const totalQty = sellableQty(listing.variant.inventoryItems, realIds);
+      // Same quantity as last time (re-confirmed daily)? Nothing to send — saves thousands of calls.
+      const fresh = listing.lastPushedAt && Date.now() - new Date(listing.lastPushedAt).getTime() < 24 * 3600 * 1000;
+      if (!force && fresh && listing.lastPushedQty === totalQty) { results.skipped++; continue; }
       await adapter.updateInventoryLevel(listing.channelSku, totalQty);
+      await db('channel_listings').where({ id: listing.id }).update({ lastPushedQty: totalQty, lastPushedAt: new Date() }).catch(() => {});
       results.updated++;
+      await new Promise((r) => setTimeout(r, Number(process.env.INVENTORY_PUSH_PAUSE_MS ?? 250))); // stay under Amazon's listings rate
     } catch (err) {
       results.failed++;
       results.errors.push(`SKU ${listing.channelSku}: ${err.message}`);

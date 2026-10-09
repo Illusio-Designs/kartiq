@@ -84,6 +84,10 @@ async function requestReviewForOrder(orderId, { tenantId } = {}) {
 //   - delivered > N hours ago
 //   - reviewRequestedAt IS NULL
 //   - channel's adapter supports requestReview()
+// Channels whose review requests Amazon refused (403 = role missing, 429 = slow down): leave them
+// alone for a while instead of repeating the same refused call for every order every hour.
+const _reviewPause = new Map();
+
 async function processReviewQueue({ delayHours = REVIEW_DELAY_HOURS, limit = 100, tenantId = null } = {}) {
   const cutoff = new Date(Date.now() - delayHours * 60 * 60 * 1000);
   const shippedCutoff = new Date(Date.now() - AMAZON_SHIPPED_REVIEW_DAYS * 24 * 60 * 60 * 1000);
@@ -115,6 +119,10 @@ async function processReviewQueue({ delayHours = REVIEW_DELAY_HOURS, limit = 100
   const results = { processed: 0, skipped: 0, failed: 0, errors: [] };
 
   for (const order of orders) {
+    // A 400 means Amazon will never accept this one (outside the 5–30 day window or already asked).
+    if (/\(400\)/.test(order.reviewRequestError || '')) { results.skipped++; continue; }
+    const pause = _reviewPause.get(order.channelId);
+    if (pause && pause > Date.now()) { results.skipped++; continue; }
     let adapter;
     try {
       adapter = getAdapter(order.channel);
@@ -137,6 +145,8 @@ async function processReviewQueue({ delayHours = REVIEW_DELAY_HOURS, limit = 100
       results.processed++;
     } catch (err) {
       results.failed++;
+      if (/\(403\)/.test(err.message)) _reviewPause.set(order.channelId, Date.now() + 24 * 3600 * 1000);
+      else if (/\(429\)/.test(err.message)) _reviewPause.set(order.channelId, Date.now() + 30 * 60 * 1000);
       results.errors.push(`${order.orderNumber}: ${err.message}`);
       await prisma.order.update({
         where: { id: order.id },

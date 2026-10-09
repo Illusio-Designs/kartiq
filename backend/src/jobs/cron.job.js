@@ -296,8 +296,8 @@ function start() {
   _started = true;
 
   const minutes = (n) => n * 60 * 1000;
-  const orderSyncInterval = parseMinutes(process.env.CRON_ORDER_SYNC_MIN, 5);
-  const fastOrderInterval = parseMinutes(process.env.CRON_FAST_ORDER_SYNC_MIN ?? 1, 1, true); // 0 disables
+  const orderSyncInterval = parseMinutes(process.env.CRON_ORDER_SYNC_MIN, 30);
+  const fastOrderInterval = parseMinutes(process.env.CRON_FAST_ORDER_SYNC_MIN ?? 5, 5, true); // 0 disables
   const inventoryInterval = parseMinutes(process.env.CRON_INVENTORY_MIN, 15);
   const trackingInterval  = parseMinutes(process.env.CRON_TRACKING_MIN, 10);
   const reviewInterval    = parseMinutes(process.env.CRON_REVIEW_MIN, 60);
