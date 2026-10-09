@@ -326,7 +326,7 @@ export default function BillingPage() {
                     : autoRenewBtn;
                 })()}
               </div>
-              {sub.autoRenew && paymentMethods.filter((m: any) => m.isDefault).length === 0 && (
+              {!!sub.autoRenew && paymentMethods.filter((m: any) => m.isDefault).length === 0 && (
                 <div className="text-[10px] text-amber-200 mt-1.5 max-w-[200px]">
                   ⚠ No default card — auto-renew will fail until you save one
                 </div>

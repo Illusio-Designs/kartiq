@@ -484,8 +484,8 @@ export default function OrdersPage() {
     switch (key) {
       case 'order':
         return (
-          <td key={key} className="px-3 py-2.5">
-            <div className="flex items-center gap-2">
+          <td key={key} className="px-2 py-2.5">
+            <div className="flex flex-col items-start gap-1">
               <Link href={`/orders/${o.id}`} className="font-semibold text-emerald-600 hover:underline whitespace-nowrap">{o.channelOrderId || o.orderNumber}</Link>
               <Badge variant={o.channelOrderId ? 'blue' : 'slate'}>{o.channelOrderId ? 'Auto' : 'Manual'}</Badge>
             </div>
@@ -493,7 +493,7 @@ export default function OrdersPage() {
         );
       case 'customer':
         return (
-          <td key={key} className="px-3 py-2.5">
+          <td key={key} className="px-2 py-2.5">
             <div className="flex items-center gap-2">
               <span
                 className="w-6 h-6 rounded-md flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0"
@@ -501,19 +501,19 @@ export default function OrdersPage() {
               >
                 {initials(o.customer?.name || '?')}
               </span>
-              <span className="text-slate-700 truncate max-w-[170px]" title={o.customer?.name || undefined}>{o.customer?.name || '—'}</span>
+              <span className="text-slate-700 truncate max-w-[130px]" title={o.customer?.name || undefined}>{o.customer?.name || '—'}</span>
             </div>
           </td>
         );
       case 'channel':
         return (
-          <td key={key} className="px-3 py-2.5 text-slate-500 max-w-[180px]">
+          <td key={key} className="px-2 py-2.5 text-slate-500 max-w-[130px]">
             <div className="truncate" title={o.channel?.name || undefined}>{o.channel?.name}</div>
           </td>
         );
       case 'fulfillment':
         return (
-          <td key={key} className="px-3 py-2.5">
+          <td key={key} className="px-2 py-2.5">
             <div className="flex items-center gap-1.5">
               <Badge variant={o.fulfillmentType === 'CHANNEL' ? 'violet' : o.fulfillmentType === 'DROPSHIP' ? 'amber' : 'blue'} dot>
                 {(() => {
@@ -535,7 +535,7 @@ export default function OrdersPage() {
         );
       case 'total':
         return (
-          <td key={key} className="px-3 py-2.5 whitespace-nowrap">
+          <td key={key} className="px-2 py-2.5 whitespace-nowrap">
             {isAwaitingTotal(o) ? (
               <span className="inline-flex items-center gap-1.5">
                 <span className="font-semibold text-slate-400">{formatCurrency(0)}</span>
@@ -550,7 +550,7 @@ export default function OrdersPage() {
         );
       case 'rto':
         return (
-          <td key={key} className="px-3 py-2.5 whitespace-nowrap">
+          <td key={key} className="px-2 py-2.5 whitespace-nowrap">
             {o.rtoRiskLevel ? (
               <Tooltip content={`RTO Score: ${o.rtoScore}/100 · ${o.rtoRiskLevel}`}>
                 <span><Badge variant={riskVariant(o.rtoRiskLevel)} dot>{o.rtoScore ?? 0} {o.rtoRiskLevel}</Badge></span>
@@ -560,7 +560,7 @@ export default function OrdersPage() {
         );
       case 'status':
         return (
-          <td key={key} className="px-3 py-2.5 whitespace-nowrap">
+          <td key={key} className="px-2 py-2.5 whitespace-nowrap">
             {showsNeedsReview(o) ? (
               <Badge variant="rose" dot>NEEDS REVIEW</Badge>
             ) : (
@@ -569,9 +569,9 @@ export default function OrdersPage() {
           </td>
         );
       case 'date':
-        return <td key={key} className="px-3 py-2.5 text-slate-500 text-xs whitespace-nowrap">{formatDateTime(o.createdAt)}</td>;
+        return <td key={key} className="px-2 py-2.5 text-slate-500 text-xs whitespace-nowrap">{formatDateTime(o.createdAt)}</td>;
       default:
-        return <td key={key} className="px-3 py-2.5 text-slate-400">—</td>;
+        return <td key={key} className="px-2 py-2.5 text-slate-400">—</td>;
     }
   };
 
@@ -786,11 +786,11 @@ export default function OrdersPage() {
             <table className={`w-full text-sm ${density === 'compact' ? 'tbl-compact' : ''}`}>
               <thead className="bg-slate-50/50 border-b border-slate-100">
                 <tr className="text-left text-[10px] uppercase tracking-widest text-slate-400">
-                  <th className="px-3 py-2.5 font-bold w-px">
+                  <th className="px-2 py-2.5 font-bold w-px">
                     <Tooltip content="Select all"><Checkbox checked={allSelected} onCheckedChange={toggleAll} /></Tooltip>
                   </th>
                   {visibleColumns.map((c) => (
-                    <th key={c.key} className={`px-3 py-2.5 font-bold ${c.key === 'order' ? 'w-full' : 'whitespace-nowrap'}`}>
+                    <th key={c.key} className={`px-2 py-2.5 font-bold ${c.key === 'order' ? 'w-full' : 'whitespace-nowrap'}`}>
                       {c.sortable ? (
                         <button
                           type="button"
@@ -805,7 +805,7 @@ export default function OrdersPage() {
                       ) : c.label}
                     </th>
                   ))}
-                  <th className="px-3 py-2.5 font-bold" />
+                  <th className="px-2 py-2.5 font-bold" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -813,9 +813,9 @@ export default function OrdersPage() {
                   <TableRowsSkeleton rows={8} cols={visibleColumns.length + 2} />
                 ) : sortedOrders.length ? sortedOrders.map((o: any) => (
                   <tr key={o.id} className={`transition-colors ${selected.has(o.id) ? 'bg-emerald-50/60' : 'hover:bg-slate-50/70'}`}>
-                    <td className="px-3 py-2.5"><Checkbox checked={selected.has(o.id)} onCheckedChange={() => toggleOne(o.id)} /></td>
+                    <td className="px-2 py-2.5"><Checkbox checked={selected.has(o.id)} onCheckedChange={() => toggleOne(o.id)} /></td>
                     {visibleColumns.map((c) => renderCell(o, c.key))}
-                    <td className="px-3 py-2.5">
+                    <td className="px-2 py-2.5">
                       <div className="flex items-center justify-end gap-1">
                         {showsNeedsReview(o) && (
                           <>

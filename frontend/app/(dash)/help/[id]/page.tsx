@@ -142,7 +142,7 @@ export default function TicketDetailPage() {
                 <div className={`flex-1 min-w-0 ${m.isStaff ? 'items-end' : ''}`}>
                   <div className="flex items-center gap-2 text-xs text-slate-500">
                     <span className="font-bold text-slate-700">{m.authorName}</span>
-                    {m.isStaff && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">Support</span>}
+                    {!!m.isStaff && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">Support</span>}
                     <span className="text-[11px]">{new Date(m.createdAt).toLocaleString()}</span>
                   </div>
                   <div

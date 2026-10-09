@@ -11,7 +11,7 @@
  * fields and tenant filter.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { billingApi } from '@/lib/api';
 import { TableRowsSkeleton } from '@/components/Shimmer';
@@ -206,9 +206,8 @@ export default function TenantAuditPage() {
                       ? l.metadata
                       : (typeof l.metadata === 'string' ? safeParse(l.metadata) : null);
                     return (
-                      <>
+                      <Fragment key={l.id}>
                         <tr
-                          key={l.id}
                           onClick={() => setExpanded(isOpen ? null : l.id)}
                           className="hover:bg-slate-50/70 transition-colors cursor-pointer"
                         >
@@ -248,7 +247,7 @@ export default function TenantAuditPage() {
                             )}
                           </td>
                         </tr>
-                        {isOpen && meta && (
+                        {isOpen && !!meta && (
                           <tr key={`${l.id}-meta`} className="bg-slate-50/60">
                             <td colSpan={4} className="px-4 py-3">
                               <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Metadata</div>
@@ -258,7 +257,7 @@ export default function TenantAuditPage() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </Fragment>
                     );
                   })
                 )}

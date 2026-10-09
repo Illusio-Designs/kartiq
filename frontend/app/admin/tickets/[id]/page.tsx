@@ -94,7 +94,7 @@ export default function AdminTicketDetailPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 text-xs text-slate-500">
                   <span className="font-bold text-slate-700">{m.authorName}</span>
-                  {m.isStaff && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">Staff</span>}
+                  {!!m.isStaff && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">Staff</span>}
                   <span>{new Date(m.createdAt).toLocaleString()}</span>
                 </div>
                 <div className={`mt-1.5 p-3 rounded-xl text-sm leading-relaxed whitespace-pre-wrap inline-block ${

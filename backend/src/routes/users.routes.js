@@ -51,8 +51,8 @@ router.get('/', requirePermission('users.read'), async (req, res) => {
       // Selected so we can derive `pendingInvite` below; stripped before
       // sending. NEVER include the hash in the JSON response.
       password: true,
-      roles: { include: { role: { select: { id: true, code: true, name: true } } } },
     },
+    include: { roles: { include: { role: { select: { id: true, code: true, name: true } } } } },
     orderBy: { createdAt: 'desc' },
   });
   const platformAdmins = await prisma.user.findMany({
@@ -63,8 +63,8 @@ router.get('/', requirePermission('users.read'), async (req, res) => {
       // Selected so we can derive `pendingInvite` below; stripped before
       // sending. NEVER include the hash in the JSON response.
       password: true,
-      roles: { include: { role: { select: { id: true, code: true, name: true } } } },
     },
+    include: { roles: { include: { role: { select: { id: true, code: true, name: true } } } } },
     orderBy: { createdAt: 'desc' },
   });
   // De-dup: a platform admin who is ALSO a tenant member shouldn't appear twice

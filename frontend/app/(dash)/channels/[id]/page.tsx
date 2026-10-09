@@ -943,7 +943,7 @@ function StatCard({
   icon: Icon, label, value, tone, hint,
 }: { icon: any; label: string; value: number; tone: Tone; hint?: string }) {
   const card = (
-    <div className="bg-white p-4 flex flex-col gap-2">
+    <div className="bg-white p-4 flex flex-col gap-2" title={hint}>
       <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', TONE_TEXT[tone])}>
         <Icon size={15} />
       </div>
@@ -953,7 +953,7 @@ function StatCard({
       </div>
     </div>
   );
-  return hint ? <Tooltip content={hint} side="top"><div>{card}</div></Tooltip> : card;
+  return card;
 }
 
 // Fulfilment-path split — shows how many of this channel's orders each path
