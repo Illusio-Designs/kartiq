@@ -112,7 +112,14 @@ async function buildBulkLabelsPdf(ids, tenantId) {
     const name = order.orderNumber || order.channelOrderId || id;
     if (order.fulfillmentType === 'CHANNEL') { skipped.push({ id, order: name, reason: 'Fulfilled by the marketplace (FBA) — no label needed' }); continue; }
     let label = labelByOrder.get(id);
-    if (!label) { skipped.push({ id, order: name, reason: 'No active shipping label — press Confirm first' }); continue; }
+    if (!label) {
+      const gone = ['SHIPPED', 'DELIVERED', 'RETURNED'].includes(order.status);
+      skipped.push({ id, order: name, reason: gone
+        ? `Already ${order.status.toLowerCase()} without a label from Kartriq — there is no label file to download`
+        : order.status === 'CANCELLED' ? 'Order is cancelled'
+        : 'No active shipping label — press Confirm first' });
+      continue;
+    }
     if (!label.content) { // courier-hosted / Easy Ship label: fetch it once and keep it
       const got = await require('./shipping/shipment.service').getLabelFile(id, tenantId);
       if (got.error || !got.label?.content) { skipped.push({ id, order: name, reason: got.error || 'Label is not available yet' }); continue; }
