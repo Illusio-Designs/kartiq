@@ -104,6 +104,17 @@ router.get('/amazon/start',
       const isGeneric = channel.type === 'AMAZON' || channel.type === 'AMAZON_SMARTBIZ';
       const region = isGeneric ? String(req.query.region || inferredRegion) : inferredRegion;
 
+      // Demo tenant: instead of Amazon's real consent screen, send the seller to
+      // Kartriq's fake one (a page that looks like "Authorize this app" and, on
+      // click, marks the demo channel connected). No Amazon app/keys involved.
+      if (channel.isDemo) {
+        if (!(await require('../services/demo.service').isDemoTenant(req.tenant.id))) {
+          return res.status(403).json({ error: 'Demo mode is not enabled on this server' });
+        }
+        const base = String(process.env.FRONTEND_URL || req.headers.origin || '').replace(/\/$/, '');
+        return res.json({ url: `${base}/demo/amazon-consent?channelId=${encodeURIComponent(channel.id)}`, state: 'demo', region });
+      }
+
       const [appId, redirectUri] = await Promise.all([
         settings.get('amazon.appId'),
         settings.get('amazon.redirectUri'),
@@ -133,6 +144,19 @@ router.get('/amazon/start',
     } catch (err) {
       console.error('[oauth/amazon/start]', err);
       res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// POST /api/v1/oauth/amazon/demo-authorize { channelId }
+// The "Authorize" click on the FAKE consent page. Demo tenant + demo mode only.
+router.post('/amazon/demo-authorize',
+  authenticate, requireTenant, requirePermission('channels.update'),
+  async (req, res) => {
+    try {
+      res.json(await require('../services/demo.service').completeDemoConnect(String(req.body?.channelId || ''), req.tenant.id));
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.message });
     }
   }
 );

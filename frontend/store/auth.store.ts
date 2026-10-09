@@ -41,6 +41,8 @@ interface Tenant {
   status: string;
   businessName: string;
   gstin?: string | null;
+  /** true only for the sandbox demo tenant (fake Amazon) */
+  isDemo?: boolean | number;
 }
 
 interface Plan {

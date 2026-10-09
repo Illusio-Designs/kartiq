@@ -480,6 +480,41 @@ async function main() {
   ok(Number(stillThere.c) === 1, 'Bulk printing does not buy or change anything (label still the same single ACTIVE one)');
   ok(callsTo(/POST \/mfn\/v0\/shipments/).filter((c) => /AMZ-MFN-7/.test(JSON.stringify(c.body))).length === 1, 'Amazon was only asked to buy order 7 once — printing never re-buys');
 
+  // ── 18. Bulk "Confirm & get label" ───────────────────────────────────────
+  group('18. Bulk Confirm & get labels');
+  await db('channels').where({ id: chId }).update({ autoBookShipping: 0 }); // prove it books even with the auto-book switch OFF
+  await seedStock(80);
+  fake.orders = ['11', '12', '13'].map((n) => amazonOrder(`AMZ-MFN-${n}`, 'MFN', SKU, 1, 399));
+  await req('POST', `/channels/${chId}/sync/orders`, { token, body: {} });
+  const [k11, k12, k13] = await Promise.all(['11', '12', '13'].map((n) => find(`AMZ-MFN-${n}`)));
+  fake.labelType = 'PDF'; fake.mode = 'ok';
+  const shipCallsBefore = callsTo(/POST \/mfn\/v0\/shipments/).length;
+  const bb = await req('POST', '/orders/book-shipping', { token, body: { ids: [k11.id, k12.id, afn.id, mfn2.id, bogus, k11.id] } });
+  ok(bb.status === 200 && bb.body.booked === 2, `Books the 2 new MFN orders even though the channel's auto-book switch is OFF (booked=${bb.body.booked})`);
+  const bres = Object.fromEntries(bb.body.results.map((r) => [r.id, r]));
+  ok(bb.body.results.length === 5, `Duplicate id handled once — 5 outcomes for 6 ids (${bb.body.results.length})`);
+  ok(bres[k11.id].booked && bres[k11.id].trackingNumber && bres[k12.id].booked, 'Each booked order reports its own tracking number');
+  ok(bres[afn.id].kind === 'skipped' && /FBA|channel/i.test(bres[afn.id].reason), `FBA order skipped, not an error: "${bres[afn.id].reason}"`);
+  ok(bres[mfn2.id].kind === 'skipped', `Already-shipped order skipped, not bought twice: "${bres[mfn2.id].reason}"`);
+  ok(bres[bogus].kind === 'skipped' && /not found/i.test(bres[bogus].reason), `Unknown order skipped: "${bres[bogus].reason}"`);
+  ok(callsTo(/POST \/mfn\/v0\/shipments/).length === shipCallsBefore + 2, 'Amazon was asked to buy exactly 2 labels');
+  ok((await db('orders').where({ id: k11.id }).first()).status === 'SHIPPED', 'Booked orders are SHIPPED');
+  const bl2 = await req('POST', '/orders/labels', { token, body: { ids: [k11.id, k12.id] } });
+  ok(bl2.status === 200 && bl2.body.printed === 2, 'Their labels print together as one PDF straight away (Confirm → Print)');
+
+  fake.mode = 'buyFails';
+  const bf = await req('POST', '/orders/book-shipping', { token, body: { ids: [k13.id] } });
+  ok(bf.status === 200 && bf.body.booked === 0 && bf.body.failed === 1 && /Address could not be verified/.test(bf.body.results[0].reason), `A failure is reported per order, not as a crash: "${bf.body.results[0].reason.slice(0, 50)}…"`);
+  fake.mode = 'ok';
+  ok((await req('POST', '/orders/book-shipping', { token, body: { ids: [] } })).status === 400, 'Empty selection refused (400)');
+  const big = await req('POST', '/orders/book-shipping', { token, body: { ids: Array.from({ length: 51 }, () => randomUUID()) } });
+  ok(big.status === 400 && /at most 50/.test(JSON.stringify(big.body)), `51 orders refused, limit is 50 (${big.status})`);
+  ok((await req('POST', '/orders/book-shipping', { body: { ids: [k13.id] } })).status === 401, 'No login → 401');
+  const buyBefore = callsTo(/POST \/mfn\/v0\/shipments/).length;
+  const bo = await req('POST', '/orders/book-shipping', { token: otherToken, body: { ids: [k13.id] } });
+  ok(bo.status === 200 && bo.body.booked === 0 && /not found/i.test(bo.body.results[0].reason), 'Another seller cannot book labels for your orders');
+  ok(callsTo(/POST \/mfn\/v0\/shipments/).length === buyBefore, 'And no purchase was made on your behalf');
+
   // ── 17. Demo mode (live-site sandbox) ────────────────────────────────────
   group('17. Demo mode');
   const adminLogin = await req('POST', '/auth/login', { body: { email: process.env.PLATFORM_ADMIN_EMAIL || 'founder@kartriq.com', password: process.env.PLATFORM_ADMIN_PASSWORD || 'founder123' } });
@@ -504,7 +539,7 @@ async function main() {
     ok((await req('POST', '/admin/demo/setup', { token: adminTok, body: { email: demoEmail, password: 'short' } })).status === 400, 'Weak demo password refused (400)');
 
     const setup = await req('POST', '/admin/demo/setup', { token: adminTok, body: { email: demoEmail, password: demoPass } });
-    ok(setup.status === 201 && setup.body.tenantId && setup.body.imported === 6, `Setup creates the demo tenant with 6 orders (${setup.status}, imported=${setup.body.imported})`);
+    ok(setup.status === 201 && setup.body.tenantId, `Setup creates the demo tenant (${setup.status})`);
     ok(setup.body.password === undefined, 'The chosen password is never echoed back');
     const gen = await req('POST', '/admin/demo/setup', { token: adminTok, body: { email: `demo2-${TS}@test.local` } });
     ok(gen.status === 409, `A second demo tenant is refused (${gen.status})`);
@@ -515,7 +550,10 @@ async function main() {
     const dplan = await db('plans').where({ id: dsub.planId }).first();
     ok(dplan.code === 'FIVERR_FREE' && dsub.status === 'ACTIVE' && new Date(dsub.currentPeriodEnd).getFullYear() > 2100, 'On the forever-free FIVERR_FREE plan');
     const stat = await req('GET', '/admin/demo', { token: adminTok });
-    ok(stat.body.exists && stat.body.counts.orders === 6 && stat.body.counts.mfn === 5 && stat.body.counts.fba === 1, `Status: 6 orders = 5 MFN + 1 FBA (${JSON.stringify(stat.body.counts)})`);
+    ok(stat.body.exists && stat.body.counts.orders === 0 && stat.body.channel === null, `Starts empty: no channel, no products, no orders (${JSON.stringify(stat.body.counts)})`);
+    const startWh = await db('warehouses').where({ tenantId: setup.body.tenantId });
+    ok(startWh.length === 1 && JSON.parse(startWh[0].address).pincode === '411019', 'The only thing it starts with is one warehouse that has a real address');
+    ok(Number((await db('products').where({ tenantId: setup.body.tenantId }).count({ c: '*' }).first()).c) === 0, 'No products yet — the tester pulls them from the channel');
     ok(stat.body.tenant.loginEmail === demoEmail, 'Status shows the demo login email');
 
     // Real sellers can never switch a channel into demo mode.
@@ -530,11 +568,62 @@ async function main() {
     ok(dl.status === 200 && dtok, 'The demo seller can log in');
     const dme = await req('GET', '/auth/me', { token: dtok });
     ok(dme.status === 200 && dme.body.tenant?.id === dt.id, 'The demo seller is signed in to the demo tenant (and only that one)');
-    const dch = (await db('channels').where({ tenantId: dt.id, isDemo: 1 }))[0];
-    ok(dch && dch.type === 'AMAZON' && dch.isDemo === 1, 'Demo tenant has one demo Amazon channel');
     const callsBefore = fake.calls.length;
+    const demoJourney = async (tok, { verbose = false } = {}) => {
+      const c = await req('POST', '/channels', { token: tok, body: { name: 'Amazon India', type: 'AMAZON' } });
+      const id = c.body.id;
+      const st = await req('GET', `/oauth/amazon/start?channelId=${id}&region=IN`, { token: tok });
+      const au = await req('POST', '/oauth/amazon/demo-authorize', { token: tok, body: { channelId: id } });
+      const pc = await req('POST', `/channels/${id}/pull-catalog`, { token: tok, body: {} });
+      const sy = await req('POST', `/channels/${id}/sync/orders`, { token: tok, body: {} });
+      return { id, c, st, au, pc, sy };
+    };
+
+    // A real seller's Amazon channel is never a demo channel, and cannot use the fake authorization.
+    const realAmz = await req('POST', '/channels', { token, body: { name: 'Real Amazon 2', type: 'AMAZON' } });
+    ok((await db('channels').where({ id: realAmz.body.id }).first()).isDemo === 0, 'With demo mode ON, a normal seller\'s Amazon channel is still a real one');
+    ok((await req('POST', '/oauth/amazon/demo-authorize', { token, body: { channelId: realAmz.body.id } })).status === 403, 'A normal seller cannot use the fake "Authorize" (403)');
+    const dFlip = await req('POST', '/channels', { token: await (async () => dtok)(), body: { name: 'Demo Flipkart', type: 'FLIPKART' } });
+    ok(dFlip.status === 201 && (await db('channels').where({ id: dFlip.body.id }).first()).isDemo === 0, 'Only the Amazon channel is faked — other channels in the demo tenant stay real');
+    await db('channels').where({ id: dFlip.body.id }).del();
+
+    // ── The journey: connect → authorize → pull catalog → sync orders ──
+    const cr = await req('POST', '/channels', { token: dtok, body: { name: 'Amazon India', type: 'AMAZON' } });
+    const dch = await db('channels').where({ id: cr.body.id }).first();
+    ok(cr.status === 201 && dch.isDemo === 1, 'Step 1 — the demo seller adds the Amazon channel; the server flags it as a demo channel');
+    ok(!dch.credentials, 'It is not connected yet (no credentials)');
+    const st0 = await req('GET', `/oauth/amazon/status?channelId=${dch.id}`, { token: dtok });
+    ok(st0.body.connected === false, 'Status before authorizing: not connected');
+    const start = await req('GET', `/oauth/amazon/start?channelId=${dch.id}&region=IN`, { token: dtok });
+    ok(start.status === 200 && /\/demo\/amazon-consent\?channelId=/.test(start.body.url) && !/amazon\.in|amazon\.com/.test(start.body.url), `Step 2 — "Authorize with Amazon" sends them to Kartriq's FAKE consent page, not Amazon (${start.body.url.replace(/\?.*/, '')})`);
+    const auth = await req('POST', '/oauth/amazon/demo-authorize', { token: dtok, body: { channelId: dch.id } });
+    ok(auth.status === 200 && auth.body.connected === true, 'They click Authorize on the fake page');
+    ok((await req('GET', `/oauth/amazon/status?channelId=${dch.id}`, { token: dtok })).body.connected === true, 'Status now says: connected (the polling modal would close)');
+    const { decryptCredentials } = require('../utils/crypto');
+    const storedCreds = decryptCredentials(JSON.parse((await db('channels').where({ id: dch.id }).first()).credentials));
+    ok(storedCreds.demo === true && Object.keys(storedCreds).length === 1, 'Only a harmless placeholder is stored — no keys');
+    const typed = await req('POST', `/channels/${dch.id}/connect`, { token: dtok, body: { refreshToken: 'Atzr|REAL-SECRET-TOKEN', clientId: 'x' } });
+    const afterTyped = JSON.stringify(decryptCredentials(JSON.parse((await db('channels').where({ id: dch.id }).first()).credentials)));
+    ok(typed.status === 200 && !afterTyped.includes('REAL-SECRET'), 'Even if someone types real keys into the demo, they are thrown away, never stored');
     const conn = await req('GET', `/channels/${dch.id}/test`, { token: dtok });
     ok(conn.status === 200 && /DEMO/.test(JSON.stringify(conn.body)), 'Connection test says it is a demo marketplace');
+    const early = await req('POST', `/channels/${dch.id}/sync/orders`, { token: dtok, body: {} });
+    ok(early.status === 200 && early.body.fetched === 0, 'Syncing orders BEFORE pulling the catalog brings nothing (orders need products first)');
+    const pull = await req('POST', `/channels/${dch.id}/pull-catalog`, { token: dtok, body: {} });
+    const prodCount = Number((await db('products').where({ tenantId: dt.id }).count({ c: '*' }).first()).c);
+    ok(pull.status === 200 && prodCount === 3, `Step 3 — Pull catalog brings in 3 products (${prodCount})`);
+    const fbaWhD = await db('warehouses').where({ tenantId: dt.id, externalSource: 'AMAZON_FBA' }).first();
+    const widgetStock = await db('inventory_items as i').join('product_variants as v', 'v.id', 'i.variantId').where({ 'i.tenantId': dt.id, 'v.sku': 'DEMO-WIDGET' }).first();
+    const fbaStock = await db('inventory_items as i').join('product_variants as v', 'v.id', 'i.variantId').where({ 'i.tenantId': dt.id, 'v.sku': 'DEMO-FBA-ITEM' }).first();
+    ok(widgetStock && widgetStock.quantityOnHand === 120 && widgetStock.warehouseId === startWh[0].id, 'Merchant-fulfilled stock (120) lands in the tester\'s real warehouse');
+    ok(fbaStock && fbaStock.quantityOnHand === 40 && fbaWhD && fbaStock.warehouseId === fbaWhD.id, 'FBA stock (40) lands in the virtual "Amazon FBA" facility');
+    const sync1 = await req('POST', `/channels/${dch.id}/sync/orders`, { token: dtok, body: {} });
+    ok(sync1.status === 200 && sync1.body.imported === 6, `Step 4 — Sync orders brings in the 6 demo orders (${sync1.body.imported})`);
+    const sync2 = await req('POST', `/channels/${dch.id}/sync/orders`, { token: dtok, body: {} });
+    ok(sync2.status === 200 && sync2.body.fetched === 0 && Number((await db('orders').where({ tenantId: dt.id }).count({ c: '*' }).first()).c) === 6, 'Syncing again adds nothing — no duplicates, no flood');
+    const stat2 = await req('GET', '/admin/demo', { token: adminTok });
+    ok(stat2.body.counts.orders === 6 && stat2.body.counts.mfn === 5 && stat2.body.counts.fba === 1 && stat2.body.channel?.id === dch.id, `Admin status now shows 6 orders = 5 MFN + 1 FBA and the channel (${JSON.stringify(stat2.body.counts)})`);
+
     await req('PUT', `/channels/${dch.id}`, { token: dtok, body: { autoBookShipping: true } });
     const dOrder = async (suffix) => db('orders').where({ tenantId: dt.id }).whereRaw('channelOrderId like ?', [`%-${suffix}`]).first();
     const m1 = await dOrder('MFN1'); const fbaD = await dOrder('FBA'); const errD = await dOrder('MFN5-ERR');
@@ -562,14 +651,17 @@ async function main() {
     const dBeforeIds = (await db('orders').where({ tenantId: dt.id })).map((o) => o.id);
     await db('vendors').insert({ id: randomUUID(), tenantId: dt.id, name: 'Tester-made vendor', updatedAt: new Date() }).catch(() => {});
     const rs = await req('POST', '/admin/demo/reset', { token: adminTok, body: {} });
-    ok(rs.status === 200 && rs.body.imported === 6, `Reset rebuilds 6 fresh orders (${rs.status}, imported=${rs.body.imported})`);
-    const dAfter = await db('orders').where({ tenantId: dt.id });
-    ok(dAfter.length === 6 && dAfter.every((o) => !dBeforeIds.includes(o.id)), 'All demo orders are brand new after reset');
-    ok(dAfter.every((o) => o.status === 'PROCESSING'), 'Every demo order is back to PROCESSING');
-    ok(Number((await db('order_labels').where({ tenantId: dt.id }).count({ c: '*' }).first()).c) === 0, 'Old labels are gone');
+    ok(rs.status === 200, `Reset succeeds (${rs.status})`);
+    ok(Number((await db('orders').where({ tenantId: dt.id }).count({ c: '*' }).first()).c) === 0 && (await db('channels').where({ tenantId: dt.id })).length === 0, 'After reset: no channel, no orders — back to the very start');
+    ok(Number((await db('products').where({ tenantId: dt.id }).count({ c: '*' }).first()).c) === 0 && Number((await db('order_labels').where({ tenantId: dt.id }).count({ c: '*' }).first()).c) === 0, 'No products, no labels');
     ok(Number((await db('vendors').where({ tenantId: dt.id }).count({ c: '*' }).first()).c) === 0, 'Data a tester added (a vendor) is cleared too');
+    ok((await db('warehouses').where({ tenantId: dt.id })).length === 1, 'One fresh warehouse with an address is back');
+    const again = await demoJourney(dtok);
+    const dAfter = await db('orders').where({ tenantId: dt.id });
+    ok(again.au.status === 200 && again.pc.status === 200 && again.sy.body.imported === 6 && dAfter.length === 6, 'The whole journey can be done again after a reset (connect → catalog → 6 orders)');
+    ok(dAfter.every((o) => !dBeforeIds.includes(o.id)) && dAfter.every((o) => o.status === 'PROCESSING'), 'All 6 orders are brand new and PROCESSING');
     const dch2 = await db('channels').where({ tenantId: dt.id, isDemo: 1 });
-    ok(dch2.length === 1 && dch2[0].autoBookShipping === 0, 'Exactly one demo channel again, auto-book switched back OFF');
+    ok(dch2.length === 1 && dch2[0].autoBookShipping === 0, 'Exactly one demo channel, auto-book switched back OFF');
     const dl2 = await req('POST', '/auth/login', { body: { email: demoEmail, password: demoPass } });
     ok(dl2.status === 200, 'The demo login still works after a reset');
     const sellerOrdersAfter = Number((await db('orders').where({ tenantId }).count({ c: '*' }).first()).c);

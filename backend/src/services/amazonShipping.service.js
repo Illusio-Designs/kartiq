@@ -282,6 +282,38 @@ async function buildBulkLabelsPdf(ids, tenantId) {
   return { pdf, printed, pages, skipped };
 }
 
+// ── Bulk "Confirm & get label" ───────────────────────────────────────────────
+// Books the Amazon courier for many orders in one go (the seller's "confirm"
+// click, for a whole selection). Sequential on purpose: Amazon rate-limits the
+// Buy Shipping API and each order is a paid purchase, so no parallel burst.
+// Always books (force) — the seller asked explicitly, regardless of the
+// channel's auto-book switch. One failure never stops the others; each order
+// gets its own outcome.
+const BULK_BOOK_MAX = 50;
+
+async function bookShippingBulk(ids, tenantId) {
+  const unique = [...new Set((Array.isArray(ids) ? ids : []).map(String).filter(Boolean))];
+  if (!unique.length) return { status: 400, error: 'Select at least one order' };
+  if (unique.length > BULK_BOOK_MAX) return { status: 400, error: `You can get at most ${BULK_BOOK_MAX} labels at once` };
+  const results = [];
+  for (const id of unique) {
+    const order = await prisma.order.findFirst({ where: { id, tenantId } });
+    const name = order ? (order.orderNumber || order.channelOrderId || id) : id;
+    const r = await autoBookAmazonShipping(id, { tenantId, force: true });
+    results.push({
+      id, order: name,
+      booked: !!r.booked,
+      trackingNumber: r.trackingNumber || null,
+      carrier: r.carrier || null,
+      // `skipped` = nothing to do (FBA, already shipped…); `error` = Amazon/data problem to fix
+      reason: r.error || r.skipped || null,
+      kind: r.booked ? 'booked' : r.error ? 'error' : 'skipped',
+    });
+  }
+  const booked = results.filter((x) => x.booked).length;
+  return { results, booked, failed: results.filter((x) => x.kind === 'error').length, skipped: results.filter((x) => x.kind === 'skipped').length };
+}
+
 // Void a label on Amazon and mark it CANCELLED locally.
 async function cancelOrderLabel(orderId, tenantId) {
   const label = await getActiveLabel(orderId, tenantId);
@@ -316,6 +348,6 @@ async function cancelOrderLabel(orderId, tenantId) {
 }
 
 module.exports = {
-  autoBookAmazonShipping, getActiveLabel, cancelOrderLabel, recordPurchasedLabel, buildBulkLabelsPdf, BULK_LABELS_MAX,
+  autoBookAmazonShipping, getActiveLabel, cancelOrderLabel, recordPurchasedLabel, buildBulkLabelsPdf, BULK_LABELS_MAX, bookShippingBulk, BULK_BOOK_MAX,
   resolveParcel, pickCheapest, DEFAULT_WEIGHT_G, DEFAULT_DIMS_CM,
 };

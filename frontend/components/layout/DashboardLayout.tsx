@@ -12,6 +12,7 @@ import { MaintenancePage } from '@/components/MaintenancePage';
 import { authApi, publicApi } from '@/lib/api';
 import { Loader } from '@/components/ui/Loader';
 import { TrialBanner } from '@/components/TrialBanner';
+import { DemoBanner } from '@/components/DemoBanner';
 import { BillingLock } from '@/components/BillingLock';
 import { CommandPalette } from '@/components/CommandPalette';
 import { ChangelogDrawer } from '@/components/ChangelogDrawer';
@@ -159,6 +160,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         )}
         <Topbar />
         <TrialBanner />
+        <DemoBanner />
         <div className="flex-1 p-4 sm:p-5 lg:p-6 xl:p-8 animate-fade-in flex flex-col">
           {/* One shared content width for EVERY dashboard page — centered and
               capped so pages line up instead of each choosing their own max-w. */}

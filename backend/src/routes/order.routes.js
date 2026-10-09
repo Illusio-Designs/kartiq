@@ -5,7 +5,7 @@ const {
   authenticate, requireTenant, requirePermission, requireFeature,
 } = require('../middleware/auth.middleware');
 const { requestReviewForOrder, processReviewQueue, REVIEW_DELAY_HOURS } = require('../services/review.service');
-const { autoBookAmazonShipping, getActiveLabel, cancelOrderLabel, buildBulkLabelsPdf } = require('../services/amazonShipping.service');
+const { autoBookAmazonShipping, getActiveLabel, cancelOrderLabel, buildBulkLabelsPdf, bookShippingBulk } = require('../services/amazonShipping.service');
 const { buildPackingSlip, buildBulkPackingSlips } = require('../services/packingSlip.service');
 const { rankWarehouses, pickBestWarehouse } = require('../services/routing.service');
 const { scoreAndPersist } = require('../services/rto.service');
@@ -30,6 +30,19 @@ router.post('/packing-slips', requirePermission('orders.read'), async (req, res)
     const r = await buildBulkPackingSlips(req.body?.ids, req.tenant.id);
     if (r.error) return res.status(r.status).json({ error: r.error, skipped: r.skipped || [] });
     res.json({ html: r.html, printed: r.printed, skipped: r.skipped });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Bulk "Confirm & get label" — MUST be declared before /:id routes ─────────
+// body: { ids: string[] } (max 50). Books the Amazon courier for each order,
+// one by one, and returns each order's own outcome.
+router.post('/book-shipping', requirePermission('shipments.create'), async (req, res) => {
+  try {
+    const r = await bookShippingBulk(req.body?.ids, req.tenant.id);
+    if (r.error) return res.status(r.status).json({ error: r.error });
+    res.json(r);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
