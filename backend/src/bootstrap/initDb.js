@@ -61,6 +61,8 @@ async function initDb() {
     { table: 'orders',   column: 'shipmentStatusAt',   ddl: 'DATETIME(3) DEFAULT NULL' },
     { table: 'orders',   column: 'shipmentProvider',   ddl: 'VARCHAR(32) DEFAULT NULL' },
     // A label may be a courier-hosted file instead of bytes we hold.
+    // Everything Amazon returned for the order (header, items, address, buyer) — for the "Amazon data" download.
+    { table: 'orders',   column: 'channelData',      ddl: 'LONGTEXT DEFAULT NULL' },
     { table: 'order_labels', column: 'url',            ddl: 'TEXT DEFAULT NULL' },
     // Why the last automatic booking failed (cleared on success) — shown on the
     // order with a Retry action.

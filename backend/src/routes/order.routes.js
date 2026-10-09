@@ -49,6 +49,28 @@ router.post('/book-shipping', requirePermission('shipments.create'), async (req,
   }
 });
 
+// ── Amazon data download — MUST be declared before /:id routes ───────────────
+// GET /orders/amazon-data?ids=a,b,c&format=csv|json[&fresh=1]  (also POST with { ids })
+// Everything Amazon holds for those orders (header, items, address, buyer).
+const sendAmazonData = async (req, res, ids) => {
+  try {
+    const format = String(req.query.format || req.body?.format || 'csv').toLowerCase() === 'json' ? 'json' : 'csv';
+    const fresh = String(req.query.fresh || req.body?.fresh || '') === '1' || req.body?.fresh === true;
+    const r = await require('../services/amazonData.service').buildAmazonData(ids, req.tenant.id, { format, fresh });
+    if (r.error) return res.status(r.status || 400).json({ error: r.error, skipped: r.skipped || [] });
+    res.setHeader('Content-Type', r.mime);
+    res.setHeader('Content-Disposition', `attachment; filename="amazon-orders-${new Date().toISOString().slice(0, 10)}.${r.ext}"`);
+    res.setHeader('X-Skipped', encodeURIComponent(JSON.stringify(r.skipped.slice(0, 20))));
+    res.setHeader('X-Count', String(r.count));
+    res.setHeader('Access-Control-Expose-Headers', 'X-Skipped, X-Count, Content-Disposition');
+    res.send(r.body);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+router.get('/amazon-data', requirePermission('orders.read'), (req, res) => sendAmazonData(req, res, String(req.query.ids || '').split(',')));
+router.post('/amazon-data', requirePermission('orders.read'), (req, res) => sendAmazonData(req, res, req.body?.ids));
+
 // ── Bulk shipping labels — MUST be declared before /:id routes ───────────────
 // body: { ids: string[] } (max 100). Returns ONE merged PDF (base64) with a
 // label per page, plus which orders were skipped and why.
@@ -258,6 +280,9 @@ router.post('/:id/book-shipping', requirePermission('shipments.create'), async (
   if (!result.booked) return res.status(409).json(result);
   res.json(result);
 });
+
+// One order's Amazon data (?format=json|csv)
+router.get('/:id/amazon-data', requirePermission('orders.read'), (req, res) => sendAmazonData(req, res, [req.params.id]));
 
 // Download / print the label (fetched from the courier the first time, then kept).
 router.get('/:id/label', requirePermission('shipments.read'), async (req, res) => {

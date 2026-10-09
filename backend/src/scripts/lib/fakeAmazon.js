@@ -177,7 +177,7 @@ function fakeAdapter(config) {
     }
     return amazonResponse(config, 200, { access_token: 'AT', expires_in: 3600 });
   }
-  if (/restrictedDataToken/.test(path)) return amazonResponse(config, 200, { restrictedDataToken: 'RDT' });
+  if (/restrictedDataToken/.test(path)) { if (fake.noPii && /address|buyerInfo/.test(JSON.stringify(body))) return amazonResponse(config, 403, { errors: [{ message: 'Unauthorized: PII role missing' }] }); return amazonResponse(config, 200, { restrictedDataToken: 'RDT' }); }
 
   if (method === 'GET' && path === '/orders/v0/orders') {
     return amazonResponse(config, 200, { payload: { Orders: fake.orders } });
@@ -189,6 +189,15 @@ function fakeAdapter(config) {
   }
   if (method === 'GET' && path === '/sellers/v1/marketplaceParticipations') return amazonResponse(config, 200, { payload: [{ marketplace: { name: 'Amazon.in' } }] });
   if (method === 'POST' && /\/shipmentConfirmation$/.test(path)) return amazonResponse(config, 204, {});
+  m = path.match(/^\/orders\/v0\/orders\/([^/]+)$/);
+  if (method === 'GET' && m) {
+    const o = fake.orders.find((x) => x.AmazonOrderId === m[1]);
+    return o ? amazonResponse(config, 200, { payload: Object.fromEntries(Object.entries(o).filter(([k]) => k !== '_items')) }) : amazonResponse(config, 404, { errors: [{ message: 'no such order' }] });
+  }
+  m = path.match(/^\/orders\/v0\/orders\/([^/]+)\/address$/);
+  if (m) { if (fake.noPii) return amazonResponse(config, 403, { errors: [{ message: 'Access denied' }] }); const o = fake.orders.find((x) => x.AmazonOrderId === m[1]); return amazonResponse(config, 200, { payload: { AmazonOrderId: m[1], ShippingAddress: o ? { ...o.ShippingAddress, Phone: '9876543210' } : null } }); }
+  m = path.match(/^\/orders\/v0\/orders\/([^/]+)\/buyerInfo$/);
+  if (m) { const o = fake.orders.find((x) => x.AmazonOrderId === m[1]); return amazonResponse(config, 200, { payload: { AmazonOrderId: m[1], BuyerEmail: o?.BuyerInfo?.BuyerEmail, BuyerName: o?.BuyerInfo?.BuyerName } }); }
   if (/\/address$|\/buyerInfo$/.test(path)) return amazonResponse(config, 200, { payload: {} });
 
   if (method === 'POST' && path === '/mfn/v0/eligibleShippingServices') {

@@ -558,6 +558,15 @@ router.post('/:id/sync/orders', requirePermission('channels.sync'), async (req, 
     });
     res.json({ message: 'Order sync complete', fetched: rawOrders.length, ...results });
   } catch (err) {
+    // Amazon allows only about one order-list request per minute. That is a
+    // "slow down", not a broken connection: don't mark the channel as failed.
+    if (/\(429\)|quota/i.test(err.message)) {
+      return res.status(429).json({
+        error: 'Amazon is limiting how often orders can be fetched',
+        details: 'Amazon allows only about one order sync per minute. Nothing is wrong with your connection — wait 1–2 minutes and press Sync again. (The automatic sync keeps running in the background.)',
+        retryAfterSeconds: 90,
+      });
+    }
     await prisma.channel.updateMany({
       where: { id: req.params.id, tenantId: req.tenant.id },
       data: { syncError: err.message },

@@ -622,6 +622,40 @@ async function main() {
   const mkSneaky = await req('POST', '/channels', { token, body: { name: 'Sneaky', type: 'FLIPKART', isDemo: true } });
   ok(mkSneaky.status === 201 && !(await db('channels').where({ id: mkSneaky.body.id }).first()).isDemo, 'A channel can no longer be switched into demo mode');
 
+  // ── 22. Amazon data download ─────────────────────────────────────────────
+  group('22. Download everything Amazon holds for MFN orders');
+  fake.noPii = false;
+  const ad = (ids, q = '', tok = token) => req('GET', `/orders/amazon-data?ids=${ids.join(',')}${q}`, { token: tok, raw: true });
+  fake.calls.length = 0;
+  const csv1 = await ad([M[1].id, M[2].id, afn.id]);
+  const text = csv1.buf.toString().replace(/^\uFEFF/, '');
+  const [head, ...lines] = text.split('\r\n');
+  ok(csv1.status === 200 && /text\/csv/.test(csv1.headers['content-type']) && /attachment; filename="amazon-orders-.*\.csv"/.test(csv1.headers['content-disposition']), `CSV downloads as a file (${csv1.status})`);
+  ok(lines.length === 3 && head.includes('"Amazon order id"') && head.includes('"Ship-to phone"') && head.includes('"Buyer email"') && head.includes('"Shipment status"'), `One row per order (3) with all the columns (${head.split(',').length} columns)`);
+  const row1 = lines.find((l) => l.includes('AMZ-MFN-1"'));
+  ok(row1.includes('12 MG Road') && row1.includes('411001') && row1.includes('9876543210') && row1.includes('AMZ-MFN-1@marketplace.amazon.in') && row1.includes(SKU), 'Row has the full address, phone, buyer email and SKU from Amazon');
+  ok(callsTo(/GET \/orders\/v0\/orders\/AMZ-MFN-1$/).length === 1 && callsTo(/\/address$/).length === 3, 'Fetched live from Amazon (order, items, address, buyer) the first time');
+  fake.calls.length = 0;
+  const csv2 = await ad([M[1].id, M[2].id, afn.id]);
+  ok(csv2.status === 200 && fake.calls.length === 0, 'Second download uses the saved copy — no Amazon calls');
+  const csv3 = await ad([M[1].id], '&fresh=1');
+  ok(csv3.status === 200 && callsTo(/GET \/orders\/v0\/orders\/AMZ-MFN-1$/).length === 1, 'fresh=1 asks Amazon again');
+  const js = await ad([M[2].id], '&format=json');
+  const parsed = JSON.parse(js.buf.toString());
+  ok(js.status === 200 && /json/.test(js.headers['content-type']) && parsed[0].amazon.order.AmazonOrderId === 'AMZ-MFN-2' && parsed[0].amazon.items[0].SellerSKU === SKU && parsed[0].amazon.shippingAddress.City === 'Pune' && parsed[0].kartriq.shipmentStatus === 'DELIVERED', 'JSON has the complete untouched Amazon record plus our shipment status');
+  const one = await req('GET', `/orders/${M[1].id}/amazon-data?format=json`, { token, raw: true });
+  ok(one.status === 200 && JSON.parse(one.buf.toString()).length === 1, 'Single-order download works from the order page');
+  fake.noPii = true;
+  const nopii = await ad([M[3].id]);
+  const nt = nopii.buf.toString();
+  ok(nopii.status === 200 && /buyer-information role|did not allow/i.test(nt) && nt.includes('AMZ-MFN-3'), 'If Amazon withholds buyer data, the file still downloads and says exactly why');
+  fake.noPii = false;
+  const many = await req('GET', `/orders/amazon-data?ids=${Array.from({ length: 201 }, () => randomUUID()).join(',')}`, { token });
+  ok(many.status === 400 && /at most 200/.test(JSON.stringify(many.body)), 'Limit is 200 orders');
+  ok((await ad([M[1].id], '', otherToken)).status === 400, "Another seller cannot download your orders' Amazon data");
+  ok((await ad([M[1].id], '', '')).status === 401, 'No login → 401');
+  ok((await ad([])).status === 400, 'Empty selection refused');
+
   // ── Result ───────────────────────────────────────────────────────────────
   console.log(`\n\x1b[1mResult: ${passed} passed, ${failed} failed\x1b[0m`);
   if (failed) { console.log('\nFailures:'); failures.forEach((f) => console.log('  - ' + f)); }

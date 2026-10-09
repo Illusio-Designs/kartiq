@@ -330,6 +330,27 @@ class AmazonAdapter {
     return { email: b.BuyerEmail || null, name: b.BuyerName || null };
   }
 
+  // EVERYTHING Amazon will tell us about one order, untouched: the order header,
+  // every line item field, the ship-to address and the buyer info. Address/buyer
+  // need the PII role — without it that part comes back as null with the reason
+  // in `notes`, so the download can say what Amazon withheld.
+  async fetchOrderRaw(amazonOrderId) {
+    const id = encodeURIComponent(amazonOrderId);
+    const out = { amazonOrderId, fetchedAt: new Date().toISOString(), order: null, items: [], shippingAddress: null, buyerInfo: null, notes: [] };
+    const tryRestricted = async (path, element) => {
+      let token = null;
+      try { token = await this._getRestrictedToken([{ method: 'GET', path, dataElements: [element] }]); }
+      catch (e) { out.notes.push(`${element}: Amazon did not allow access (${e.response?.data?.errors?.[0]?.message || e.message}). The app needs the buyer-information role.`); return null; }
+      try { return (await this._request('GET', path, {}, token)).payload || null; }
+      catch (e) { out.notes.push(`${element}: ${e.response?.data?.errors?.[0]?.message || e.message}`); return null; }
+    };
+    out.order = (await this._request('GET', `/orders/v0/orders/${id}`)).payload || null;
+    out.items = (await this._request('GET', `/orders/v0/orders/${id}/orderItems`)).payload?.OrderItems || [];
+    out.shippingAddress = (await tryRestricted(`/orders/v0/orders/${id}/address`, 'shippingAddress'))?.ShippingAddress || null;
+    out.buyerInfo = await tryRestricted(`/orders/v0/orders/${id}/buyerInfo`, 'buyerInfo');
+    return out;
+  }
+
   // Amazon SP-API Orders — line items for one order (a separate endpoint from
   // getOrders). Returns { items, totals } where items match what importOrders
   // expects (qty + unitPrice) and totals split the order's money into

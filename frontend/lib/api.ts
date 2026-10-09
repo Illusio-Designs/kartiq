@@ -463,6 +463,9 @@ export const orderApi = {
   bookShippingBulk: (ids: string[]) => api.post('/orders/book-shipping', { ids }),
   bookShipping: (id: string) => api.post(`/orders/${id}/book-shipping`, {}),
   cancelLabel: (id: string) => api.delete(`/orders/${id}/label`),
+  // Everything Amazon holds for these orders, as a CSV/JSON file (blob)
+  amazonData: (ids: string[], format: 'csv' | 'json' = 'csv') =>
+    api.get('/orders/amazon-data', { params: { ids: ids.join(','), format }, responseType: 'blob' }),
   // Shipment status timeline + latest from the courier now
   shipment: (id: string) => api.get(`/orders/${id}/shipment`),
   refreshShipment: (id: string) => api.post(`/orders/${id}/shipment/refresh`, {}),

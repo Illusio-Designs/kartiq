@@ -503,6 +503,25 @@ export default function OrdersPage() {
       setBookPending(false);
     }
   };
+  // Everything Amazon holds for the selected orders (address, buyer, items, dates…) as a file.
+  const [amzDataPending, setAmzDataPending] = useState(false);
+  const downloadAmazonData = async (format: 'csv' | 'json') => {
+    const ids = [...selected];
+    if (!ids.length) return;
+    setAmzDataPending(true);
+    try {
+      const r = await orderApi.amazonData(ids, format);
+      const skipped = (() => { try { return JSON.parse(decodeURIComponent(r.headers['x-skipped'] || '[]')); } catch { return []; } })();
+      const url = URL.createObjectURL(new Blob([r.data], { type: format === 'json' ? 'application/json' : 'text/csv' }));
+      const a = document.createElement('a'); a.href = url; a.download = `amazon-orders-${new Date().toISOString().slice(0, 10)}.${format}`; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      toast.success(`Downloaded Amazon data for ${r.headers['x-count'] || ids.length} order(s)${skipped.length ? ` · ${skipped.length} skipped (${skipped.slice(0, 2).map((x: any) => `${x.order || x.id}: ${x.reason}`).join(' · ')})` : ''}`);
+    } catch (e: any) {
+      let msg = e?.message || 'Could not download';
+      try { const t = await e?.response?.data?.text?.(); if (t) msg = JSON.parse(t).error || msg; } catch { /* keep */ }
+      toast.error(msg);
+    } finally { setAmzDataPending(false); }
+  };
   // Print the saved shipping labels of every selected order as ONE merged PDF
   // (a label per page). Orders with no label (not booked yet, FBA, cancelled
   // label, thermal ZPL) are skipped by the server and reported here.
@@ -584,7 +603,7 @@ export default function OrdersPage() {
       const parts = [imported ? `${imported} new` : null, updated ? `${updated} updated` : null].filter(Boolean);
       toast.success(`${ch.name}: ${parts.length ? parts.join(', ') : 'up to date'}`);
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error || e?.response?.data?.details || e.message || 'Sync failed'),
+    onError: (e: any) => toast.error(e?.response?.status === 429 ? (e.response.data.details || e.response.data.error) : (e?.response?.data?.error || e?.response?.data?.details || e.message || 'Sync failed')),
     onSettled: () => setSyncingChannelId(null),
   });
 
@@ -747,6 +766,8 @@ export default function OrdersPage() {
           <Button variant="primary" size="sm" leftIcon={<Truck size={13} />} loading={bookPending} onClick={confirmAndGetLabels}>Confirm &amp; get labels</Button>
           <Button variant="outline" size="sm" leftIcon={<Printer size={13} />} loading={labelsPending} onClick={printSelectedLabels}>Download labels</Button>
           <Button variant="outline" size="sm" leftIcon={<Printer size={13} />} loading={slipsPending} onClick={printSelectedSlips}>Print packing slips</Button>
+          <Button variant="outline" size="sm" leftIcon={<Download size={13} />} loading={amzDataPending} onClick={() => downloadAmazonData('csv')}>Amazon data (CSV)</Button>
+          <Button variant="outline" size="sm" leftIcon={<Download size={13} />} loading={amzDataPending} onClick={() => downloadAmazonData('json')}>Amazon data (JSON)</Button>
           <Button variant="outline" size="sm" leftIcon={<Download size={13} />} onClick={() => exportRows(sortedOrders.filter((o: any) => selected.has(o.id)))}>Export</Button>
           <Button variant="danger" size="sm" leftIcon={<XCircle size={13} />} loading={bulkPending} onClick={cancelSelected}>Cancel</Button>
         </BulkActionBar>

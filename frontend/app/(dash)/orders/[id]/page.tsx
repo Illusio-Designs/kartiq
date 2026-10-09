@@ -240,6 +240,21 @@ export default function OrderDetailPage() {
       toast.error(e?.response?.data?.error || e.message || 'Could not load the label');
     }
   };
+  // Everything Amazon holds for this order (JSON = complete, CSV = opens in Excel).
+  const [amzDataLoading, setAmzDataLoading] = useState(false);
+  const downloadAmazonData = async (format: 'csv' | 'json') => {
+    setAmzDataLoading(true);
+    try {
+      const r = await orderApi.amazonData([id], format);
+      const url = URL.createObjectURL(new Blob([r.data], { type: format === 'json' ? 'application/json' : 'text/csv' }));
+      const a = document.createElement('a'); a.href = url; a.download = `amazon-${order?.channelOrderId || id}.${format}`; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e: any) {
+      let msg = e?.message || 'Could not download';
+      try { const t = await e?.response?.data?.text?.(); if (t) msg = JSON.parse(t).error || msg; } catch { /* keep */ }
+      toast.error(msg);
+    } finally { setAmzDataLoading(false); }
+  };
   // Packing slip — print-ready page for the parcel (self-fulfilled orders only).
   const [slipLoading, setSlipLoading] = useState(false);
   const printPackingSlip = async () => {
@@ -586,6 +601,11 @@ export default function OrderDetailPage() {
               </>
             ) : null}
 
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <span>All Amazon data for this order:</span>
+              <Button size="sm" variant="secondary" loading={amzDataLoading} onClick={() => downloadAmazonData('csv')}>Download CSV</Button>
+              <Button size="sm" variant="secondary" loading={amzDataLoading} onClick={() => downloadAmazonData('json')}>Download JSON</Button>
+            </div>
             {shipment?.status ? (
               <ShipmentTimeline shipment={shipment} refreshing={refreshShipmentMutation.isPending} onRefresh={() => refreshShipmentMutation.mutate()} />
             ) : null}
