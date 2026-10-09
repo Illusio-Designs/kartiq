@@ -34,14 +34,14 @@ async function adjustInventory(tenantId, warehouseId, variantId, { onHand = 0, r
     });
 }
 
-async function recordMovement(tenantId, warehouseId, variantId, type, quantity, orderId) {
+async function recordMovement(tenantId, warehouseId, variantId, type, quantity, orderId, notes = null) {
   await db('stock_movements').insert({
     id: randomUUID(),
     tenantId, warehouseId, variantId, type,
     quantity: Math.abs(quantity),
     referenceId: orderId || null,
     referenceType: 'ORDER',
-    notes: null,
+    notes,
     createdAt: new Date(),
   });
 }
@@ -173,6 +173,32 @@ async function applyOrderStock(order, items) {
   }
 }
 
+// Reverse a shipment that never actually left (e.g. its shipping label was
+// cancelled): put DEDUCTED stock back to RESERVED, so the order is an open,
+// reserved order again. Ledger-safe — logs a compensating ADJUSTMENT entry
+// instead of silently editing numbers. Idempotent: only acts when the order's
+// stock is currently DEDUCTED. Returns true if stock was moved.
+async function unshipOrderStock(order) {
+  try {
+    if (!order || order.fulfillmentType !== 'SELF' || !order.warehouseId) return false;
+    if (order.stockStatus !== 'DEDUCTED') return false;
+    const items = await prisma.orderItem.findMany({ where: { orderId: order.id } });
+    for (const it of items) {
+      const q = Number(it.qty);
+      if (!it.variantId || !(q > 0)) continue;
+      // on-hand and reserved both +q → available is unchanged (it was already net of this order)
+      const n = await adjustInventory(order.tenantId, order.warehouseId, it.variantId, { onHand: q, reserved: q });
+      if (n) await recordMovement(order.tenantId, order.warehouseId, it.variantId, 'ADJUSTMENT', q, order.id, 'Shipment reversed (label cancelled)');
+    }
+    await prisma.order.update({ where: { id: order.id }, data: { stockStatus: 'RESERVED' } });
+    order.stockStatus = 'RESERVED';
+    return true;
+  } catch (e) {
+    console.warn(`[stock] unshipOrderStock failed for order ${order?.id}: ${e.message}`);
+    return false;
+  }
+}
+
 // One-shot backfill: seed inventory rows for existing self-fulfilled orders so
 // their (MFN) products appear in Inventory without waiting for another sync.
 // Bounded + idempotent — safe to run on boot. Returns a small summary.
@@ -198,4 +224,4 @@ async function backfillSelfOrderInventory({ limit = 2000 } = {}) {
   return { orders: orders.length, seeded };
 }
 
-module.exports = { applyOrderStock, ensureInventoryRow, ensureInventoryForOrder, backfillSelfOrderInventory };
+module.exports = { applyOrderStock, unshipOrderStock, ensureInventoryRow, ensureInventoryForOrder, backfillSelfOrderInventory };

@@ -19,7 +19,7 @@ const db = require('../utils/db');
 const prisma = require('../utils/prisma');
 const { randomUUID } = require('crypto');
 const { getAdapter } = require('./channel.service');
-const { applyOrderStock } = require('./stock.service');
+const { applyOrderStock, unshipOrderStock } = require('./stock.service');
 
 // Fallback parcel when products carry no weight/size. Amazon needs both to rate.
 const DEFAULT_WEIGHT_G = 500;
@@ -222,7 +222,28 @@ async function cancelOrderLabel(orderId, tenantId) {
   const adapter = getAdapter(channel);
   if (label.shipmentId) await adapter.cancelMfnShipping(label.shipmentId);
   await db('order_labels').where({ id: label.id }).update({ status: 'CANCELLED' });
-  return { cancelled: true, labelId: label.id };
+
+  // The parcel has no valid label any more, so the order is NOT shipped. If the
+  // order still carries this label's tracking (normally SHIPPED, but a manual
+  // status edit may have moved it elsewhere), clear it, take a SHIPPED order
+  // back to CONFIRMED (ready to book again) and put the stock back to reserved.
+  // DELIVERED / RETURNED / CANCELLED orders are left alone — the parcel already
+  // reached the buyer or the order is closed.
+  let reverted = false;
+  const order = await prisma.order.findFirst({ where: { id: orderId, tenantId } });
+  const closed = ['DELIVERED', 'RETURNED', 'CANCELLED'];
+  if (order && order.trackingNumber && order.trackingNumber === label.trackingNumber && !closed.includes(order.status)) {
+    const updated = await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        ...(order.status === 'SHIPPED' ? { status: 'CONFIRMED' } : {}),
+        trackingNumber: null, courierName: null, channelShipmentId: null, shippedAt: null,
+      },
+    });
+    await unshipOrderStock({ ...updated, stockStatus: order.stockStatus });
+    reverted = true;
+  }
+  return { cancelled: true, labelId: label.id, orderReverted: reverted };
 }
 
 module.exports = {

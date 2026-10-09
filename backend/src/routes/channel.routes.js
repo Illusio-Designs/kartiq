@@ -892,10 +892,28 @@ router.delete('/:id/amazon/mfn/:shipmentId', requirePermission('shipments.create
     }
     const result = await adapter.cancelMfnShipping(req.params.shipmentId);
     // Keep our stored label in step with Amazon (history kept, no longer active).
-    await require('../utils/db')('order_labels')
-      .where({ tenantId: req.tenant.id, shipmentId: req.params.shipmentId })
-      .update({ status: 'CANCELLED' }).catch(() => {});
-    res.json(result);
+    const lbl = await require('../utils/db')('order_labels')
+      .where({ tenantId: req.tenant.id, shipmentId: req.params.shipmentId, status: 'ACTIVE' }).first();
+    let orderReverted = false;
+    if (lbl) {
+      // Same behaviour as cancelling from the order page: void locally and take
+      // the order back from SHIPPED. (Amazon was already told above.)
+      await require('../utils/db')('order_labels').where({ id: lbl.id }).update({ status: 'CANCELLED' });
+      const order = await prisma.order.findFirst({ where: { id: lbl.orderId, tenantId: req.tenant.id } });
+      if (order && order.trackingNumber && order.trackingNumber === lbl.trackingNumber
+          && !['DELIVERED', 'RETURNED', 'CANCELLED'].includes(order.status)) {
+        const upd = await prisma.order.update({
+          where: { id: order.id },
+          data: {
+            ...(order.status === 'SHIPPED' ? { status: 'CONFIRMED' } : {}),
+            trackingNumber: null, courierName: null, channelShipmentId: null, shippedAt: null,
+          },
+        });
+        await require('../services/stock.service').unshipOrderStock({ ...upd, stockStatus: order.stockStatus });
+        orderReverted = true;
+      }
+    }
+    res.json({ ...result, orderReverted });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

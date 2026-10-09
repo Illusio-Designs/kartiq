@@ -206,7 +206,15 @@ async function main() {
   group('6. No double-buying');
   const again = await req('PATCH', `/orders/${mfn2.id}/status`, { token, body: { status: 'CONFIRMED' } });
   const retry = await req('POST', `/orders/${mfn2.id}/book-shipping`, { token, body: {} });
+  const retryShipped = await (async () => {
+    // (The status control lets a seller move a shipped order back to CONFIRMED —
+    // `again` just did. Put it back so section 11 starts from a genuinely
+    // SHIPPED order; the "moved back by hand" case is covered in section 11.)
+    await db('orders').where({ id: mfn2.id }).update({ status: 'SHIPPED' });
+    return req('POST', `/orders/${mfn2.id}/book-shipping`, { token, body: {} });
+  })();
   ok(retry.status === 409 && /already/.test(JSON.stringify(retry.body)), `Retry on an order that has a label is refused (${retry.status})`);
+  ok(retryShipped.status === 409, `Retry on an already-SHIPPED order is refused too (${retryShipped.status})`);
   ok(callsTo(/POST \/mfn\/v0\/shipments/).length === 1, 'Still exactly 1 label bought in total');
   ok((await db('order_labels').where({ orderId: mfn2.id }).count({ c: '*' }).first()).c === 1, 'Only 1 label row exists for the order');
 
@@ -277,15 +285,59 @@ async function main() {
   const ap = await req('POST', `/orders/${mfn6.id}/approve`, { token, body: {} });
   ok(ap.status === 200 && ap.body.shipping?.booked === true && ap.body.status === 'SHIPPED', `Approve also auto-books and ships (${ap.status}, ${ap.body.status})`);
 
-  // ── 11. Cancel label ─────────────────────────────────────────────────────
-  group('11. Cancel a label');
+  // ── 11. Cancel a label ───────────────────────────────────────────────────
+  group('11. Cancel a label (order goes back, stock goes back)');
+  const stShipped = await stock();
+  const mfn2Shipped = await db('orders').where({ id: mfn2.id }).first();
+  ok(mfn2Shipped.status === 'SHIPPED' && mfn2Shipped.stockStatus === 'DEDUCTED', 'Before cancelling: order SHIPPED, stock DEDUCTED');
   fake.calls.length = 0;
   const del = await req('DELETE', `/orders/${mfn2.id}/label`, { token });
   ok(del.status === 200 && del.body.cancelled === true, `Label cancelled (${del.status})`);
+  ok(del.body.orderReverted === true, 'Response says the order was taken back from SHIPPED');
   ok(callsTo(/DELETE \/mfn\/v0\/shipments\/SHIP-1/).length === 1, 'Amazon was told to void shipment SHIP-1');
   ok((await db('order_labels').where({ orderId: mfn2.id }).first()).status === 'CANCELLED', 'Local label marked CANCELLED (history kept)');
   const gone = await req('GET', `/orders/${mfn2.id}/label`, { token });
   ok(gone.status === 404, `Cancelled label is no longer downloadable (${gone.status})`);
+  const mfn2Back = await db('orders').where({ id: mfn2.id }).first();
+  ok(mfn2Back.status === 'CONFIRMED', `Order is CONFIRMED again, not SHIPPED (is ${mfn2Back.status})`);
+  ok(!mfn2Back.trackingNumber && !mfn2Back.courierName && !mfn2Back.channelShipmentId && !mfn2Back.shippedAt, 'Tracking, courier, shipment id and shipped-time cleared');
+  ok(mfn2Back.stockStatus === 'RESERVED', `Stock status back to RESERVED (is ${mfn2Back.stockStatus})`);
+  const stUnshipped = await stock();
+  ok(stUnshipped.quantityOnHand === stShipped.quantityOnHand + 2 && stUnshipped.quantityReserved === stShipped.quantityReserved + 2,
+    `Stock restored: on-hand +2 (${stShipped.quantityOnHand}→${stUnshipped.quantityOnHand}), reserved +2 (${stShipped.quantityReserved}→${stUnshipped.quantityReserved})`);
+  ok(stUnshipped.quantityAvailable === stShipped.quantityAvailable, 'Available unchanged (the units are still held for this order)');
+  const adj = await db('stock_movements').where({ referenceId: mfn2.id, type: 'ADJUSTMENT' }).first();
+  ok(adj && adj.quantity === 2 && /label cancelled/i.test(adj.notes || ''), 'Ledger has a compensating ADJUSTMENT entry (qty 2, "label cancelled")');
+  const del2 = await req('DELETE', `/orders/${mfn2.id}/label`, { token });
+  ok(del2.status === 404, `Cancelling again is refused, stock not moved twice (${del2.status})`);
+  const stAgain = await stock();
+  ok(stAgain.quantityOnHand === stUnshipped.quantityOnHand, 'Stock unchanged by the repeat cancel');
+
+  const rebook = await req('POST', `/orders/${mfn2.id}/book-shipping`, { token, body: {} });
+  ok(rebook.status === 200 && rebook.body.booked === true, `The order can be booked again (${rebook.status})`);
+  const mfn2Re = await db('orders').where({ id: mfn2.id }).first();
+  ok(mfn2Re.status === 'SHIPPED' && mfn2Re.trackingNumber && mfn2Re.trackingNumber !== 'TRK1001', `New label, new tracking (${mfn2Re.trackingNumber})`);
+  const stRe = await stock();
+  ok(stRe.quantityOnHand === stShipped.quantityOnHand && stRe.quantityReserved === stShipped.quantityReserved, 'Stock deducted exactly once again (same as the first shipment)');
+  ok(Number((await db('order_labels').where({ orderId: mfn2.id, status: 'ACTIVE' }).count({ c: '*' }).first()).c) === 1, 'Exactly one ACTIVE label again');
+
+  // A seller manually moved a shipped order back to CONFIRMED but the label is
+  // still on it: cancelling must still clear the tracking and restore the stock.
+  await db('orders').where({ id: mfn6.id }).update({ status: 'CONFIRMED' });
+  const stM = await stock();
+  const delManual = await req('DELETE', `/orders/${mfn6.id}/label`, { token });
+  const mfn6Manual = await db('orders').where({ id: mfn6.id }).first();
+  const stM2 = await stock();
+  ok(delManual.status === 200 && delManual.body.orderReverted === true && !mfn6Manual.trackingNumber && mfn6Manual.status === 'CONFIRMED' && mfn6Manual.stockStatus === 'RESERVED',
+    'Order manually moved back to CONFIRMED: cancel still clears tracking and returns stock to RESERVED');
+  ok(stM2.quantityOnHand === stM.quantityOnHand + 1 && stM2.quantityReserved === stM.quantityReserved + 1, `…and restores its 1 unit (on-hand ${stM.quantityOnHand}→${stM2.quantityOnHand})`);
+
+  // A DELIVERED order must NOT be pulled back — the parcel reached the buyer.
+  await db('orders').where({ id: mfn3.id }).update({ status: 'DELIVERED' });
+  const delDelivered = await req('DELETE', `/orders/${mfn3.id}/label`, { token });
+  const mfn6After = await db('orders').where({ id: mfn3.id }).first();
+  ok(delDelivered.status === 200 && delDelivered.body.orderReverted === false && mfn6After.status === 'DELIVERED' && !!mfn6After.trackingNumber && mfn6After.stockStatus === 'DEDUCTED',
+    'A DELIVERED order keeps its status and tracking when its label is cancelled');
 
   // ── 12. Tenant isolation ─────────────────────────────────────────────────
   group('12. Another seller cannot touch your labels');
