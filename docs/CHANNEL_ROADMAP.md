@@ -37,13 +37,6 @@ Legend: ☐ untouched · 🟡 code wired & ready, awaiting smoke-test · ✅ smo
 | Done | Channel | Apply URL |
 |---|---|---|
 | 🟡 | Walmart | https://marketplace.walmart.com |
-| 🟡 | Amazon US | https://sellercentral.amazon.com |
-| 🟡 | Amazon UK | https://sellercentral.amazon.co.uk |
-| 🟡 | Amazon UAE | https://sellercentral.amazon.ae |
-| 🟡 | Amazon Saudi Arabia | https://sellercentral.amazon.sa |
-| 🟡 | Amazon Singapore | https://sellercentral.amazon.sg |
-| 🟡 | Amazon Australia | https://sellercentral.amazon.com.au |
-| 🟡 | Amazon Germany | https://sellercentral.amazon.de |
 | 🟡 | Lazada | https://open.lazada.com/apps |
 | 🟡 | Shopee | https://open.shopee.com |
 | 🟡 | Noon | https://partners.noon.com |
@@ -60,7 +53,7 @@ Legend: ☐ untouched · 🟡 code wired & ready, awaiting smoke-test · ✅ smo
 ### Notes on the 🟡 batch
 
 - **Walmart** — adapter rewritten with founder-app OAuth (Solution Provider `client_credentials` grant). Sellers paste only `partnerId` + region; platform-wide `walmart.clientId` / `walmart.clientSecret` live in Admin → Settings. **Needs:** register a Walmart Solution Provider app and a sandbox seller account to smoke-test.
-- **Amazon US/UK/UAE/SA/SG/AU/DE** — Amazon SP-API adapter is region-aware (21-region marketplace-ID + endpoint table). All AMAZON_<REGION> variants reuse the platform's `amazon.appId` / `amazon.clientId` / `amazon.clientSecret`; sellers don't paste secrets. OAuth start route infers region from the channel type. **Needs:** SP-API app must include the matching region group (NA for US; EU for UK/UAE/SA/DE; FE for SG/AU); then smoke-test against a sandbox seller in each marketplace.
+- **Amazon (all countries)** — now a single `AMAZON` catalog entry with a Region selector (the separate AMAZON_<REGION> rows were removed from the catalog; legacy rows still work via aliases). Amazon SP-API adapter is region-aware (21-region marketplace-ID + endpoint table). All AMAZON_<REGION> variants reuse the platform's `amazon.appId` / `amazon.clientId` / `amazon.clientSecret`; sellers don't paste secrets. OAuth start route infers region from the channel type. **Needs:** SP-API app must include the matching region group (NA for US; EU for UK/UAE/SA/DE; FE for SG/AU); then smoke-test against a sandbox seller in each marketplace.
 - **Lazada** — full Lazada Open Platform adapter rewritten in `services/channels/ecom/lazada.js`: HMAC-SHA256 request signing (the previous code never actually computed a signature, so every API call was rejected), region-aware host map for SG/TH/PH/MY/VN/ID, paginated `fetchOrders`, XML-payload inventory updates, OAuth `/oauth/lazada/start` + `/oauth/lazada/callback` routes, and `refreshAccessToken` for the 30-day refresh token. Founder-app pattern: `lazada.appKey` / `lazada.appSecret` / `lazada.redirectUri` live in Admin → Settings; sellers only pick a country and click Authorize. **Needs:** register a Lazada Open Platform app at https://open.lazada.com/apps, then smoke-test against any one country's sandbox seller (the same code path serves all six markets).
 - **Shopee** — full Shopee Open Platform adapter in `services/channels/ecom/shopee.js`: HMAC-SHA256 request signing for both shop-scoped and public endpoints (the previous code skipped signing entirely, so every API call was rejected), country picker covering 12 markets (SG/MY/TH/ID/VN/PH/TW/BR/MX/CO/CL/PL), paginated `fetchOrders` with cursor-based loop and a follow-up `get_order_detail` hydration call to populate items + addresses + totals, `update_stock` adapter via skuMap, `exchangeAuthCode` + `refreshAccessToken` for the 4h access / 30-day refresh tokens. OAuth `/oauth/shopee/start` builds a signed `auth_partner` URL; `/oauth/shopee/callback` receives `code` + `shop_id` and persists tokens encrypted. Founder-app: `shopee.partnerId` / `shopee.partnerKey` / `shopee.redirectUri` live in Admin → Settings. **Needs:** register a Shopee Open Platform app at https://open.shopee.com (one app covers all markets), set the redirect URI to match Admin → Settings, then smoke-test against any one market's sandbox shop.
 - **Noon** — per-merchant API key (no founder app). Adapter in `services/channels/ecom/noon.js`: real `testConnection` against `/v1/partner/me`, paginated `fetchOrders` with `country_code` scoping, `updateInventoryLevel` + `updateListing`. Country picker covers AE/SA/EG. Sellers paste their own apiKey + partnerCode from Noon Partners → Settings → API. **Needs:** smoke-test against a Noon merchant account in any one country (the same code path serves all three).

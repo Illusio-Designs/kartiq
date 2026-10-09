@@ -41,6 +41,18 @@ async function initDb() {
     { table: 'orders', column: 'enrichedAt',       ddl: 'DATETIME(3) DEFAULT NULL' },
     { table: 'orders', column: 'enrichedById',     ddl: 'VARCHAR(191) DEFAULT NULL' },
 
+    // Amazon "auto-book courier": when ON, confirming an Amazon MFN order buys
+    // the cheapest Amazon Buy Shipping rate automatically and stores the label.
+    { table: 'channels', column: 'autoBookShipping', ddl: 'TINYINT(1) NOT NULL DEFAULT 0' },
+    // Demo mode (see services/demo.service.js): a sandbox tenant whose single
+    // demo channel talks to a built-in fake Amazon. Only ever set by the
+    // platform-admin demo setup — never by a seller-facing API.
+    { table: 'tenants',  column: 'isDemo',           ddl: 'TINYINT(1) NOT NULL DEFAULT 0' },
+    { table: 'channels', column: 'isDemo',           ddl: 'TINYINT(1) NOT NULL DEFAULT 0' },
+    // Why the last automatic booking failed (cleared on success) — shown on the
+    // order with a Retry action.
+    { table: 'orders',   column: 'shippingError',    ddl: 'TEXT DEFAULT NULL' },
+
     // Per-channel default fulfillment (SELF | CHANNEL | BOTH)
     { table: 'channels', column: 'defaultFulfillmentType', ddl: "VARCHAR(16) NOT NULL DEFAULT 'SELF'" },
 
@@ -149,43 +161,9 @@ async function initDb() {
     try { await db.raw(sql); } catch (e) { console.warn('[initDb] push_devices:', e.message); }
   }
 
-  // Create wallet tables if they don't exist (separate from column migrations)
-  const walletTables = [
-    `CREATE TABLE IF NOT EXISTS \`tenant_wallets\` (
-      \`id\` varchar(191) NOT NULL,
-      \`tenantId\` varchar(191) NOT NULL,
-      \`balance\` decimal(12,2) NOT NULL DEFAULT 0.00,
-      \`currency\` varchar(8) NOT NULL DEFAULT 'INR',
-      \`lowBalanceThreshold\` decimal(12,2) NOT NULL DEFAULT 100.00,
-      \`autoTopupEnabled\` tinyint(1) NOT NULL DEFAULT 0,
-      \`autoTopupAmount\` decimal(12,2) DEFAULT NULL,
-      \`autoTopupTriggerBelow\` decimal(12,2) DEFAULT NULL,
-      \`createdAt\` datetime(3) NOT NULL DEFAULT current_timestamp(3),
-      \`updatedAt\` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
-      PRIMARY KEY (\`id\`),
-      UNIQUE KEY \`tenant_wallets_tenantId_unique\` (\`tenantId\`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
-    `CREATE TABLE IF NOT EXISTS \`wallet_transactions\` (
-      \`id\` varchar(191) NOT NULL,
-      \`tenantId\` varchar(191) NOT NULL,
-      \`walletId\` varchar(191) NOT NULL,
-      \`type\` varchar(16) NOT NULL,
-      \`amount\` decimal(12,2) NOT NULL,
-      \`balanceAfter\` decimal(12,2) NOT NULL,
-      \`metric\` varchar(32) DEFAULT NULL,
-      \`quantity\` int(11) DEFAULT NULL,
-      \`reference\` varchar(191) DEFAULT NULL,
-      \`description\` text DEFAULT NULL,
-      \`createdById\` varchar(191) DEFAULT NULL,
-      \`paymentRef\` varchar(191) DEFAULT NULL,
-      \`createdAt\` datetime(3) NOT NULL DEFAULT current_timestamp(3),
-      PRIMARY KEY (\`id\`),
-      UNIQUE KEY \`wallet_txn_payment_ref_unique\` (\`tenantId\`, \`paymentRef\`),
-      KEY \`wallet_txn_tenant_idx\` (\`tenantId\`, \`createdAt\`),
-      KEY \`wallet_txn_wallet_idx\` (\`walletId\`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
-    // Saved Razorpay tokens / customer ids per tenant — required for autopay
-    // (recurring charges to the wallet without re-prompting the user).
+  // Billing-support tables (saved payment methods, referrals, notifications …)
+  const billingTables = [
+    // Saved Razorpay tokens / customer ids per tenant — used for plan renewals.
     `CREATE TABLE IF NOT EXISTS \`tenant_payment_methods\` (
       \`id\` varchar(191) NOT NULL,
       \`tenantId\` varchar(191) NOT NULL,
@@ -211,6 +189,27 @@ async function initDb() {
       UNIQUE KEY \`pm_provider_token_unique\` (\`tenantId\`, \`providerTokenId\`),
       KEY \`pm_tenant_idx\` (\`tenantId\`, \`isActive\`),
       KEY \`pm_default_idx\` (\`tenantId\`, \`isDefault\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+    // Shipping labels bought for an order (Amazon Buy Shipping). The label file
+    // is kept (base64) so it can be reprinted any time. One ACTIVE label per
+    // order; a cancelled label is kept for history with status='CANCELLED'.
+    `CREATE TABLE IF NOT EXISTS \`order_labels\` (
+      \`id\` varchar(191) NOT NULL,
+      \`tenantId\` varchar(191) NOT NULL,
+      \`orderId\` varchar(191) NOT NULL,
+      \`channelId\` varchar(191) DEFAULT NULL,
+      \`shipmentId\` varchar(191) DEFAULT NULL,
+      \`trackingNumber\` varchar(191) DEFAULT NULL,
+      \`carrier\` varchar(191) DEFAULT NULL,
+      \`serviceName\` varchar(191) DEFAULT NULL,
+      \`cost\` decimal(10,2) DEFAULT NULL,
+      \`currency\` varchar(8) DEFAULT NULL,
+      \`mime\` varchar(64) DEFAULT NULL,
+      \`content\` longtext DEFAULT NULL,
+      \`status\` varchar(16) NOT NULL DEFAULT 'ACTIVE',
+      \`createdAt\` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+      PRIMARY KEY (\`id\`),
+      KEY \`ol_order_idx\` (\`tenantId\`, \`orderId\`, \`status\`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
     // Channel settlements / payouts — e.g. Amazon SP-API financialEventGroups.
     // One row per settlement group (payout) so the dashboard can reconcile what
@@ -343,7 +342,6 @@ async function initDb() {
       \`status\` varchar(16) NOT NULL DEFAULT 'pending',
       \`rewardAmount\` decimal(12,2) NOT NULL DEFAULT 0.00,
       \`rewardCurrency\` varchar(8) NOT NULL DEFAULT 'INR',
-      \`walletTransactionId\` varchar(191) DEFAULT NULL,
       \`signedUpAt\` datetime(3) NOT NULL DEFAULT current_timestamp(3),
       \`convertedAt\` datetime(3) DEFAULT NULL,
       \`voidedAt\` datetime(3) DEFAULT NULL,
@@ -458,8 +456,30 @@ async function initDb() {
       KEY \`notif_type_idx\` (\`type\`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
   ];
-  for (const sql of walletTables) {
+  for (const sql of billingTables) {
     try { await db.raw(sql); } catch (e) { console.warn('[initDb] wallet table:', e.message); }
+  }
+  // Pay-As-You-Go / wallet / plan-limit removal — drop the legacy tables and
+  // columns. Idempotent: every statement is IF EXISTS-guarded or checked first.
+  for (const t of ['wallet_transactions', 'tenant_wallets', 'usage_meters']) {
+    try { await db.raw(`DROP TABLE IF EXISTS \`${t}\``); } catch (e) { console.warn(`[initDb] drop ${t}:`, e.message); }
+  }
+  const droppedColumns = [
+    ['plans', 'maxFacilities'], ['plans', 'maxSkus'], ['plans', 'maxUserRoles'], ['plans', 'maxUsers'],
+    ['plans', 'maxOrdersPerMonth'], ['plans', 'meteredRates'],
+    ['subscriptions', 'payAsYouGo'], ['referrals', 'walletTransactionId'],
+  ];
+  for (const [table, column] of droppedColumns) {
+    try {
+      const [cols] = await db.raw(
+        "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?",
+        [table, column]
+      );
+      if (Array.isArray(cols) ? cols.length > 0 : !!cols) {
+        await db.raw(`ALTER TABLE \`${table}\` DROP COLUMN \`${column}\``);
+        console.log(`[initDb] dropped: ${table}.${column}`);
+      }
+    } catch (e) { console.warn(`[initDb] drop column ${table}.${column} skipped:`, e.message); }
   }
   for (const m of migrations) {
     try {
@@ -523,18 +543,10 @@ async function initDb() {
   }
 
   // Retrofit unique constraints onto existing databases. These guard:
-  //  - wallet_transactions: idempotent paymentRef across webhook + sync verify
   //  - tenant_payment_methods: token row uniqueness, prevents webhook dupes
   // ALTER TABLE ADD UNIQUE is rejected by MySQL when duplicates already exist
   // — we de-dupe first so the ALTER succeeds.
   const uniqueIndexes = [
-    {
-      table: 'wallet_transactions',
-      name: 'wallet_txn_payment_ref_unique',
-      cols: '(`tenantId`, `paymentRef`)',
-      // Deletes older duplicates keeping the lowest id (string sort works for UUID v7-ish)
-      dedupe: "DELETE t1 FROM wallet_transactions t1 INNER JOIN wallet_transactions t2 WHERE t1.id > t2.id AND t1.tenantId = t2.tenantId AND t1.paymentRef IS NOT NULL AND t1.paymentRef = t2.paymentRef",
-    },
     {
       table: 'tenant_payment_methods',
       name: 'pm_provider_token_unique',

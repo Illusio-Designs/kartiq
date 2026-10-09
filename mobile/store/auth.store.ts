@@ -53,18 +53,12 @@ interface Plan {
   id: string;
   code: string;
   name: string;
-  maxFacilities: number | null;
-  maxSkus: number | null;
-  maxUserRoles: number | null;
-  maxUsers: number | null;
-  maxOrdersPerMonth: number | null;
   features: Record<string, any>;
 }
 
 interface Subscription {
   id: string;
   status: string;
-  payAsYouGo: boolean;
   currentPeriodEnd: string;
 }
 

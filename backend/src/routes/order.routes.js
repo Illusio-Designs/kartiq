@@ -2,9 +2,11 @@ const { Router } = require('express');
 const { randomUUID } = require('crypto');
 const { getOrders, getOrder, getOrderStats, createOrder, updateOrderStatus, cancelOrder } = require('../controllers/order.controller');
 const {
-  authenticate, requireTenant, requirePermission, requireFeature, enforceLimit,
+  authenticate, requireTenant, requirePermission, requireFeature,
 } = require('../middleware/auth.middleware');
 const { requestReviewForOrder, processReviewQueue, REVIEW_DELAY_HOURS } = require('../services/review.service');
+const { autoBookAmazonShipping, getActiveLabel, cancelOrderLabel, buildBulkLabelsPdf } = require('../services/amazonShipping.service');
+const { buildPackingSlip, buildBulkPackingSlips } = require('../services/packingSlip.service');
 const { rankWarehouses, pickBestWarehouse } = require('../services/routing.service');
 const { scoreAndPersist } = require('../services/rto.service');
 const { VIDEO_TYPES, RETENTION_DAYS, stampRetentionOnDelivery } = require('../services/vms.service');
@@ -18,6 +20,33 @@ router.use(authenticate, requireTenant);
 // ═════════════════════════════════════════════════════════════════════════════
 // REVIEW REQUESTS — MUST be declared before /:id routes to avoid conflicts
 // ═════════════════════════════════════════════════════════════════════════════
+
+// ── Bulk packing slips — MUST be declared before /:id routes ─────────────────
+// body: { ids: string[] } (max 100). Returns ONE printable HTML document with a
+// slip per page, plus which orders were skipped and why (FBA, cancelled, not
+// found). JSON (not raw HTML) so the UI can report the skips.
+router.post('/packing-slips', requirePermission('orders.read'), async (req, res) => {
+  try {
+    const r = await buildBulkPackingSlips(req.body?.ids, req.tenant.id);
+    if (r.error) return res.status(r.status).json({ error: r.error, skipped: r.skipped || [] });
+    res.json({ html: r.html, printed: r.printed, skipped: r.skipped });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Bulk shipping labels — MUST be declared before /:id routes ───────────────
+// body: { ids: string[] } (max 100). Returns ONE merged PDF (base64) with a
+// label per page, plus which orders were skipped and why.
+router.post('/labels', requirePermission('shipments.read'), async (req, res) => {
+  try {
+    const r = await buildBulkLabelsPdf(req.body?.ids, req.tenant.id);
+    if (r.error) return res.status(r.status).json({ error: r.error, skipped: r.skipped || [] });
+    res.json({ pdf: r.pdf, printed: r.printed, pages: r.pages, skipped: r.skipped });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 router.post('/process-review-queue', requirePermission('orders.update'), async (req, res) => {
   try {
@@ -186,7 +215,77 @@ router.post('/:id/approve', requirePermission('orders.update'), async (req, res)
         status: 'CONFIRMED',
       },
     });
+    // Approving is a confirmation too — auto-book the Amazon courier if enabled.
+    const shipping = await autoBookAmazonShipping(updated.id, { tenantId: req.tenant.id });
+    if (shipping.booked || shipping.error) {
+      const fresh = await prisma.order.findFirst({ where: { id: updated.id, tenantId: req.tenant.id } });
+      return res.json({ ...(fresh || updated), shipping });
+    }
     res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Packing slip (goes inside the parcel; no prices) ─────────────────────────
+// Self-fulfilled orders only. Returns a print-ready HTML page.
+router.get('/:id/packing-slip', requirePermission('orders.read'), async (req, res) => {
+  try {
+    const r = await buildPackingSlip(req.params.id, req.tenant.id);
+    if (r.error) return res.status(r.status).json({ error: r.error });
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(r.html);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Amazon auto-booked shipping label ────────────────────────────────────────
+// Retry the automatic booking (e.g. after fixing the warehouse address). Works
+// even if the channel's auto-book switch is off — the seller asked explicitly.
+router.post('/:id/book-shipping', requirePermission('shipments.create'), async (req, res) => {
+  const result = await autoBookAmazonShipping(req.params.id, { tenantId: req.tenant.id, force: true });
+  if (result.error) return res.status(400).json(result);
+  if (!result.booked) return res.status(409).json(result);
+  res.json(result);
+});
+
+// Download / print the stored label (PDF/PNG/ZPL as originally bought).
+router.get('/:id/label', requirePermission('shipments.read'), async (req, res) => {
+  try {
+    const order = await prisma.order.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const label = await getActiveLabel(order.id, req.tenant.id);
+    if (!label || !label.content) return res.status(404).json({ error: 'No label saved for this order' });
+    if (req.query.format === 'meta') {
+      return res.json({
+        id: label.id, trackingNumber: label.trackingNumber, carrier: label.carrier, serviceName: label.serviceName,
+        cost: label.cost, currency: label.currency, mime: label.mime, createdAt: label.createdAt,
+      });
+    }
+    if (req.query.format === 'json') {
+      return res.json({
+        id: label.id, trackingNumber: label.trackingNumber, carrier: label.carrier, serviceName: label.serviceName,
+        cost: label.cost, currency: label.currency, mime: label.mime, contentBase64: label.content, createdAt: label.createdAt,
+      });
+    }
+    res.setHeader('Content-Type', label.mime || 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="label-${order.orderNumber || order.id}"`);
+    res.send(Buffer.from(label.content, 'base64'));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Void the label on Amazon (refund) and keep the record as CANCELLED.
+router.delete('/:id/label', requirePermission('shipments.create'), async (req, res) => {
+  try {
+    const order = await prisma.order.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const result = await cancelOrderLabel(order.id, req.tenant.id);
+    if (!result.cancelled) return res.status(404).json(result);
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -397,7 +496,7 @@ router.delete('/:id/videos/:videoId', requirePermission('orders.update'), requir
 router.get('/',              requirePermission('orders.read'),    getOrders);
 router.get('/stats',         requirePermission('orders.read'),    getOrderStats);
 router.get('/:id',           requirePermission('orders.read'),    getOrder);
-router.post('/',             requirePermission('orders.create'),  enforceLimit('orders'), createOrder);
+router.post('/',             requirePermission('orders.create'),  createOrder);
 router.patch('/:id/status',  requirePermission('orders.update'),  updateOrderStatus);
 router.patch('/:id/cancel',  requirePermission('orders.cancel'),  cancelOrder);
 

@@ -1,19 +1,15 @@
 // Razorpay payment bridge.
 //
-// Two flows:
 //   subscribeToPlan(planCode, billingCycle, savePaymentMethod?)
 //     → /payments/checkout → native Razorpay modal → /payments/verify
 //
-//   topupWallet(amount, savePaymentMethod?)
-//     → /payments/wallet-checkout → native Razorpay modal → /payments/wallet-verify
-//
-// Both use the `react-native-razorpay` native module. The module ships
+// Uses the `react-native-razorpay` native module. The module ships
 // native code so the app must be a development build (or production EAS
 // build) — it will not work in Expo Go. We lazy-require so the app boots
 // either way and falls back gracefully.
 
 import { Alert } from 'react-native';
-import { paymentApi, billingApi } from './api';
+import { paymentApi } from './api';
 
 type CheckoutResponse = {
   order: { id: string; amount: number; currency: string; stub?: boolean };
@@ -117,62 +113,6 @@ export async function subscribeToPlan(
   } catch (err: any) {
     if (err?.code === 0 || err?.code === 'PAYMENT_CANCELLED') return { ok: false, cancelled: true };
     Alert.alert('Payment failed', err?.description || err?.message || 'Unknown error');
-    return { ok: false };
-  }
-}
-
-/**
- * Top up the tenant wallet via Razorpay. Optionally saves the card so the
- * backend autopay job can recharge automatically when the balance dips.
- */
-export async function topupWallet(amount: number, savePaymentMethod = true) {
-  let co: CheckoutResponse;
-  try {
-    const r = await paymentApi.walletCheckout({ amount, savePaymentMethod });
-    co = r.data;
-  } catch (err: any) {
-    Alert.alert('Top-up failed', err?.response?.data?.error || err.message);
-    return { ok: false };
-  }
-
-  // Stub mode (dev / no Razorpay creds) — credit immediately so the wallet
-  // ledger stays usable while developing.
-  if (co.order?.stub) {
-    try {
-      await billingApi.topupWallet(amount);
-      return { ok: true, dev: true };
-    } catch (err: any) {
-      Alert.alert('Top-up failed', err?.response?.data?.error || err.message);
-      return { ok: false };
-    }
-  }
-
-  const RazorpayCheckout = loadRazorpay();
-  if (!RazorpayCheckout) {
-    Alert.alert(
-      'Razorpay not available',
-      'Rebuild the dev client with react-native-razorpay to charge a real card. Falling back to dev credit.'
-    );
-    try {
-      await billingApi.topupWallet(amount);
-      return { ok: true, dev: true };
-    } catch {
-      return { ok: false };
-    }
-  }
-
-  try {
-    const result: any = await RazorpayCheckout.open(buildOptions(co, 'Kartriq Wallet', `Top-up ₹${amount}`));
-    await paymentApi.walletVerify({
-      razorpay_order_id: result.razorpay_order_id,
-      razorpay_payment_id: result.razorpay_payment_id,
-      razorpay_signature: result.razorpay_signature,
-      amount,
-    });
-    return { ok: true };
-  } catch (err: any) {
-    if (err?.code === 0 || err?.code === 'PAYMENT_CANCELLED') return { ok: false, cancelled: true };
-    Alert.alert('Top-up failed', err?.description || err?.response?.data?.error || err?.message || 'Unknown error');
     return { ok: false };
   }
 }

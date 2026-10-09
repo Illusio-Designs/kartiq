@@ -7,7 +7,7 @@ import { formatCurrency } from '@/lib/utils';
 import { Card, Skeleton, EmptyState, DateRangePicker, Badge, Button } from '@/components/ui';
 import { StatRow } from '@/components/StatCards';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { Boxes, ShoppingCart, Wallet, Receipt, Undo2, TrendingUp, Download, ShieldAlert, Trophy } from 'lucide-react';
+import { Boxes, ShoppingCart, Landmark, Receipt, Undo2, TrendingUp, Download, ShieldAlert, Trophy } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
 const EarningsAreaChart = dynamic(() => import('@/components/charts/EarningsAreaChart'), {
@@ -98,7 +98,7 @@ export default function ReportsPage() {
 
       {/* KPI stat row — revenue headline + return rate */}
       <StatRow items={[
-        { label: 'Revenue', value: formatCurrency(sales?.revenue || 0), tone: 'emerald', icon: <Wallet size={16} />, hint: 'Gross, paid orders', loading: salesLoading },
+        { label: 'Revenue', value: formatCurrency(sales?.revenue || 0), tone: 'emerald', icon: <Landmark size={16} />, hint: 'Gross, paid orders', loading: salesLoading },
         { label: 'Orders', value: (sales?.orders ?? 0).toLocaleString(), tone: 'blue', icon: <ShoppingCart size={16} />, hint: 'Excludes cancelled', loading: salesLoading },
         { label: 'Avg order value', value: formatCurrency(sales?.avgOrder || 0), tone: 'slate', icon: <Receipt size={16} />, loading: salesLoading },
         { label: 'Return rate', value: `${returnRate}%`, tone: returnRate >= 5 ? 'rose' : 'amber', icon: <Undo2 size={16} />, hint: 'Returned ÷ total orders' },

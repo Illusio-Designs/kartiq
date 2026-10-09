@@ -19,10 +19,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle auth + plan-limit errors globally
-type PlanLimitCallback = (info: any) => void;
-let onPlanLimitHit: PlanLimitCallback | null = null;
-export function setPlanLimitHandler(cb: PlanLimitCallback | null) { onPlanLimitHit = cb; }
+// Handle auth errors globally
 
 api.interceptors.response.use(
   (res) => res,
@@ -40,8 +37,10 @@ api.interceptors.response.use(
         localStorage.removeItem('token');
         localStorage.removeItem('kartriq-auth');
         window.location.href = '/login';
-      } else if (status === 402 && onPlanLimitHit) {
-        onPlanLimitHit(err.response.data || {});
+      } else if (status === 402 && err.response?.data?.upgradeUrl) {
+        // Trial / past-due lockout: send the user to the billing page.
+        const target = String(err.response.data.upgradeUrl);
+        if (!window.location.pathname.startsWith(target)) window.location.href = target;
       }
     }
     return Promise.reject(err);
@@ -86,23 +85,11 @@ export const planApi = {
 export const billingApi = {
   subscription: () => api.get('/billing/subscription'),
   usage: () => api.get('/billing/usage'),
-  changePlan: (data: { planCode: string; billingCycle?: string; payAsYouGo?: boolean }) =>
+  changePlan: (data: { planCode: string; billingCycle?: string }) =>
     api.post('/billing/subscription/change', data),
-  togglePayg: (enabled: boolean) => api.post('/billing/subscription/payg', { enabled }),
   toggleAutoRenew: (enabled: boolean) => api.post('/billing/subscription/auto-renew', { enabled }),
   cancel: () => api.post('/billing/subscription/cancel', {}),
   invoices: () => api.get('/billing/invoices'),
-  // Wallet
-  wallet: () => api.get('/billing/wallet'),
-  walletTransactions: (limit?: number) => api.get('/billing/wallet/transactions', { params: { limit } }),
-  topupWallet: (amount: number, paymentRef?: string) =>
-    api.post('/billing/wallet/topup', { amount, paymentRef }),
-  walletSettings: (body: {
-    lowBalanceThreshold?: number;
-    autoTopupEnabled?: boolean;
-    autoTopupAmount?: number;
-    autoTopupTriggerBelow?: number;
-  }) => api.patch('/billing/wallet/settings', body),
   updateTenant: (data: { businessName?: string; gstin?: string }) =>
     api.patch('/billing/tenant', data),
   // Tenant-visible audit log (own tenant only)
@@ -170,19 +157,13 @@ export const inviteApi = {
 };
 
 // ── SaaS: payments (Razorpay) ──────────────────────────────────────
-// Two flows:
-//   1. Plan checkout: checkout(planCode) → Razorpay → verify({...resp,planCode})
-//   2. Wallet top-up:  walletCheckout(amount) → Razorpay → walletVerify({...resp,amount})
+// Plan checkout: checkout(planCode) → Razorpay → verify({...resp,planCode})
 // Saved methods (cards/UPI tokens) drive the autopay job once a user opts in.
 export const paymentApi = {
   // Plan upgrade
   checkout: (data: { planCode: string; billingCycle?: string; savePaymentMethod?: boolean }) =>
     api.post('/payments/checkout', data),
   verify: (data: any) => api.post('/payments/verify', data),
-  // Wallet top-up
-  walletCheckout: (data: { amount: number; savePaymentMethod?: boolean }) =>
-    api.post('/payments/wallet-checkout', data),
-  walletVerify: (data: any) => api.post('/payments/wallet-verify', data),
   // Saved methods (autopay)
   methods: () => api.get('/payments/methods'),
   setDefaultMethod: (id: string) => api.post(`/payments/methods/${id}/default`, {}),
@@ -218,6 +199,10 @@ export const adminApi = {
   activateTenant: (id: string) => api.post(`/admin/tenants/${id}/activate`, {}),
   restoreTenant: (id: string) => api.post(`/admin/tenants/${id}/restore`, {}),
   assignPlan: (id: string, data: any) => api.post(`/admin/tenants/${id}/assign-plan`, data),
+  // Demo mode: a sandbox tenant with a fake Amazon, for click-through testing on a live site
+  demoStatus: () => api.get('/admin/demo'),
+  demoSetup: (data: { email?: string; password?: string; businessName?: string }) => api.post('/admin/demo/setup', data),
+  demoReset: () => api.post('/admin/demo/reset', {}),
   // subscriptions
   subscriptions: () => api.get('/admin/subscriptions'),
   // blog
@@ -468,6 +453,17 @@ export const orderApi = {
   scoreRto: (id: string) => api.post(`/orders/${id}/rto/score`, {}),
   approve: (id: string) => api.post(`/orders/${id}/approve`, {}),
   reject: (id: string, reason?: string) => api.post(`/orders/${id}/reject`, { reason }),
+  // Amazon auto-booked shipping label (saved server-side so it can be reprinted)
+  labelMeta: (id: string) => api.get(`/orders/${id}/label`, { params: { format: 'meta' } }),
+  labelFile: (id: string) => api.get(`/orders/${id}/label`, { responseType: 'blob' }),
+  // Packing slip (print-ready HTML, no prices) for self-fulfilled orders
+  packingSlip: (id: string) => api.get(`/orders/${id}/packing-slip`, { responseType: 'blob' }),
+  // Many packing slips in one printable document (max 100): { html, printed, skipped[] }
+  packingSlips: (ids: string[]) => api.post('/orders/packing-slips', { ids }),
+  // Many saved shipping labels merged into ONE PDF (max 100): { pdf (base64), printed, pages, skipped[] }
+  labels: (ids: string[]) => api.post('/orders/labels', { ids }),
+  bookShipping: (id: string) => api.post(`/orders/${id}/book-shipping`, {}),
+  cancelLabel: (id: string) => api.delete(`/orders/${id}/label`),
   enrich: (id: string, body: any) => api.patch(`/orders/${id}/enrich`, body),
   setFulfillment: (id: string, body: { fulfillmentType: 'SELF' | 'CHANNEL' | 'DROPSHIP'; channelFulfillmentCenter?: string }) =>
     api.patch(`/orders/${id}/fulfillment`, body),
@@ -552,6 +548,8 @@ export const channelApi = {
     api.post('/channels', data),
   update: (id: string, data: any) => api.put(`/channels/${id}`, data),
   delete: (id: string) => api.delete(`/channels/${id}`),
+  // Enable FBA / Smart Biz on a connected Amazon channel (reuses its credentials)
+  amazonAddons: (id: string, types: string[]) => api.post(`/channels/${id}/amazon-addons`, { types }),
 
   // Global catalog — all channels in the market + connection status
   catalog: (params?: { category?: string }) => api.get('/channels/catalog', { params }),

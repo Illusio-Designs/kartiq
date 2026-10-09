@@ -71,9 +71,7 @@ export default function AdminPlansPage() {
               <th className="text-left p-3">Name</th>
               <th className="text-right p-3">Monthly</th>
               <th className="text-right p-3">Yearly</th>
-              <th className="text-right p-3">Facilities</th>
-              <th className="text-right p-3">SKUs</th>
-              <th className="text-right p-3">Roles</th>
+              <th className="text-right p-3">Features</th>
               <th className="text-center p-3">Active</th>
               <th className="p-3"></th>
             </tr>
@@ -86,9 +84,7 @@ export default function AdminPlansPage() {
                 <td className="p-3 font-semibold">{p.name}</td>
                 <td className="p-3 text-right">₹{Number(p.monthlyPrice).toLocaleString()}</td>
                 <td className="p-3 text-right">₹{Number(p.yearlyPrice).toLocaleString()}</td>
-                <td className="p-3 text-right">{p.maxFacilities ?? '∞'}</td>
-                <td className="p-3 text-right">{p.maxSkus?.toLocaleString() ?? '∞'}</td>
-                <td className="p-3 text-right">{p.maxUserRoles ?? '∞'}</td>
+                <td className="p-3 text-right">{Object.values(p.features || {}).filter(Boolean).length}</td>
                 <td className="p-3 text-center">{p.isActive ? '✅' : '—'}</td>
                 <td className="p-3 flex gap-2 justify-end">
                   <Tooltip content="Edit plan">
@@ -118,8 +114,7 @@ function PlanForm({ initial, onClose, onSave }: {
 }) {
   const [f, setF] = useState<any>(initial || {
     code: '', name: '', tagline: '', monthlyPrice: 0, yearlyPrice: 0,
-    maxFacilities: 1, maxSkus: 100000, maxUserRoles: 3, maxUsers: 5, maxOrdersPerMonth: 5000,
-    features: {}, meteredRates: {}, isPublic: true, isActive: true, sortOrder: 0,
+    features: {}, isPublic: true, isActive: true, sortOrder: 0,
   });
   const FEATURES = [
     'returns','vms','paymentReconciliation','mobileApp','purchaseManagement','barcoding',
@@ -137,11 +132,6 @@ function PlanForm({ initial, onClose, onSave }: {
         </div>
         <Input label="Monthly price (₹)" type="number" value={f.monthlyPrice ?? ''} onChange={(e) => setF({ ...f, monthlyPrice: Number(e.target.value) })} />
         <Input label="Yearly price (₹)"  type="number" value={f.yearlyPrice ?? ''}  onChange={(e) => setF({ ...f, yearlyPrice: Number(e.target.value) })} />
-        <Input label="Max facilities (blank=∞)" type="number" value={f.maxFacilities ?? ''} onChange={(e) => setF({ ...f, maxFacilities: e.target.value === '' ? null : Number(e.target.value) })} />
-        <Input label="Max SKUs (blank=∞)"       type="number" value={f.maxSkus ?? ''}       onChange={(e) => setF({ ...f, maxSkus: e.target.value === '' ? null : Number(e.target.value) })} />
-        <Input label="Max user roles (blank=∞)" type="number" value={f.maxUserRoles ?? ''}  onChange={(e) => setF({ ...f, maxUserRoles: e.target.value === '' ? null : Number(e.target.value) })} />
-        <Input label="Max users (blank=∞)"      type="number" value={f.maxUsers ?? ''}      onChange={(e) => setF({ ...f, maxUsers: e.target.value === '' ? null : Number(e.target.value) })} />
-        <Input label="Max orders/mo (blank=∞)"  type="number" value={f.maxOrdersPerMonth ?? ''} onChange={(e) => setF({ ...f, maxOrdersPerMonth: e.target.value === '' ? null : Number(e.target.value) })} />
       </div>
 
       <div className="mt-4">

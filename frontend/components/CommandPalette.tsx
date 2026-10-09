@@ -19,7 +19,7 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Package, ShoppingBag, Users, Plug, FileText, Building2,
-  Store, Wallet, Settings, BarChart3, Plus, Search, ArrowRight, CornerDownLeft,
+  Store, CreditCard, Settings, BarChart3, Plus, Search, ArrowRight, CornerDownLeft,
   LifeBuoy, Activity, Cpu, FileEdit, Inbox, Megaphone,
 } from 'lucide-react';
 import { productApi, orderApi, leadsApi, adminApi } from '@/lib/api';
@@ -105,7 +105,7 @@ export function CommandPalette() {
         // Platform pages
         { id: 'admin-overview',   group: 'Platform', label: 'Overview',       icon: LayoutDashboard, run: go('/admin') },
         { id: 'admin-tenants-p',  group: 'Platform', label: 'Tenants',        icon: Building2,       run: go('/admin/tenants') },
-        { id: 'admin-plans',      group: 'Platform', label: 'Plans',  keywords: 'plans pricing billing tiers', icon: Wallet, run: go('/admin/plans') },
+        { id: 'admin-plans',      group: 'Platform', label: 'Plans',  keywords: 'plans pricing billing tiers', icon: CreditCard, run: go('/admin/plans') },
         { id: 'admin-tickets-p',  group: 'Platform', label: 'Tickets',        icon: LifeBuoy,        run: go('/admin/tickets') },
         { id: 'admin-leads-p',    group: 'Platform', label: 'Leads',          keywords: 'demo contact form inquiries', icon: Inbox, run: go('/admin/leads') },
         { id: 'admin-analytics',  group: 'Platform', label: 'Analytics',      icon: BarChart3,       run: go('/admin/analytics') },
@@ -129,7 +129,6 @@ export function CommandPalette() {
       // Quick actions
       { id: 'new-order',    group: 'Quick actions', label: 'Create new order',    icon: Plus, run: go('/orders?new=1') },
       { id: 'new-product',  group: 'Quick actions', label: 'Create new product',  icon: Plus, run: go('/products?new=1') },
-      { id: 'topup',        group: 'Quick actions', label: 'Top up wallet',       icon: Wallet, run: go('/dashboard/billing') },
 
       // Navigation
       { id: 'go-dashboard',  group: 'Pages', label: 'Dashboard',     icon: LayoutDashboard, run: go('/dashboard') },
@@ -142,7 +141,7 @@ export function CommandPalette() {
 
       // Settings + billing
       { id: 'go-settings', group: 'Settings', label: 'Settings',         icon: Settings, run: go('/settings') },
-      { id: 'go-billing',  group: 'Settings', label: 'Billing & wallet', icon: Wallet,   run: go('/dashboard/billing') },
+      { id: 'go-billing',  group: 'Settings', label: 'Billing', icon: CreditCard,   run: go('/dashboard/billing') },
       { id: 'go-audit',    group: 'Settings', label: 'Activity log',     keywords: 'audit security history changes', icon: Settings, run: go('/audit') },
       { id: 'go-referrals', group: 'Settings', label: 'Refer & earn',    keywords: 'referral affiliate share invite reward earn', icon: Settings, run: go('/referrals') },
       { id: 'go-team',     group: 'Settings', label: 'Team',             icon: Users,    run: go('/dashboard/team') },

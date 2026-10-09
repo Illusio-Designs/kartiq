@@ -9,7 +9,7 @@ import { SearchRouteReset } from './SearchRouteReset';
 import { Breadcrumbs } from './Breadcrumbs';
 import { useAuthStore, isTokenExpired } from '@/store/auth.store';
 import { MaintenancePage } from '@/components/MaintenancePage';
-import { setPlanLimitHandler, authApi, publicApi } from '@/lib/api';
+import { authApi, publicApi } from '@/lib/api';
 import { Loader } from '@/components/ui/Loader';
 import { TrialBanner } from '@/components/TrialBanner';
 import { BillingLock } from '@/components/BillingLock';
@@ -18,7 +18,7 @@ import { ChangelogDrawer } from '@/components/ChangelogDrawer';
 import { HelpDrawer } from '@/components/HelpDrawer';
 import { InboxDrawer } from '@/components/InboxDrawer';
 import { Toaster } from '@/components/ui/Toaster';
-import { Eye, X, ArrowLeft, Zap } from 'lucide-react';
+import { Eye, ArrowLeft } from 'lucide-react';
 
 // Each page renders its own <DashboardLayout>, so a client-side navigation
 // remounts it. Without this module-level flag, `authChecked` would reset to
@@ -37,7 +37,6 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { impersonatingTenant, stopImpersonation, isPlatformAdmin, setContext, logout } = useAuthStore();
   const [maintenance, setMaintenance] = useState<{ enabled: boolean; message: string; eta: string } | null>(null);
   const [authChecked, setAuthChecked] = useState(_authValidatedOnce);
-  const [planLimit, setPlanLimit] = useState<any>(null);
   // zustand `persist` restores the token from localStorage on the client AFTER
   // the first render. Until that finishes, the store token is null — running
   // the auth guard against it would bounce a logged-in user to /login on every
@@ -103,28 +102,6 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       });
   }, [hydrated]);
 
-  // ── Global 402 plan-limit handler
-  // Two flavours of 402:
-  //   1. Real plan-limit hits (e.g. SKU cap) — show the dismissable banner
-  //      so the user can review their usage / upgrade.
-  //   2. Trial / past-due lockouts — the backend tags those with an
-  //      `upgradeUrl`. Don't bother with the banner; the BillingLock
-  //      component already overlays the children with a hard lockscreen,
-  //      and a route push gets the user straight to the right page.
-  useEffect(() => {
-    setPlanLimitHandler((info) => {
-      if (info?.upgradeUrl && typeof window !== 'undefined') {
-        // Avoid a redirect loop if we're already there
-        if (!window.location.pathname.startsWith(info.upgradeUrl)) {
-          router.push(info.upgradeUrl);
-        }
-        return;
-      }
-      setPlanLimit(info);
-    });
-    return () => setPlanLimitHandler(null);
-  }, [router]);
-
   useEffect(() => {
     publicApi.maintenance()
       .then(res => { if (res.data) setMaintenance(res.data); })
@@ -181,34 +158,6 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           </div>
         )}
         <Topbar />
-        {planLimit && (
-          <div className="bg-rose-50 border-b border-rose-200 text-rose-800 px-4 py-2.5 flex items-center justify-between text-sm">
-            <div className="flex items-center gap-2">
-              <Zap size={14} className="text-rose-600" />
-              <span className="font-bold">
-                {planLimit.error || 'Plan limit reached'}
-              </span>
-              {planLimit.metric && (
-                <span className="text-rose-600">— {planLimit.metric} {planLimit.used ?? ''}/{planLimit.limit ?? '∞'}</span>
-              )}
-              {planLimit.requiredPlan && (
-                <span className="text-rose-600">— requires {planLimit.requiredPlan}</span>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <Link href="/dashboard/billing" className="px-3 py-1 rounded-lg bg-rose-600 text-white text-xs font-bold hover:bg-rose-700">
-                {planLimit.metric === 'orders' || planLimit.unitRate ? 'Top up wallet' : 'Upgrade'}
-              </Link>
-              <button
-                onClick={() => setPlanLimit(null)}
-                className="p-1 hover:bg-rose-100 rounded"
-                aria-label="Dismiss"
-              >
-                <X size={14} />
-              </button>
-            </div>
-          </div>
-        )}
         <TrialBanner />
         <div className="flex-1 p-4 sm:p-5 lg:p-6 xl:p-8 animate-fade-in flex flex-col">
           {/* One shared content width for EVERY dashboard page — centered and

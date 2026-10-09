@@ -59,13 +59,23 @@ export default function OrderDetailPage() {
     }
   }, [order?.id, order?.status]);
 
+  // Confirming an Amazon MFN order can auto-book the courier; the server reports
+  // the outcome as `shipping` on the response. Show it and refresh the label.
+  const announceShipping = (data: any, fallback: string) => {
+    const sh = data?.shipping;
+    if (sh?.booked) toast.success(`Amazon courier booked${sh.carrier ? ` (${sh.carrier})` : ''} — label ready to print`);
+    else if (sh?.error) toast.error(`Order confirmed, but the courier was not booked: ${sh.error}`);
+    else toast.success(fallback);
+    qc.invalidateQueries({ queryKey: ['order-label', id] });
+  };
+
   const statusMutation = useMutation({
     mutationFn: (body: { status: string; trackingNumber?: string; courierName?: string }) =>
       orderApi.updateStatus(id, body),
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       qc.invalidateQueries({ queryKey: ['order', id] });
       qc.invalidateQueries({ queryKey: ['orders'] });
-      toast.success('Order updated');
+      announceShipping(res?.data, 'Order updated');
     },
     onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Failed to update order'),
   });
@@ -75,10 +85,10 @@ export default function OrderDetailPage() {
   // Approving confirms the order so it can ship; rejecting cancels it.
   const approveMutation = useMutation({
     mutationFn: () => orderApi.approve(id),
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       qc.invalidateQueries({ queryKey: ['order', id] });
       qc.invalidateQueries({ queryKey: ['orders'] });
-      toast.success('Order approved — cleared for fulfilment');
+      announceShipping(res?.data, 'Order approved — cleared for fulfilment');
     },
     onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not approve order'),
   });
@@ -216,11 +226,11 @@ export default function OrderDetailPage() {
   const [amznServiceId, setAmznServiceId] = useState('');
   const [amznResult, setAmznResult] = useState<any>(null);
   const [amznLabelUrl, setAmznLabelUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (amznWhId) return;
-    if (order?.warehouse?.id) setAmznWhId(order.warehouse.id);
-    else if (warehouses.length) setAmznWhId(warehouses[0].id);
-  }, [order?.warehouse?.id, warehouses.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Ship-from: what the seller picked, else the order's own warehouse, else the
+  // first REAL warehouse (never the virtual "Amazon FBA" facility — Amazon ships
+  // MFN parcels from the seller's address). Derived, so it can't go stale or
+  // lock onto whichever list loaded first.
+  const amznWh: string = amznWhId || order?.warehouse?.id || order?.warehouseId || warehouses.find((w: any) => !w.isVirtual)?.id || '';
 
   const amznWeightPayload = () => ({ value: Number(amznWeight) || 500, unit: 'grams' });
   const amznDimsPayload = () => ({
@@ -235,7 +245,7 @@ export default function OrderDetailPage() {
       channelApi
         .amazonMfnRates(order.channelId || order.channel?.id, {
           orderId: order.id,
-          warehouseId: amznWhId || undefined,
+          warehouseId: amznWh || undefined,
           weight: amznWeightPayload(),
           dimensions: amznDimsPayload(),
         })
@@ -256,7 +266,7 @@ export default function OrderDetailPage() {
       return channelApi
         .amazonMfnBuy(order.channelId || order.channel?.id, {
           orderId: order.id,
-          warehouseId: amznWhId || undefined,
+          warehouseId: amznWh || undefined,
           shippingServiceId: amznServiceId,
           shippingServiceOfferId: rate?.serviceOfferId || undefined,
           weight: amznWeightPayload(),
@@ -282,6 +292,76 @@ export default function OrderDetailPage() {
       toast.success('Amazon shipping label purchased');
     },
     onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not buy Amazon label'),
+  });
+
+  // ── Saved shipping label (auto-booked or bought here) ───────────────────────
+  // The label is stored server-side, so it can be printed again any time.
+  const { data: savedLabel } = useQuery({
+    queryKey: ['order-label', id],
+    queryFn: () => orderApi.labelMeta(id).then((r) => r.data).catch(() => null),
+    enabled: !!id,
+    retry: false,
+  });
+  const openLabel = async (mode: 'print' | 'download') => {
+    try {
+      const r = await orderApi.labelFile(id);
+      const mime = (r.data as Blob).type || savedLabel?.mime || 'application/pdf';
+      const url = URL.createObjectURL(new Blob([r.data], { type: mime }));
+      if (mode === 'download') {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `label-${order?.orderNumber || id}.${mime.includes('png') ? 'png' : mime.includes('pdf') ? 'pdf' : 'txt'}`;
+        a.click();
+      } else {
+        const w = window.open(url, '_blank');
+        if (w) w.addEventListener('load', () => { try { w.print(); } catch { /* user can print manually */ } });
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || e.message || 'Could not load the label');
+    }
+  };
+  // Packing slip — print-ready page for the parcel (self-fulfilled orders only).
+  const [slipLoading, setSlipLoading] = useState(false);
+  const printPackingSlip = async () => {
+    setSlipLoading(true);
+    try {
+      const r = await orderApi.packingSlip(id);
+      const url = URL.createObjectURL(new Blob([r.data], { type: 'text/html' }));
+      const w = window.open(url, '_blank');
+      if (w) w.addEventListener('load', () => { try { w.print(); } catch { /* user can print manually */ } });
+      else toast.error('Pop-up blocked — allow pop-ups to print the packing slip');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e: any) {
+      // The error body is a Blob when responseType is 'blob' — read the message out of it.
+      let msg = e?.message || 'Could not open the packing slip';
+      try { const t = await e?.response?.data?.text?.(); if (t) msg = JSON.parse(t).error || msg; } catch { /* keep default */ }
+      toast.error(msg);
+    } finally {
+      setSlipLoading(false);
+    }
+  };
+  const bookShippingMutation = useMutation({
+    mutationFn: () => orderApi.bookShipping(id).then((r) => r.data),
+    onSuccess: () => {
+      toast.success('Amazon courier booked — label ready to print');
+      qc.invalidateQueries({ queryKey: ['order', id] });
+      qc.invalidateQueries({ queryKey: ['order-label', id] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+    },
+    onError: (e: any) => {
+      toast.error(e?.response?.data?.error || e?.response?.data?.skipped || e.message || 'Could not book Amazon courier');
+      qc.invalidateQueries({ queryKey: ['order', id] });
+    },
+  });
+  const cancelLabelMutation = useMutation({
+    mutationFn: () => orderApi.cancelLabel(id).then((r) => r.data),
+    onSuccess: () => {
+      toast.success('Label cancelled with Amazon');
+      qc.invalidateQueries({ queryKey: ['order-label', id] });
+      qc.invalidateQueries({ queryKey: ['order', id] });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Could not cancel the label'),
   });
 
   // ── Video Management (VMS) — packing/dispatch clips ─────────────────────────
@@ -718,11 +798,76 @@ export default function OrderDetailPage() {
           </Card>
         )}
 
+        {/* Packing slip — inside-the-parcel sheet (no prices). Self-fulfilled orders only;
+            channel-fulfilled (FBA) orders are packed by the marketplace. */}
+        {order.fulfillmentType === 'SELF' && order.status !== 'CANCELLED' && (
+          <Card className="p-5">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Package size={15} className="text-emerald-600" />
+                  <span className="text-sm font-bold text-slate-800">Packing slip</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">Items, quantities and addresses to put in the parcel. No prices.</p>
+              </div>
+              <Button size="sm" variant="secondary" leftIcon={<Printer size={14} />} loading={slipLoading} onClick={printPackingSlip}>
+                Print packing slip
+              </Button>
+            </div>
+          </Card>
+        )}
+
+        {/* Saved Amazon shipping label (auto-booked on confirm, or bought below) + any
+            booking error with a Retry. Printing never re-buys: the file is stored. */}
+        {order.fulfillmentType === 'SELF' && isAmazonChannel && (savedLabel || order.shippingError) && (
+          <Card className="p-5 space-y-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Printer size={15} className="text-emerald-600" />
+              <span className="text-sm font-bold text-slate-800">Shipping label</span>
+              {savedLabel ? <Badge variant="emerald" dot>Ready</Badge> : <Badge variant="rose" dot>Not booked</Badge>}
+            </div>
+            {savedLabel && (
+              <>
+                <div className="text-xs text-slate-600">
+                  <span className="font-mono text-slate-800">{savedLabel.trackingNumber || '—'}</span>
+                  {savedLabel.carrier ? <span className="text-slate-400"> · {savedLabel.carrier}</span> : null}
+                  {savedLabel.serviceName ? <span className="text-slate-400"> · {savedLabel.serviceName}</span> : null}
+                  {savedLabel.cost != null ? <span className="text-slate-400"> · {formatCurrency(Number(savedLabel.cost))}</span> : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" leftIcon={<Printer size={14} />} onClick={() => openLabel('print')}>Print label</Button>
+                  <Button size="sm" variant="secondary" onClick={() => openLabel('download')}>Download</Button>
+                  {order.status !== 'DELIVERED' && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      loading={cancelLabelMutation.isPending}
+                      onClick={() => {
+                        if (window.confirm('Cancel this label with Amazon? You will need to book a new one to ship this order.')) cancelLabelMutation.mutate();
+                      }}
+                    >
+                      Cancel label
+                    </Button>
+                  )}
+                </div>
+              </>
+            )}
+            {!savedLabel && order.shippingError && (
+              <>
+                <p className="text-xs text-red-600 break-words">{order.shippingError}</p>
+                <Button size="sm" loading={bookShippingMutation.isPending} onClick={() => bookShippingMutation.mutate()}>
+                  Retry booking
+                </Button>
+              </>
+            )}
+          </Card>
+        )}
+
         {/* Buy shipping via Amazon (Merchant Fulfilment / Buy Shipping) — only
             for self-fulfilled (MFN) Amazon orders. The Amazon-preferred path:
             buy a partnered-carrier label that auto-confirms the shipment and
             keeps valid tracking for Prime & seller metrics. */}
-        {order.fulfillmentType === 'SELF' && isAmazonChannel && (
+        {order.fulfillmentType === 'SELF' && isAmazonChannel && !savedLabel && (
           <Card className="p-5 space-y-4">
             <div className="flex items-center gap-2 flex-wrap">
               <PackageCheck size={15} className="text-emerald-600" />
@@ -738,9 +883,9 @@ export default function OrderDetailPage() {
               <div className="col-span-2 sm:col-span-3 lg:col-span-2">
                 <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Ship from</label>
                 <Select
-                  value={amznWhId}
+                  value={amznWh}
                   onChange={setAmznWhId}
-                  options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+                  options={warehouses.filter((w: any) => !w.isVirtual).map((w) => ({ value: w.id, label: w.name }))}
                   placeholder="Select warehouse…"
                   fullWidth
                 />

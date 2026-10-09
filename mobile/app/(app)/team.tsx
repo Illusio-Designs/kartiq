@@ -47,12 +47,7 @@ export default function TeamScreen() {
     },
     onError: (err: any) => {
       const msg = err?.response?.data?.error || err?.response?.data?.message || 'Failed to add user';
-      // Backend returns 402 when plan limit is reached
-      if (err?.response?.status === 402) {
-        Alert.alert('Plan limit reached', `You've reached your plan's user limit (${plan?.maxUsers}). Upgrade to add more team members.`);
-      } else {
-        Alert.alert('Error', msg);
-      }
+      Alert.alert('Error', msg);
     },
   });
 
@@ -69,9 +64,6 @@ export default function TeamScreen() {
   const list: any[] = Array.isArray(users) ? users : users?.items ?? [];
   const roles: any[] = Array.isArray(rolesData) ? rolesData : rolesData?.items ?? [];
   const activeCount = list.filter((u) => u.isActive !== false).length;
-
-  const maxUsers = plan?.maxUsers ?? null;
-  const atLimit = maxUsers != null && activeCount >= maxUsers;
 
   const onSubmit = () => {
     if (!name.trim()) { Alert.alert('Required', 'Name is required'); return; }
@@ -114,10 +106,6 @@ export default function TeamScreen() {
             size="sm"
             leftIcon={<Plus size={12} color="#fff" />}
             onPress={() => {
-              if (atLimit) {
-                Alert.alert('Plan limit reached', `Your plan allows up to ${maxUsers} users. Upgrade to add more.`);
-                return;
-              }
               setShowInvite(true);
             }}
           >
@@ -130,7 +118,7 @@ export default function TeamScreen() {
       refreshing={isRefetching}
       onRefresh={refetch}
     >
-      {/* Plan usage card */}
+      {/* Team summary card */}
       {plan ? (
         <Card className="p-5 mb-4">
           <View className="flex-row items-center mb-3">
@@ -139,7 +127,7 @@ export default function TeamScreen() {
             </View>
             <View className="flex-1">
               <Text className="text-[15px] font-bold text-slate-900 tracking-tight">
-                Users Quota
+                Team members
               </Text>
               <Text className="text-[13px] text-slate-500 font-medium">
                 {plan.name} plan
@@ -147,24 +135,8 @@ export default function TeamScreen() {
             </View>
             <Text className="text-[20px] font-extrabold text-slate-900 tracking-tight">
               {activeCount}
-              {maxUsers != null ? (
-                <Text className="text-slate-400 font-bold"> / {maxUsers}</Text>
-              ) : null}
             </Text>
           </View>
-          {maxUsers != null ? (
-            <View className="h-2 bg-slate-100 rounded-full overflow-hidden">
-              <View
-                className={`h-full rounded-full ${atLimit ? 'bg-rose-500' : 'bg-emerald-500'}`}
-                style={{ width: `${Math.min(100, (activeCount / maxUsers) * 100)}%` }}
-              />
-            </View>
-          ) : null}
-          {atLimit ? (
-            <Text className="text-[12px] text-rose-600 font-bold mt-3">
-              Plan limit reached — upgrade to add more users
-            </Text>
-          ) : null}
         </Card>
       ) : null}
 

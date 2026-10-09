@@ -60,23 +60,11 @@ export const planApi = {
 export const billingApi = {
   subscription: () => api.get('/billing/subscription'),
   usage: () => api.get('/billing/usage'),
-  changePlan: (data: { planCode: string; billingCycle?: string; payAsYouGo?: boolean }) =>
+  changePlan: (data: { planCode: string; billingCycle?: string }) =>
     api.post('/billing/subscription/change', data),
-  togglePayg: (enabled: boolean) => api.post('/billing/subscription/payg', { enabled }),
   toggleAutoRenew: (enabled: boolean) => api.post('/billing/subscription/auto-renew', { enabled }),
   cancel: () => api.post('/billing/subscription/cancel', {}),
   invoices: () => api.get('/billing/invoices'),
-  // Wallet
-  wallet: () => api.get('/billing/wallet'),
-  walletTransactions: (limit?: number) => api.get('/billing/wallet/transactions', { params: { limit } }),
-  topupWallet: (amount: number, paymentRef?: string) =>
-    api.post('/billing/wallet/topup', { amount, paymentRef }),
-  walletSettings: (body: {
-    lowBalanceThreshold?: number;
-    autoTopupEnabled?: boolean;
-    autoTopupAmount?: number;
-    autoTopupTriggerBelow?: number;
-  }) => api.patch('/billing/wallet/settings', body),
   updateTenant: (data: { businessName?: string; gstin?: string }) =>
     api.patch('/billing/tenant', data),
   // Tenant-visible audit log (own tenant only) — same endpoint the web
@@ -244,16 +232,12 @@ export const changelogApi = {
 
 // ── Razorpay checkout / verification ──────────────────────────────
 // Plan flow:    checkout(planCode) → react-native-razorpay → verify(...)
-// Wallet flow:  walletCheckout(amount) → react-native-razorpay → walletVerify(...)
 // Methods:      methods() / setDefaultMethod(id) / deleteMethod(id)  drive
-//               the backend autopay job for wallet auto top-ups.
+//               the backend autopay job for subscription renewals.
 export const paymentApi = {
   checkout: (data: { planCode: string; billingCycle?: string; savePaymentMethod?: boolean }) =>
     api.post('/payments/checkout', data),
   verify: (data: any) => api.post('/payments/verify', data),
-  walletCheckout: (data: { amount: number; savePaymentMethod?: boolean }) =>
-    api.post('/payments/wallet-checkout', data),
-  walletVerify: (data: any) => api.post('/payments/wallet-verify', data),
   methods: () => api.get('/payments/methods'),
   setDefaultMethod: (id: string) => api.post(`/payments/methods/${id}/default`, {}),
   deleteMethod: (id: string) => api.delete(`/payments/methods/${id}`),

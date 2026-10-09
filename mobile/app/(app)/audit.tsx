@@ -32,7 +32,6 @@ const VERB_TINT: Record<string, string> = {
   cancel:   'bg-rose-100 text-rose-700',
   enable:   'bg-emerald-100 text-emerald-700',
   disable:  'bg-rose-100 text-rose-700',
-  topup:    'bg-emerald-100 text-emerald-700',
   reset:    'bg-blue-100 text-blue-700',
   export:   'bg-violet-100 text-violet-700',
 };

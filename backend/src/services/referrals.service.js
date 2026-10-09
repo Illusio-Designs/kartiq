@@ -3,11 +3,8 @@
 // Each tenant gets a short unique code (`KQ-XXXXXX`) on first request. They
 // share it via URL `?ref=CODE` on signup pages. When a referred tenant
 // converts (defined here as: subscription transitions from TRIAL → ACTIVE
-// on a paid plan), the referrer's wallet is credited.
-//
-// Wallet credit happens via the existing wallet.topup() pipeline so the
-// transaction lands in the same ledger and is idempotent on `reference`
-// (we use `referral:<referralId>` as the dedup key).
+// on a paid plan), the referral is marked converted with its reward amount
+// recorded for manual settlement (there is no wallet).
 //
 // Configuration knobs (read from platform_settings on demand):
 //   referral.rewardAmount    — INR per conversion (default 500)
@@ -90,42 +87,28 @@ async function recordSignup({ referredTenantId, code }) {
   return { id };
 }
 
-// Called when a referred tenant becomes a paying customer. Credits the
-// referrer's wallet, links the wallet transaction id, and flips status to
-// converted. Safe to call repeatedly — only the first call has effect.
+// Called when a referred tenant becomes a paying customer. Flips the status to
+// converted and records the reward. Safe to call repeatedly — only the first call has effect.
 async function markConverted(referredTenantId, { reason } = {}) {
   const row = await db('referrals')
     .where({ referredTenantId, status: 'pending' })
     .first();
   if (!row) return null;
 
-  // Credit the referrer's wallet using the existing service so the txn
-  // lands in the same ledger. `reference` enforces idempotency: a second
-  // call with the same key is rejected by wallet.topup's dedup check.
-  const wallet = require('./wallet.service');
-  const txn = await wallet.topup(row.referrerTenantId, Number(row.rewardAmount), {
-    reference: `referral:${row.id}`,
-    description: `Referral reward · ${row.code}`,
-    type: 'REFERRAL_REWARD',
-  }).catch((err) => {
-    console.warn('[referrals] wallet credit failed for', row.id, err.message);
-    return null;
-  });
-
+  // The prepaid wallet no longer exists, so the reward is recorded on the
+  // referral row (rewardAmount) and settled manually by the founder team.
   await db('referrals').where({ id: row.id }).update({
     status: 'converted',
     convertedAt: new Date(),
-    walletTransactionId: txn?.transactionId || null,
   });
 
   // Audit (without a request context — this fires from a job/route handler)
-  return { id: row.id, referrerTenantId: row.referrerTenantId, walletTransactionId: txn?.transactionId, reason };
+  return { id: row.id, referrerTenantId: row.referrerTenantId, reason };
 }
 
 // Manual void from admin tooling. Called when a referred tenant is found
-// to be fraudulent / a duplicate. If already converted we don't claw back
-// the wallet — that needs a manual debit from the founder (avoids surprise
-// negative balances).
+// to be fraudulent / a duplicate. If already converted the reward is not
+// clawed back automatically — handle it manually.
 async function voidReferral(id, reason = 'Manual void') {
   const row = await db('referrals').where({ id }).first();
   if (!row) return null;

@@ -1,9 +1,10 @@
 const { Router } = require('express');
 const {
-  authenticate, requireTenant, requirePermission, requireFeature, enforceLimit,
+  authenticate, requireTenant, requirePermission, requireFeature,
 } = require('../middleware/auth.middleware');
 const prisma = require('../utils/prisma');
-const { encryptCredentials, maskCredentials } = require('../utils/crypto');
+const { encryptCredentials, decryptCredentials, maskCredentials } = require('../utils/crypto');
+const { recordPurchasedLabel } = require('../services/amazonShipping.service');
 const { getAdapter, getCategoryForType, importOrders, pushInventoryToChannel, importCatalogFromChannel, syncChannelSettlements, listChannelSettlements, syncChannelReturns, listChannelReturns, ensureDefaultWarehouse } = require('../services/channel.service');
 const { CATALOG, getCatalogEntry, getCatalogByCategory } = require('../data/channel-catalog');
 
@@ -13,7 +14,6 @@ router.use(authenticate, requireTenant);
 // ── Plan-based channel access ───────────────────────────────────────────
 // The plan's features.channelCategories array lists which categories are unlocked.
 // A null/undefined value means "all categories allowed" (ENTERPRISE).
-// The plan's features.maxChannels is the hard count limit (null = unlimited).
 const CATEGORY_PLAN_HINT = {
   // Minimum plan tier commonly needed for each category — used for user messaging
   ECOM: 'STANDARD',
@@ -71,13 +71,20 @@ router.get('/catalog', requirePermission('channels.read'), async (req, res) => {
     const [userChannels, userRequests] = await Promise.all([
       prisma.channel.findMany({
         where: { tenantId, isActive: true },
-        select: { id: true, name: true, type: true, lastSyncAt: true },
+        select: { id: true, name: true, type: true, lastSyncAt: true, credentials: true },
       }),
       prisma.channelRequest.findMany({
         where: { tenantId, requestedBy: req.user.id },
         select: { id: true, type: true, status: true, createdAt: true },
       }),
     ]);
+
+    // Region of the connected Amazon account (decrypted server-side only) so the
+    // UI can offer region-specific add-ons such as Smart Biz (India only).
+    let amazonRegion = null;
+    const amazonCh = userChannels.find((c) => c.type === 'AMAZON' && c.credentials);
+    if (amazonCh) { try { amazonRegion = String(decryptCredentials(amazonCh.credentials)?.region || 'IN').toUpperCase(); } catch { /* ignore */ } }
+    for (const ch of userChannels) delete ch.credentials; // never leave this handler
 
     const channelsByType = {};
     for (const ch of userChannels) {
@@ -88,7 +95,6 @@ router.get('/catalog', requirePermission('channels.read'), async (req, res) => {
 
     const planCode = getTenantPlanCode(req);
     const isPlatformAdmin = !!req.user?.isPlatformAdmin;
-    const maxChannels = req.plan?.features?.maxChannels;
     const usedChannels = userChannels.length;
 
     const entries = getCatalogByCategory(category).map((entry) => {
@@ -109,6 +115,10 @@ router.get('/catalog', requirePermission('channels.read'), async (req, res) => {
         requiredPlan,
         connectedChannels: connected,
         pendingRequest: requestByType[entry.type] || null,
+        ...(entry.addons ? {
+          region: amazonRegion,
+          addons: entry.addons.map((a) => ({ ...a, connectedChannels: channelsByType[a.type] || [] })),
+        } : {}),
       };
     });
 
@@ -119,7 +129,6 @@ router.get('/catalog', requirePermission('channels.read'), async (req, res) => {
       plan_locked: entries.filter((e) => e.status === 'plan_locked').length,
       not_available: entries.filter((e) => e.status === 'not_available').length,
       currentPlan: planCode,
-      maxChannels: maxChannels ?? null,
       usedChannels,
     };
 
@@ -320,7 +329,6 @@ router.get('/:id', requirePermission('channels.read'), async (req, res) => {
 
 router.post('/',
   requirePermission('channels.create'),
-  enforceLimit('channels'),
   async (req, res) => {
     try {
       const { name, type, category } = req.body;
@@ -358,17 +366,68 @@ router.post('/',
   }
 );
 
+// Amazon add-ons — FBA and Smart Biz share the marketplace's seller account and
+// SP-API credentials, so instead of a second OAuth round-trip we create the
+// add-on channel and copy the (re-encrypted) credentials from the parent
+// AMAZON channel. Smart Biz is India-only.
+router.post('/:id/amazon-addons',
+  requirePermission('channels.create'),
+  async (req, res) => {
+    try {
+      const parent = await loadTenantChannel(req);
+      if (!parent || parent.type !== 'AMAZON') return res.status(404).json({ error: 'Amazon channel not found' });
+      if (!parent.credentials) return res.status(400).json({ error: 'Connect the Amazon account first' });
+
+      const creds = decryptCredentials(parent.credentials);
+      const region = String(creds?.region || 'IN').toUpperCase();
+      const parentEntry = getCatalogEntry('AMAZON');
+      const types = [...new Set(Array.isArray(req.body?.types) ? req.body.types : [])];
+      const isPlatformAdmin = !!req.user?.isPlatformAdmin;
+
+      const created = [];
+      for (const type of types) {
+        const addon = (parentEntry.addons || []).find((a) => a.type === type);
+        if (!addon) return res.status(400).json({ error: `${type} is not an Amazon add-on` });
+        if (addon.regions && !addon.regions.includes(region)) {
+          return res.status(400).json({ error: `${addon.label} is only available for ${addon.regions.join(', ')} sellers` });
+        }
+        const category = getCategoryForType(type);
+        if (!isPlatformAdmin && !isCategoryAllowed(req, category)) {
+          const requiredPlan = CATEGORY_PLAN_HINT[category] || 'STANDARD';
+          return res.status(402).json({ error: `${addon.label} requires the ${requiredPlan} plan or higher`, requiredPlan, currentPlan: getTenantPlanCode(req) });
+        }
+        const existing = await prisma.channel.findFirst({ where: { tenantId: req.tenant.id, type, isActive: true } });
+        if (existing) { created.push(safeChannel(existing)); continue; }
+        const ch = await prisma.channel.create({
+          data: {
+            tenantId: req.tenant.id,
+            name: `${parent.name} – ${addon.label}`,
+            type,
+            category,
+            credentials: encryptCredentials(creds),
+          },
+        });
+        created.push(safeChannel(ch));
+      }
+      res.status(201).json({ channels: created });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  }
+);
+
 router.put('/:id', requirePermission('channels.update'), async (req, res) => {
   try {
     const existing = await loadTenantChannel(req);
     if (!existing) return res.status(404).json({ error: 'Channel not found' });
 
-    const { name, isActive, defaultFulfillmentType } = req.body;
+    const { name, isActive, defaultFulfillmentType, autoBookShipping } = req.body;
     // Whitelist updatable fields; only include what was actually sent so a
     // partial PATCH-style body doesn't null out untouched columns.
     const data = {};
     if (name !== undefined) data.name = name;
     if (isActive !== undefined) data.isActive = isActive;
+    if (autoBookShipping !== undefined) data.autoBookShipping = !!autoBookShipping;
     if (defaultFulfillmentType !== undefined) {
       if (!['SELF', 'CHANNEL'].includes(defaultFulfillmentType)) {
         return res.status(400).json({ error: 'defaultFulfillmentType must be SELF or CHANNEL' });
@@ -871,23 +930,9 @@ router.post('/:id/amazon/mfn/buy', requirePermission('shipments.create'), async 
       shipFrom, weight: req.body.weight, dimensions: req.body.dimensions, declaredValue: req.body.declaredValue,
       shippingServiceId: req.body.shippingServiceId, shippingServiceOfferId: req.body.shippingServiceOfferId,
     });
-    // Buying the label registers + confirms the shipment on Amazon, so advance
-    // the local order to SHIPPED with the tracking Amazon assigned.
-    if (result.trackingId) {
-      await prisma.order.update({
-        where: { id: order.id },
-        data: {
-          trackingNumber: result.trackingId,
-          courierName: result.carrier || 'Amazon',
-          channelShipmentId: result.shipmentId || null,
-          status: 'SHIPPED',
-          shippedAt: new Date(),
-          // Buying the label ships the order — the RTO review gate is moot now,
-          // so clear it to avoid the "NEEDS REVIEW" badge masking a SHIPPED status.
-          needsApproval: false,
-        },
-      }).catch(() => {});
-    }
+    // Buying the label registers + confirms the shipment on Amazon: store the
+    // label (so it can be reprinted), advance the order to SHIPPED, move stock.
+    await recordPurchasedLabel(order, channel.id, result);
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: 'Buy shipping failed', details: err.message });
@@ -903,7 +948,29 @@ router.delete('/:id/amazon/mfn/:shipmentId', requirePermission('shipments.create
       return res.status(400).json({ error: 'This channel does not support Amazon Buy Shipping' });
     }
     const result = await adapter.cancelMfnShipping(req.params.shipmentId);
-    res.json(result);
+    // Keep our stored label in step with Amazon (history kept, no longer active).
+    const lbl = await require('../utils/db')('order_labels')
+      .where({ tenantId: req.tenant.id, shipmentId: req.params.shipmentId, status: 'ACTIVE' }).first();
+    let orderReverted = false;
+    if (lbl) {
+      // Same behaviour as cancelling from the order page: void locally and take
+      // the order back from SHIPPED. (Amazon was already told above.)
+      await require('../utils/db')('order_labels').where({ id: lbl.id }).update({ status: 'CANCELLED' });
+      const order = await prisma.order.findFirst({ where: { id: lbl.orderId, tenantId: req.tenant.id } });
+      if (order && order.trackingNumber && order.trackingNumber === lbl.trackingNumber
+          && !['DELIVERED', 'RETURNED', 'CANCELLED'].includes(order.status)) {
+        const upd = await prisma.order.update({
+          where: { id: order.id },
+          data: {
+            ...(order.status === 'SHIPPED' ? { status: 'CONFIRMED' } : {}),
+            trackingNumber: null, courierName: null, channelShipmentId: null, shippedAt: null,
+          },
+        });
+        await require('../services/stock.service').unshipOrderStock({ ...upd, stockStatus: order.stockStatus });
+        orderReverted = true;
+      }
+    }
+    res.json({ ...result, orderReverted });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

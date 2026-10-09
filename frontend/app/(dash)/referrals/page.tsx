@@ -102,7 +102,7 @@ export default function ReferralsPage() {
           subtitle={
             <>
               Share your link. When a friend signs up and upgrades to a paid plan,
-              {data ? <> you earn <strong className="text-slate-700">{fmt(data.rewardPerConversion, data.currency)}</strong> credited to your wallet.</> : ' you earn wallet credit.'}
+              {data ? <> you earn <strong className="text-slate-700">{fmt(data.rewardPerConversion, data.currency)}</strong> as a reward.</> : ' you earn a reward.'}
             </>
           }
         />
@@ -188,7 +188,7 @@ export default function ReferralsPage() {
               <h3 className="font-bold text-slate-900">No referrals yet</h3>
               <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
                 Share your link with a friend running an online business. When they sign up
-                and upgrade to a paid plan, the reward lands in your wallet automatically.
+                and upgrade to a paid plan, the reward is recorded automatically.
               </p>
             </div>
           ) : (
@@ -252,8 +252,7 @@ export default function ReferralsPage() {
           <ol className="text-sm text-slate-600 space-y-2 list-decimal pl-5">
             <li>Share your code or link with someone running an online store.</li>
             <li>They sign up using your link — referral status is <strong className="text-amber-600">Pending</strong>.</li>
-            <li>When they upgrade to a paid plan, the reward lands in your wallet automatically and the row turns <strong className="text-emerald-600">Converted</strong>.</li>
-            <li>Use the wallet balance for plan upgrades, overage charges, or anything else billable.</li>
+            <li>When they upgrade to a paid plan, the reward is recorded automatically and the row turns <strong className="text-emerald-600">Converted</strong>.</li>
           </ol>
           <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
             Self-referrals and obvious abuse are blocked. We may void rewards if a referred

@@ -74,7 +74,6 @@ export default function SettingsScreen() {
       rows: [
         { label: 'Plan', value: plan?.name ?? '\u2014' },
         { label: 'Status', value: subscription?.status ?? '\u2014' },
-        { label: 'PAYG', value: subscription?.payAsYouGo ? 'On' : 'Off' },
       ],
     },
     {

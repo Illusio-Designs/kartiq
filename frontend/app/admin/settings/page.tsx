@@ -18,7 +18,7 @@ const CATEGORY_META: Record<string, { label: string; description: string; icon: 
   smtp:        { label: 'SMTP Email',     description: 'Outbound email transport. Leave blank for console-stub mode in dev.',        icon: Mail },
   billing:     { label: 'Billing',        description: 'Grace periods, invoice policy.',                                             icon: Sparkles },
   reviews:     { label: 'Reviews',        description: 'Automated review-request cadence.',                                          icon: Clock },
-  referral:    { label: 'Referral',       description: 'Wallet reward paid to referrers when an invited tenant becomes a paid customer.', icon: Gift },
+  referral:    { label: 'Referral',       description: 'Referral reward settings for referrers when an invited tenant becomes a paid customer.', icon: Gift },
   tracking:    { label: 'Tracking',       description: 'Analytics IDs injected into the public site (GA, FB Pixel, Microsoft Clarity).', icon: BarChart3 },
   maintenance: { label: 'Maintenance',    description: 'Toggle the dashboard maintenance page and customise the message users see.', icon: Wrench },
 };

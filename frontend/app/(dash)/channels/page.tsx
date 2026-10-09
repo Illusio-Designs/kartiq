@@ -186,6 +186,9 @@ type CatalogEntry = {
   applyUrl?: string;
   docsUrl?: string;
   connectedChannels?: Array<{ id: string; name: string }>;
+  groupedUnder?: string;
+  region?: string | null;
+  addons?: Array<{ type: string; label: string; description?: string; regions: string[] | null; connectedChannels: Array<{ id: string; name: string }> }>;
   pendingRequest?: { id: string; status: string } | null;
 };
 
@@ -195,6 +198,7 @@ export default function ChannelsPage() {
   const [search, setSearch] = useState('');
   const [connectModal, setConnectModal] = useState<CatalogEntry | null>(null);
   const [requestModal, setRequestModal] = useState<CatalogEntry | null>(null);
+  const [addonsModal, setAddonsModal] = useState<CatalogEntry | null>(null);
   const qc = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -211,6 +215,8 @@ export default function ChannelsPage() {
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
     const all: CatalogEntry[] = (data?.catalog || []).filter((e: CatalogEntry) => {
+      // FBA / Smart Biz live inside the Amazon card as add-ons, not as own rows.
+      if (e.groupedUnder) return false;
       if (statusFilter) {
         // "Available" also surfaces plan-locked channels (connect after upgrade).
         if (statusFilter === 'available') {
@@ -338,6 +344,7 @@ export default function ChannelsPage() {
                     entry={entry}
                     onConnect={() => setConnectModal(entry)}
                     onRequest={() => setRequestModal(entry)}
+                    onAddons={() => setAddonsModal(entry)}
                   />
                 )) : (
                   <tr>
@@ -365,6 +372,13 @@ export default function ChannelsPage() {
           onSuccess={() => { setConnectModal(null); qc.invalidateQueries({ queryKey: ['channels-catalog'] }); }}
         />
       )}
+      {addonsModal && (
+        <AddonsModal
+          entry={addonsModal}
+          onClose={() => setAddonsModal(null)}
+          onSuccess={() => { setAddonsModal(null); qc.invalidateQueries({ queryKey: ['channels-catalog'] }); }}
+        />
+      )}
       {requestModal && (
         <RequestModal
           entry={requestModal}
@@ -378,12 +392,83 @@ export default function ChannelsPage() {
 
 // ═══════════════════════════════════════════════════════════════════════════
 
+function AddonPicker({
+  addons, region, selected, onChange, disabled,
+}: {
+  addons: NonNullable<CatalogEntry['addons']>;
+  region: string;
+  selected: string[];
+  onChange: (v: string[]) => void;
+  disabled?: boolean;
+}) {
+  const visible = addons.filter((a) => !a.connectedChannels.length && (!a.regions || a.regions.includes(region)));
+  if (!visible.length) return null;
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2">
+      <p className="text-xs font-bold text-slate-700 dark:text-slate-200">Also enable (same Amazon account, no extra sign-in)</p>
+      {visible.map((a) => (
+        <label key={a.type} className="flex items-start gap-2 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-1"
+            disabled={disabled}
+            checked={selected.includes(a.type)}
+            onChange={(e) => onChange(e.target.checked ? [...selected, a.type] : selected.filter((t) => t !== a.type))}
+          />
+          <span>
+            <span className="font-semibold text-slate-900">{a.label}</span>
+            {a.description && <span className="block text-xs text-slate-500">{a.description}</span>}
+          </span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+// Add FBA / Smart Biz to an already-connected Amazon channel.
+function AddonsModal({
+  entry, onClose, onSuccess,
+}: { entry: CatalogEntry; onClose: () => void; onSuccess: () => void }) {
+  const [selected, setSelected] = useState<string[]>([]);
+  const [error, setError] = useState('');
+  const parent = entry.connectedChannels?.[0];
+  const region = entry.region || 'IN';
+  const mutation = useMutation({
+    mutationFn: () => channelApi.amazonAddons(parent!.id, selected),
+    onSuccess,
+    onError: (err: any) => setError(err.response?.data?.error || err.message),
+  });
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Add Amazon services"
+      description="FBA and Smart Biz reuse your connected Amazon account."
+      size="md"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" loading={mutation.isPending} disabled={!selected.length} onClick={() => { setError(''); mutation.mutate(); }}>
+            Enable
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <AddonPicker addons={entry.addons || []} region={region} selected={selected} onChange={setSelected} />
+        {error && <p className="text-xs text-rose-600 font-medium">{error}</p>}
+      </div>
+    </Modal>
+  );
+}
+
 function ChannelRow({
-  entry, onConnect, onRequest,
+  entry, onConnect, onRequest, onAddons,
 }: {
   entry: CatalogEntry;
   onConnect: () => void;
   onRequest: () => void;
+  onAddons: () => void;
 }) {
   const badge = STATUS_BADGE[entry.status] || STATUS_BADGE.not_available;
   const connectedCount = entry.connectedChannels?.length || 0;
@@ -455,6 +540,18 @@ function ChannelRow({
             {entry.tagline && (
               <div className="text-xs text-slate-500 truncate max-w-[280px]" title={entry.tagline}>{entry.tagline}</div>
             )}
+            {entry.addons && entry.status === 'connected' && (
+              <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                {entry.addons.map((a) => (
+                  <Badge key={a.type} variant={a.connectedChannels.length ? 'emerald' : 'slate'}>
+                    {a.label}{a.connectedChannels.length ? ' ✓' : ''}
+                  </Badge>
+                ))}
+                {entry.addons.some((a) => !a.connectedChannels.length) && (
+                  <button onClick={onAddons} className="text-xs font-semibold text-emerald-600 hover:underline">+ Add</button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </td>
@@ -502,6 +599,7 @@ function ConnectModal({
   const [credentials, setCredentials] = useState<Record<string, any>>({});
   const [error, setError] = useState('');
   const [phase, setPhase] = useState<'idle' | 'authorizing' | 'waiting' | 'success'>('idle');
+  const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const popupRef = useRef<Window | null>(null);
@@ -590,6 +688,10 @@ function ConnectModal({
             doneRef.current = true;
             stopPoll();
             setPhase('success');
+            // Amazon: enable the ticked add-ons (FBA / Smart Biz) on the same credentials.
+            if (selectedAddons.length) {
+              try { await channelApi.amazonAddons(channelId, selectedAddons); } catch { /* shown in the channel list */ }
+            }
             setTimeout(onSuccess, 1000);
             return;
           }
@@ -686,6 +788,16 @@ function ConnectModal({
             help={field.help}
           />
         ))}
+
+        {entry.addons && (
+          <AddonPicker
+            addons={entry.addons}
+            region={credentials.region || 'IN'}
+            selected={selectedAddons}
+            onChange={setSelectedAddons}
+            disabled={phase !== 'idle'}
+          />
+        )}
 
         {phase === 'waiting' && (
           <p className="text-xs text-slate-500">

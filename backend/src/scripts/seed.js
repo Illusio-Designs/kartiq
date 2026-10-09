@@ -57,61 +57,46 @@ const PLANS = [
     name: 'Starter',
     tagline: 'For micro-businesses launching their first online channels.',
     monthlyPrice: 999, yearlyPrice: 10789, sortOrder: 1, // yearly = 12mo − 10%
-    maxFacilities: 1, maxSkus: 10000, maxUserRoles: 3, maxUsers: 2, maxOrdersPerMonth: 500,
     features: {
-      maxChannels: 3,
       channelCategories: ['ECOM', 'OWNSTORE', 'CUSTOM', 'LOGISTICS'],
       returns: 'basic', vms: false, paymentReconciliation: true, mobileApp: true,
       purchaseManagement: false, barcoding: false, inwardLogistics: false,
       customReports: false, apiIntegration: false, advancedWarehouseOps: false,
       vendorManagement: false, omniChannel: false, erpIntegration: false,
     },
-    // extraOrders = per self-fulfilled order over the monthly limit. extraChannels
-    // & extraFacilities are billed MONTHLY (recurring standing add-ons);
-    // extraUsers & extraSkus are one-time at add. Orders & SKUs are a FLAT rate
-    // across all plans (₹2 / ₹1); seats/channels/warehouses taper by tier.
-    meteredRates: { extraOrders: 2, extraSkus: 1, extraFacilities: 499, extraChannels: 199, extraUsers: 299 },
   },
   {
     code: 'PROFESSIONAL',
     name: 'Growth',
     tagline: 'For growing brands strengthening their multi-channel operations.',
     monthlyPrice: 2999, yearlyPrice: 32389, sortOrder: 2, // yearly = 12mo − 10%
-    maxFacilities: 3, maxSkus: 50000, maxUserRoles: 6, maxUsers: 6, maxOrdersPerMonth: 2500,
     features: {
-      maxChannels: 8,
       channelCategories: ['ECOM', 'OWNSTORE', 'CUSTOM', 'LOGISTICS', 'QUICKCOM', 'SOCIAL'],
       returns: 'enhanced', vms: true, paymentReconciliation: true, mobileApp: true,
       purchaseManagement: true, barcoding: 'sku', inwardLogistics: true,
       customReports: false, apiIntegration: false, advancedWarehouseOps: false,
       vendorManagement: false, omniChannel: false, erpIntegration: false,
     },
-    meteredRates: { extraOrders: 2, extraSkus: 1, extraFacilities: 399, extraChannels: 149, extraUsers: 249 },
   },
   {
     code: 'BUSINESS',
     name: 'Scale',
     tagline: 'For scaling brands that need full omnichannel coverage and warehouse ops.',
     monthlyPrice: 7999, yearlyPrice: 86389, sortOrder: 3, // yearly = 12mo − 10%
-    maxFacilities: 6, maxSkus: 250000, maxUserRoles: 12, maxUsers: 20, maxOrdersPerMonth: 10000,
     features: {
-      maxChannels: 20,
       channelCategories: ['ECOM', 'OWNSTORE', 'CUSTOM', 'LOGISTICS', 'QUICKCOM', 'SOCIAL', 'B2B'],
       returns: 'enhanced', vms: true, paymentReconciliation: true, mobileApp: true,
       purchaseManagement: true, barcoding: 'sku', inwardLogistics: true,
       customReports: true, apiIntegration: false, advancedWarehouseOps: true,
       vendorManagement: true, omniChannel: true, erpIntegration: false,
     },
-    meteredRates: { extraOrders: 2, extraSkus: 1, extraFacilities: 299, extraChannels: 99, extraUsers: 199 },
   },
   {
     code: 'ENTERPRISE',
     name: 'Enterprise',
     tagline: 'Custom build for large operations. Contact sales for pricing and onboarding.',
     monthlyPrice: 0, yearlyPrice: 0, sortOrder: 4,
-    maxFacilities: null, maxSkus: null, maxUserRoles: null, maxUsers: null, maxOrdersPerMonth: null,
     features: {
-      maxChannels: null,
       channelCategories: null, // null = all categories
       contactSales: true,
       returns: 'customized', vms: true, paymentReconciliation: true, mobileApp: true,
@@ -119,7 +104,6 @@ const PLANS = [
       customReports: true, apiIntegration: true, advancedWarehouseOps: true,
       vendorManagement: true, omniChannel: true, erpIntegration: true,
     },
-    meteredRates: {},
   },
   {
     // Free, hidden plan for Fiverr/test accounts: every feature unlocked with
@@ -129,16 +113,13 @@ const PLANS = [
     name: 'Fiverr Free',
     tagline: 'Forever-free full-access plan for testing and review purposes.',
     monthlyPrice: 0, yearlyPrice: 0, sortOrder: 99, isPublic: false,
-    maxFacilities: 5, maxSkus: 50000, maxUserRoles: 12, maxUsers: 10, maxOrdersPerMonth: 5000,
     features: {
-      maxChannels: 20,
       channelCategories: null, // null = all categories
       returns: 'enhanced', vms: true, paymentReconciliation: true, mobileApp: true,
       purchaseManagement: true, barcoding: 'sku', inwardLogistics: true,
       customReports: true, apiIntegration: true, advancedWarehouseOps: true,
       vendorManagement: true, omniChannel: true, erpIntegration: false,
     },
-    meteredRates: {},
   },
 ];
 
@@ -161,10 +142,7 @@ async function seedPlans() {
       update: {
         name: p.name, tagline: p.tagline, monthlyPrice: p.monthlyPrice,
         yearlyPrice: p.yearlyPrice, sortOrder: p.sortOrder,
-        maxFacilities: p.maxFacilities, maxSkus: p.maxSkus,
-        maxUserRoles: p.maxUserRoles, maxUsers: p.maxUsers,
-        maxOrdersPerMonth: p.maxOrdersPerMonth,
-        features: p.features, meteredRates: p.meteredRates,
+        features: p.features,
         isPublic: p.isPublic !== false,
       },
       create: p,
@@ -243,12 +221,12 @@ const CONTENT = [
   { type: 'HELP_CATEGORY', title: 'Channels & integrations', icon: 'Plug', subtitle: 'Connecting Amazon, Shopify, Shiprocket and 56+ channels.', href: '/resources/help?topic=channels' },
   { type: 'HELP_CATEGORY', title: 'Orders & fulfilment', icon: 'ShoppingCart', subtitle: 'Syncing orders, printing labels, managing returns.', href: '/resources/help?topic=orders' },
   { type: 'HELP_CATEGORY', title: 'Inventory & warehouses', icon: 'Warehouse', subtitle: 'Stock adjustments, transfers, cycle counts, low-stock alerts.', href: '/resources/help?topic=inventory' },
-  { type: 'HELP_CATEGORY', title: 'Billing & subscriptions', icon: 'CreditCard', subtitle: 'Plans, upgrades, invoices, pay-as-you-go metering.', href: '/resources/help?topic=billing' },
+  { type: 'HELP_CATEGORY', title: 'Billing & subscriptions', icon: 'CreditCard', subtitle: 'Plans, upgrades and invoices.', href: '/resources/help?topic=billing' },
   { type: 'HELP_CATEGORY', title: 'API & webhooks', icon: 'Code', subtitle: 'REST API reference, webhook payloads, authentication.', href: '/resources/help?topic=api' },
   { type: 'HELP_FAQ', title: 'How do I connect my first channel?', body: 'Go to Dashboard > Channels > pick a channel > click Connect. For Amazon use the one-click OAuth flow; for other channels paste your API credentials.', category: 'getting-started' },
   { type: 'HELP_FAQ', title: 'Why are my orders not syncing?', body: 'Check the channel detail page — any sync errors show up in a red banner. Common causes: expired credentials, IP whitelisting, or rate limits. Click Test Connection to diagnose.', category: 'orders' },
   { type: 'HELP_FAQ', title: 'How do SKU mappings work?', body: 'Each channel listing maps a marketplace SKU to your Kartriq variant. When an order arrives, we look up the mapping to find the right variant and decrement the right inventory row.', category: 'channels' },
-  { type: 'HELP_FAQ', title: 'What happens when I hit my plan limit?', body: 'If pay-as-you-go is enabled, extra orders/SKUs are billed at your plan\'s overage rate. Otherwise you\'ll be blocked until you upgrade or the next billing period starts.', category: 'billing' },
+  { type: 'HELP_FAQ', title: 'Are there limits on orders, SKUs or users?', body: 'No. Orders, SKUs, warehouses and users are unlimited on every plan; plans differ by the features and channel categories they unlock.', category: 'billing' },
   { type: 'HELP_FAQ', title: 'How do I upgrade or downgrade my plan?', body: 'Dashboard > Billing > click the target plan > complete checkout. Upgrades take effect immediately; downgrades apply at the next billing cycle.', category: 'billing' },
   { type: 'HELP_FAQ', title: 'Can I export my data?', body: 'Yes — every table page has a CSV export button. For bulk or automated exports, use the REST API with an API key from Settings.', category: 'api' },
 
@@ -392,7 +370,7 @@ async function run() {
     create: {
       path: '/pricing',
       title: 'Pricing — Kartriq',
-      description: 'Standard, Professional and Enterprise plans. Pay-as-you-go available.',
+      description: 'Standard, Professional and Enterprise plans. ',
       robots: 'index,follow',
     },
   });

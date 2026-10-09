@@ -10,6 +10,9 @@ npm run dev                  # Start dev server (port 5001) — auto-migrates + 
 npm start                    # Production start
 npm run db:seed              # Run seed manually
 npm run db:studio            # Prisma Studio GUI (port 5555)
+npm run test:all             # ONE command: runs every check + writes backend/test-report/report.html
+npm run test:amazon-shipping # Amazon FBA/MFN, auto-booked courier, labels, packing slips (fake Amazon)
+npm run demo:amazon-shipping # Click-through demo: real app + fake Amazon + demo seller
 npm run test:backend         # Run e2e test suite (requires server running)
 npm run test:backend:server  # Start server with rate limits disabled (for tests)
 npm run cron:run             # Run background sync jobs
@@ -215,6 +218,9 @@ FRONTEND_URL=http://localhost:3000
 # Dev flags
 DEV_AUTH_BYPASS=true
 DISABLE_RATE_LIMIT=true
+# Demo mode (admin → Demo mode): a sandbox tenant with a FAKE Amazon so anyone can click through
+# the Amazon courier/label flows on a live site. Off unless set; platform-admin only.
+DEMO_MODE_ENABLED=true
 ```
 
 ### Frontend (`.env.local`)

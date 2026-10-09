@@ -211,9 +211,7 @@ const paymentLimiter = rateLimit({
   message: { error: 'Too many verification attempts' },
 });
 app.use('/api/v1/payments/verify', paymentLimiter);
-app.use('/api/v1/payments/wallet-verify', paymentLimiter);
 app.use('/api/v1/payments/checkout', paymentLimiter);
-app.use('/api/v1/payments/wallet-checkout', paymentLimiter);
 
 // ── Auto audit: logs every successful authenticated mutation ──
 app.use(autoAudit);

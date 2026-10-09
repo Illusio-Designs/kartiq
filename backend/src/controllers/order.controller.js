@@ -2,6 +2,7 @@ const { z } = require('zod');
 const prisma = require('../utils/prisma');
 const { notifyTenant } = require('../services/notifications.service');
 const { confirmChannelShipment } = require('../services/channel.service');
+const { autoBookAmazonShipping } = require('../services/amazonShipping.service');
 const { applyOrderStock } = require('../services/stock.service');
 const { stampRetentionOnDelivery } = require('../services/vms.service');
 
@@ -302,57 +303,8 @@ const createOrder = async (req, res) => {
         include: { items: true },
       });
 
-      // Increment monthly orders usage meter for billing / PAYG
-      const period = new Date().toISOString().slice(0, 7);
-      await tx.usageMeter.upsert({
-        where: { tenantId_metric_period: { tenantId, metric: 'orders', period } },
-        update: { count: { increment: 1 } },
-        create: { tenantId, metric: 'orders', period, count: 1 },
-      });
-
       return created;
     });
-
-    // Debit wallet if this order was an overage (PAYG flow).
-    // If the debit fails (insufficient funds race, DB error), roll back the order.
-    if (req.overage?.unitRate > 0) {
-      const wallet = require('../services/wallet.service');
-      let debitResult;
-      try {
-        debitResult = await wallet.debit(tid(req), req.overage.unitRate, {
-          metric: 'orders',
-          quantity: 1,
-          reference: order.id,
-          description: `Overage: order ${order.orderNumber}`,
-          createdById: req.user?.id,
-        });
-      } catch (e) {
-        console.error('[wallet] debit failed, rolling back order', e.message);
-      }
-      if (!debitResult?.ok) {
-        // Roll back: delete the order we just created + decrement the usage meter
-        try {
-          await prisma.$transaction([
-            prisma.orderItem.deleteMany({ where: { orderId: order.id } }),
-            prisma.order.delete({ where: { id: order.id } }),
-          ]);
-          const period = new Date().toISOString().slice(0, 7);
-          await prisma.usageMeter.updateMany({
-            where: { tenantId, metric: 'orders', period, count: { gt: 0 } },
-            data: { count: { decrement: 1 } },
-          });
-        } catch (rollbackErr) {
-          console.error('[wallet] rollback failed', rollbackErr.message);
-        }
-        return res.status(402).json({
-          error: 'Wallet debit failed — order not created',
-          metric: 'orders',
-          unitRate: req.overage.unitRate,
-          walletBalance: debitResult?.balance ?? null,
-          topupUrl: '/dashboard/billing',
-        });
-      }
-    }
 
     notifyTenant(tenantId, {
       type: 'order.new',
@@ -414,6 +366,17 @@ const updateOrderStatus = async (req, res) => {
     // they're auto-pruned RETENTION_DAYS later (unless a dispute is open).
     if (status === 'DELIVERED') {
       stampRetentionOnDelivery(order).catch(() => {});
+    }
+
+    // Confirming an Amazon MFN order on a channel with "auto-book courier" ON
+    // buys the cheapest Amazon label and ships it (see amazonShipping.service).
+    // Never fails the status change: the outcome rides along as `shipping`.
+    if (status === 'CONFIRMED') {
+      const shipping = await autoBookAmazonShipping(order.id, { tenantId: tid(req) });
+      if (shipping.booked || shipping.error) {
+        const fresh = await prisma.order.findFirst({ where: { id: order.id, tenantId: tid(req) } });
+        return res.json({ ...(fresh || order), shipping });
+      }
     }
 
     res.json(order);

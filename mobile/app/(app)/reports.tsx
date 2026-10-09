@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { BarChart3, Package, TrendingUp, Wallet } from 'lucide-react-native';
+import { BarChart3, Package, TrendingUp, Landmark } from 'lucide-react-native';
 import { Text, View } from 'react-native';
 import Card from '../../components/ui/Card';
 import PageShell from '../../components/ui/PageShell';
@@ -29,7 +29,7 @@ export default function ReportsScreen() {
     {
       label: 'Total sales',
       value: sales.data?.total != null ? formatCurrency(sales.data.total) : '\u2014',
-      icon: <Wallet size={18} color="#04AB94" />,
+      icon: <Landmark size={18} color="#04AB94" />,
       color: '#06D4B8',
       bg: 'bg-emerald-50',
     },

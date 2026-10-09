@@ -51,9 +51,6 @@ const FB_MAP: Record<string, string | string[]> = {
   // Meta can attribute ad spend ROI correctly.
   checkout_started:     'InitiateCheckout',
   plan_purchased:       ['Subscribe', 'Purchase'],
-  // Wallet top-ups (PAYG funding) — count as Purchase for ad-bidding
-  // signal even though they aren't a subscription.
-  wallet_topup:         'Purchase',
 };
 
 function safeClarity(...args: any[]) {

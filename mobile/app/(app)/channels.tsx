@@ -88,13 +88,11 @@ export default function ChannelsScreen() {
     },
     onError: (err: any) => {
       if (err?.response?.status === 402) {
-        const { requiredPlan, currentPlan, metric, limit } = err.response.data || {};
-        if (metric === 'channels') {
-          Alert.alert('Channel limit reached', `You've reached your plan's limit of ${limit} channels. Upgrade to add more.`);
-        } else if (requiredPlan) {
+        const { requiredPlan, currentPlan } = err.response.data || {};
+        if (requiredPlan) {
           Alert.alert('Upgrade needed', `This channel requires the ${requiredPlan} plan. You're on ${currentPlan}. Upgrade to unlock.`);
         } else {
-          Alert.alert('Plan limit reached', err.response.data?.error || 'Please upgrade your plan.');
+          Alert.alert('Upgrade needed', err.response.data?.error || 'Please upgrade your plan.');
         }
       } else {
         Alert.alert('Error', err?.response?.data?.error || 'Failed to connect channel');
@@ -113,9 +111,6 @@ export default function ChannelsScreen() {
 
   const catalog: any[] = catalogData?.catalog ?? [];
   const currentPlan: string = catalogData?.summary?.currentPlan ?? 'STANDARD';
-  const maxChannels: number | null = catalogData?.summary?.maxChannels ?? null;
-  const usedChannels: number = catalogData?.summary?.usedChannels ?? 0;
-  const atChannelLimit = maxChannels != null && usedChannels >= maxChannels;
 
   // Group catalog by category for the chip-row counters
   const grouped = useMemo(() => {
@@ -307,24 +302,7 @@ export default function ChannelsScreen() {
               <Text className="text-[12px] font-bold text-slate-400 uppercase tracking-wider">Your plan</Text>
               <Text className="text-[14px] font-extrabold text-slate-900">{currentPlan}</Text>
             </View>
-            <Text className="text-[17px] font-extrabold text-slate-900">
-              {usedChannels}
-              {maxChannels != null ? <Text className="text-slate-400 font-bold"> / {maxChannels}</Text> : null}
-            </Text>
           </View>
-          {maxChannels != null ? (
-            <View className="h-2 bg-slate-200 rounded-full overflow-hidden">
-              <View
-                className={`h-full rounded-full ${atChannelLimit ? 'bg-rose-500' : 'bg-emerald-500'}`}
-                style={{ width: `${Math.min(100, (usedChannels / maxChannels) * 100)}%` }}
-              />
-            </View>
-          ) : null}
-          {atChannelLimit ? (
-            <Text className="text-[11px] text-rose-600 font-bold mt-2">
-              Channel limit reached — upgrade to connect more
-            </Text>
-          ) : null}
         </View>
 
         {/* Category chip row — horizontal scroll */}

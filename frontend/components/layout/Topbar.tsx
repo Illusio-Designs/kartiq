@@ -7,20 +7,14 @@ import { useUIStore } from '@/store/ui.store';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { InboxTrigger } from '@/components/InboxDrawer';
 import { UserMenu } from '@/components/UserMenu';
-import { WalletPill } from '@/components/wallet/WalletPill';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import { pageTitleFor } from './routeLabels';
 
 export function Topbar() {
-  const { user, hasPermission } = useAuthStore();
+  const { user } = useAuthStore();
   const { setMobileSidebar } = useUIStore();
   const pathname = usePathname() || '/';
   const pageTitle = pageTitleFor(pathname);
-  const isPlatformAdmin = !!user?.isPlatformAdmin;
-
-  // Wallet pill — only roles that own the wallet numbers (billing.read|manage);
-  // founders have no per-tenant wallet to show.
-  const showWallet = !isPlatformAdmin && hasPermission('billing.read', 'billing.manage');
 
   return (
     <header className="sticky top-0 z-30 bg-white/95 dark:bg-[#0d1424]/90 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 px-4 md:px-6 h-16 flex items-center gap-3">
@@ -40,14 +34,8 @@ export function Topbar() {
         {pageTitle}
       </h1>
 
-      {/* Right cluster — Wallet · Theme · Notifications · Account */}
+      {/* Right cluster — Theme · Notifications · Account */}
       <div className="flex items-center gap-1.5 ml-auto">
-        {showWallet && (
-          <div className="hidden md:flex">
-            <WalletPill />
-          </div>
-        )}
-
         <ThemeToggle />
 
         <Tooltip content="Notifications" side="bottom">

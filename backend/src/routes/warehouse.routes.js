@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { z } = require('zod');
 const {
-  authenticate, requireTenant, requirePermission, enforceLimit,
+  authenticate, requireTenant, requirePermission,
 } = require('../middleware/auth.middleware');
 const prisma = require('../utils/prisma');
 const { ensureFbaFacility } = require('../services/channel.service');
@@ -50,7 +50,6 @@ router.get('/:id', requirePermission('warehouses.read'), async (req, res) => {
 
 router.post('/',
   requirePermission('warehouses.create'),
-  enforceLimit('warehouses'),
   async (req, res) => {
     try {
       const data = createSchema.parse(req.body);

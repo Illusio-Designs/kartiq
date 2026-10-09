@@ -23,12 +23,6 @@ const {
 } = require('../services/channel.service');
 const { processReviewQueue } = require('../services/review.service');
 const { pruneExpiredVideos } = require('../services/vms.service');
-// Wallet auto-topup is intentionally disabled — wallet is for ad-hoc PAYG
-// overage funding, not a recurring autopay surface. Saved cards still drive
-// subscription renewal (see billing.job.js → autoRenewSubscription).
-// Keeping the import commented for archaeology; the file itself remains a
-// no-op shim so any external invoker doesn't crash.
-// const { runAutopayJob } = require('./autopay.job');
 
 // ── 1. Pull new orders from every active channel that supports it ───────────
 async function syncChannelOrders() {
@@ -237,9 +231,6 @@ async function runAllJobs() {
     await safe('pollShipmentStatus', pollShipmentStatus),
     await safe('processReviewQueue', () => processReviewQueue({})),
     await safe('pruneExpiredVideos', () => pruneExpiredVideos({})),
-    // Wallet auto-topup is intentionally disabled (see the commented import
-    // above) — no runAutopayJob call here. Referencing the undefined symbol
-    // threw a ReferenceError that aborted the entire cron run.
   );
 
   console.log('[cron] done in', Date.now() - t0, 'ms', out);
@@ -320,7 +311,6 @@ function start() {
     setInterval(guarded('pollShipmentStatus', pollShipmentStatus), minutes(trackingInterval)),
     setInterval(guarded('processReviewQueue', () => processReviewQueue({})), minutes(reviewInterval)),
     setInterval(guarded('pruneExpiredVideos', () => pruneExpiredVideos({})), minutes(videoPruneInterval)),
-    // No wallet-autopay setInterval — wallet is manual top-up only.
   );
 
   // Fast, near-real-time order pass — only new + changed orders each minute.

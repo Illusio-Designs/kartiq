@@ -8,7 +8,7 @@ import { StatRow } from '@/components/StatCards';
 import { TableRowsSkeleton } from '@/components/Shimmer';
 import { Card, EmptyState, DateRangePicker, Badge } from '@/components/ui';
 import { formatCurrency } from '@/lib/utils';
-import { Scale, Wallet, ShoppingCart, Undo2, TrendingDown, TrendingUp } from 'lucide-react';
+import { Scale, Landmark, ShoppingCart, Undo2, TrendingDown, TrendingUp } from 'lucide-react';
 
 // A signed variance rendered with a sensible colour: money coming in above
 // expectation is emerald, a shortfall (fees / short-payment) is rose.
@@ -42,7 +42,7 @@ export default function ReconciliationPage() {
 
       <StatRow items={[
         { label: 'Gross order value', value: formatCurrency(totals.grossOrderValue), tone: 'slate', icon: <ShoppingCart size={16} />, hint: `${totals.orders} channel orders in range` },
-        { label: 'Marketplace payouts', value: formatCurrency(totals.settledPayout), tone: 'emerald', icon: <Wallet size={16} />, hint: 'Settlement funds transferred to you' },
+        { label: 'Marketplace payouts', value: formatCurrency(totals.settledPayout), tone: 'emerald', icon: <Landmark size={16} />, hint: 'Settlement funds transferred to you' },
         { label: 'Refunds', value: formatCurrency(totals.refunds), tone: 'amber', icon: <Undo2 size={16} /> },
         {
           label: shortfall ? 'Fees / shortfall' : 'Variance',

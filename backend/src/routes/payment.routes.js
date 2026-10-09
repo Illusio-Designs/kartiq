@@ -25,7 +25,6 @@ const {
   createOrder, verifySignature, verifyWebhookSignature, getKeyId,
   createCustomer, applyTestMode,
 } = require('../services/payment.service');
-const wallet = require('../services/wallet.service');
 const { audit } = require('../services/audit.service');
 const { notifyTenant } = require('../services/notifications.service');
 const { snapshotInvoiceForSubscription } = require('../jobs/billing.job');
@@ -64,7 +63,7 @@ router.post('/webhook', async (req, res) => {
       const tenantId = notes.tenantId;
       const subscriptionId = notes.subscriptionId;
       const invoiceId = notes.invoiceId;
-      const purpose = notes.purpose; // 'plan' | 'wallet' | 'autopay'
+      const purpose = notes.purpose; // 'plan'
       const amountInr = paymentEntity?.amount ? Number(paymentEntity.amount) / 100 : null;
 
       // Cross-check ownership before mutating: notes are signed by Razorpay
@@ -103,30 +102,10 @@ router.post('/webhook', async (req, res) => {
           title: amountInr
             ? `Payment received · ₹${amountInr.toLocaleString('en-IN')}`
             : 'Payment received',
-          body: purpose === 'wallet'
-            ? 'Wallet topped up — overage usage will draw from this balance.'
-            : purpose === 'autopay'
-              ? 'Auto top-up successful.'
-              : 'Plan payment captured. Subscription is active.',
+          body: 'Plan payment captured. Subscription is active.',
           link: '/billing',
           metadata: { paymentId: paymentEntity?.id, purpose, amountInr },
         });
-
-        // Wallet top-ups (manual or autopay) flow through the webhook so the
-        // ledger is the source of truth even if the client never returns.
-        if (tenantId && (purpose === 'wallet' || purpose === 'autopay') && amountInr) {
-          try {
-            const existing = await db('wallet_transactions')
-              .where({ tenantId, paymentRef: paymentEntity?.id }).first();
-            if (!existing) {
-              await wallet.topup(tenantId, amountInr, {
-                paymentRef: paymentEntity?.id,
-                description: purpose === 'autopay' ? 'Auto top-up (Razorpay)' : 'Top-up (Razorpay)',
-                type: 'TOPUP',
-              });
-            }
-          } catch (e) { console.warn('[payment.webhook] wallet topup credit failed:', e.message); }
-        }
 
         // Persist the saved token if Razorpay returns one. Skip when we
         // don't have a customer_id — Razorpay rejects recurring charges
@@ -399,112 +378,14 @@ router.post('/verify', requirePermission('billing.manage'), idempotent(), async 
   res.json({ ok: true, subscription: sub });
 });
 
-// ── Wallet top-up checkout: create Razorpay order for arbitrary amount ─────
-router.post('/wallet-checkout', requirePermission('billing.manage'), idempotent(), async (req, res) => {
-  try {
-    const { amount, savePaymentMethod } = req.body;
-    if (!amount || Number(amount) <= 0) return res.status(400).json({ error: 'amount must be positive' });
-
-    let customerId = null;
-    if (savePaymentMethod) {
-      const customer = await createCustomer({
-        name: req.user.name,
-        email: req.user.email,
-        contact: req.user.phone || undefined,
-        notes: { tenantId: req.tenant.id },
-      });
-      customerId = customer.id;
-    }
-
-    const rzpOrder = await createOrder({
-      amount: Number(amount),
-      currency: 'INR',
-      notes: {
-        tenantId: req.tenant.id,
-        purpose: 'wallet',
-        amount: String(amount),
-      },
-      customerId,
-      savePaymentMethod: !!savePaymentMethod,
-    });
-
-    const keyId = (await getKeyId()) || rzpOrder.keyId;
-    res.json({
-      order: rzpOrder,
-      keyId,
-      customerId,
-      prefill: { email: req.user.email, name: req.user.name, contact: req.user.phone || '' },
-    });
-  } catch (err) {
-    console.error('[payment.wallet-checkout]', safeErrLog(err));
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── Verify wallet top-up + credit the wallet ───────────────────────────────
-router.post('/wallet-verify', requirePermission('billing.manage'), idempotent(), async (req, res) => {
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
-
-  const ok = await verifySignature({
-    orderId: razorpay_order_id,
-    paymentId: razorpay_payment_id,
-    signature: razorpay_signature,
-  });
-  if (!ok) return res.status(400).json({ error: 'Signature mismatch' });
-
-  // Idempotent — if the webhook already credited this payment, skip the double credit
-  const existing = await db('wallet_transactions')
-    .where({ tenantId: req.tenant.id, paymentRef: razorpay_payment_id }).first();
-  if (existing) {
-    return res.json({ ok: true, alreadyCredited: true });
-  }
-
-  // Credit the amount the gateway actually CAPTURED — never a body-supplied
-  // amount (the signature only covers order|payment id, so a body amount could
-  // be inflated). Fetch the payment, require captured, and use payment.amount.
-  let creditAmount;
-  try {
-    const { getClient } = require('../services/payment.service');
-    const client = await getClient();
-    if (client) {
-      const payment = await client.payments.fetch(razorpay_payment_id);
-      if (!payment || payment.status !== 'captured') {
-        return res.status(400).json({ error: 'Payment not captured at gateway' });
-      }
-      const order = await client.orders.fetch(razorpay_order_id).catch(() => null);
-      const notes = order?.notes || payment?.notes || {};
-      if (notes.tenantId && notes.tenantId !== req.tenant.id) {
-        return res.status(403).json({ error: 'Payment belongs to a different tenant' });
-      }
-      creditAmount = Number(payment.amount) / 100; // paise → rupees
-    } else if (process.env.ALLOW_UNVERIFIED_PAYMENTS === 'true') {
-      creditAmount = Number(req.body.amount); // test/stub mode only
-    } else {
-      return res.status(503).json({ error: 'Payment gateway not configured; cannot verify payment' });
-    }
-  } catch (err) {
-    return res.status(400).json({ error: 'Failed to verify payment with gateway: ' + (err?.error?.description || err.message) });
-  }
-  if (!creditAmount || creditAmount <= 0) return res.status(400).json({ error: 'Invalid captured payment amount' });
-
-  const result = await wallet.topup(req.tenant.id, creditAmount, {
-    paymentRef: razorpay_payment_id,
-    description: 'Top-up (Razorpay)',
-    createdById: req.user.id,
-    type: 'TOPUP',
-  });
-  audit({ req, action: 'wallet.topup.razorpay', resource: 'wallet', resourceId: result.transactionId, metadata: { amount: creditAmount, paymentId: razorpay_payment_id } });
-  res.json({ ok: true, ...result });
-});
-
 // ──────────────────────────────────────────────────────────────────────────
-// SAVED PAYMENT METHODS  (used by the autopay job to recurring-charge cards)
+// SAVED PAYMENT METHODS  (used by the billing job to renew plans)
 // ──────────────────────────────────────────────────────────────────────────
 router.get('/methods', requirePermission('billing.read'), async (req, res) => {
   // Project only the display-safe columns. providerTokenId and
   // providerCustomerId are recurring-charge credentials that must never
   // leave the server — they're combined with our keySecret to drive the
-  // autopay job. An XSS or leaked browser cache that exposed the token
+  // billing job. An XSS or leaked browser cache that exposed the token
   // alongside the public keyId would be enough to forge charges.
   const rows = await db('tenant_payment_methods')
     .where({ tenantId: req.tenant.id, isActive: 1 })
@@ -529,7 +410,7 @@ router.post('/methods/:id/default', requirePermission('billing.manage'), async (
       .update({ isDefault: 1 });
     if (!updated) throw new Error('Payment method not found');
   });
-  audit({ req, action: 'wallet.method.set_default', resource: 'payment_method', resourceId: id });
+  audit({ req, action: 'payment_method.set_default', resource: 'payment_method', resourceId: id });
   res.json({ ok: true });
 });
 
@@ -539,7 +420,7 @@ router.delete('/methods/:id', requirePermission('billing.manage'), async (req, r
     .where({ id, tenantId: req.tenant.id })
     .update({ isActive: 0, isDefault: 0, updatedAt: new Date() });
   if (!updated) return res.status(404).json({ error: 'Payment method not found' });
-  audit({ req, action: 'wallet.method.delete', resource: 'payment_method', resourceId: id });
+  audit({ req, action: 'payment_method.delete', resource: 'payment_method', resourceId: id });
   res.json({ ok: true });
 });
 

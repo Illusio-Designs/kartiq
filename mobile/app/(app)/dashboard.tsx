@@ -12,7 +12,7 @@ import {
   ShoppingCart,
   TrendingDown,
   Users,
-  Wallet,
+  Landmark,
 } from 'lucide-react-native';
 import {
   Dimensions,
@@ -193,7 +193,7 @@ export default function DashboardScreen() {
             <View className="flex-row items-center justify-between mb-1">
               <View className="flex-row items-center">
                 <View className="w-8 h-8 rounded-xl bg-emerald-500/20 items-center justify-center mr-2.5">
-                  <Wallet size={16} color="#2BD5B6" />
+                  <Landmark size={16} color="#2BD5B6" />
                 </View>
                 <Text className="text-slate-400 text-sm font-bold">Total Revenue</Text>
               </View>
