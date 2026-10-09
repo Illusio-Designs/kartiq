@@ -81,16 +81,18 @@ Seed is idempotent (upserts). To force a re-seed, delete `backend/.seed-state.js
 **Schema changes**: Edit `schema.sql.js` for new tables, or add `ALTER TABLE` statements to `initDb.js` for new columns. Restart dev server to apply.
 
 ### Plan & Billing
-Plans define hard limits (max SKUs, warehouses, users, orders/month) and feature flags. Beyond limits, tenants with Pay-As-You-Go enabled draw from a wallet (funded via Razorpay). The `enforceLimit()` middleware in `auth.middleware.js` gates creation requests and checks wallet balance when the plan ceiling is hit. Feature flags gate entire modules via `requireFeature()`.
+Plans differ only by price, feature flags and allowed channel categories — there are **no usage limits** (SKUs, users, warehouses, roles, channels and orders are unlimited) and **no Pay-As-You-Go / wallet / overage billing**; `enforceLimit()`, the wallet service, usage meters and the `tenant_wallets` / `wallet_transactions` / `usage_meters` tables were removed (`initDb.js` drops them on boot). Feature flags gate entire modules via `requireFeature()`, and `features.channelCategories` gates which channel categories a plan can connect. Plan payment is Razorpay checkout; saved cards drive auto-renewal (`billing.job.js`). Referral rewards are only recorded on the `referrals` row for manual settlement.
 
 ### Channel Integrations
 Channels fall into categories: e-commerce (Amazon SP-API OAuth, Shopify OAuth), social (Instagram, WhatsApp), logistics (Shiprocket, Delhivery — tracking only), POS, and B2B. Channel API credentials are stored AES-256-GCM encrypted (`backend/src/utils/crypto.js`) using `ENCRYPTION_KEY`. Background jobs in `backend/src/jobs/cron.job.js` poll channels for orders and push inventory updates.
+
+**Amazon** is a single `AMAZON` catalog entry covering every country (Region selector; 21 marketplaces in `config/channel-endpoints.js`). Amazon FBA (`AMAZON_FBA`) and Smart Biz (`AMAZON_SMARTBIZ`, India only) are add-ons on that card (`groupedUnder: 'AMAZON'`, hidden from the list): `POST /channels/:id/amazon-addons` creates them reusing the parent's encrypted credentials. Legacy `AMAZON_<REGION>` channel types still resolve in `channel.service.js` / `oauth.routes.js` for existing rows.
 
 ### Key Files
 | File | Purpose |
 |------|---------|
 | `backend/src/index.js` | Express app entry, route registration, global error handler |
-| `backend/src/middleware/auth.middleware.js` | JWT verify, permission/plan/limit enforcement |
+| `backend/src/middleware/auth.middleware.js` | JWT verify, permission/plan-feature enforcement |
 | `backend/src/bootstrap/initDb.js` | DB auto-migrate + conditional seed |
 | `backend/src/config/schema.sql.js` | All `CREATE TABLE` statements — source of truth for column names |
 | `backend/src/utils/prisma.js` | Knex-backed Prisma-like shim (not real Prisma) |
@@ -108,7 +110,7 @@ Channels fall into categories: e-commerce (Amazon SP-API OAuth, Shopify OAuth), 
 4. Add table to `schema.sql.js` if needed; add the corresponding `api.ts` method in the frontend
 
 ### Frontend Data Flow
-- `frontend/lib/api.ts`: Axios instance auto-attaches JWT from `localStorage`; 401 responses redirect to `/login`; 402 responses trigger a plan-limit modal
+- `frontend/lib/api.ts`: Axios instance auto-attaches JWT from `localStorage`; 401 responses redirect to `/login`; 402 responses redirect to `upgradeUrl` when the backend sends one (trial/past-due lockout, plan-feature gate)
 - `frontend/store/auth.store.ts`: Populated after login via `/auth/me`; `hasPermission()` and `hasFeature()` are used throughout pages to conditionally render UI
 
 ### Auth Self-Service Endpoints
@@ -178,7 +180,7 @@ When adding or editing a backend route, verify:
 
 - [ ] All `GET /` list endpoints include `page`/`limit`/`skip` query params and return `{ data, total }` (or plain array for small-set resources like vendors/warehouses)
 - [ ] All `DELETE` routes check tenant ownership before deleting
-- [ ] All wallet/billing `GET` routes have `requirePermission('billing.read')` — wallet endpoints without permission checks expose financial data cross-tenant
+- [ ] All billing `GET` routes have `requirePermission('billing.read')` — billing endpoints without permission checks expose financial data cross-tenant
 - [ ] Pay/mark-paid endpoints guard against double-payment: check `if (existing.status === 'PAID') return 400`
 - [ ] `PATCH /:id/status` endpoints must validate the status value against an enum via Zod — never write `data: { status: req.body.status }` directly
 - [ ] Unbounded queries (e.g. `findMany` with no `take`) must have a default limit — use `Math.min(maxAllowed, Number(req.query.limit) || default)`
@@ -240,7 +242,7 @@ The fallback baseURL in `frontend/lib/api.ts` is `http://localhost:5001/api/v1`.
 - **Tenant isolation**: Never write a query without a `tenantId` filter unless the resource is explicitly global (plans, public content).
 - **Vendor/warehouse delete is soft**: Both `DELETE /vendors/:id` and `DELETE /warehouses/:id` set `isActive = false` rather than hard-deleting. The `GET /` list for both filters `isActive: true` so soft-deleted records disappear from listings.
 - **Invoice pay is idempotent**: Attempting to pay an already-`PAID` invoice returns `400`. Partial payments set status to `PARTIALLY_PAID`; full payment sets `PAID` and records `paidAt`.
-- **Wallet permission**: `GET /billing/wallet` and `GET /billing/wallet/transactions` require `billing.read` permission. Forgetting this on new wallet endpoints exposes financial data cross-tenant.
+- **No plan limits / wallet**: Don't reintroduce usage limits, `enforceLimit`, overage or wallet code. Plans gate features and channel categories only.
 - **Self-service vs admin user updates**: `PUT /users/:id` requires `users.update` permission and is for admin managing team members. For the logged-in user updating their own profile, use `PATCH /auth/me` instead.
 - **`PATCH /auth/change-password` OAuth guard**: The endpoint returns `400` if the user's account has no password (Google-only sign-in). The frontend should handle this gracefully.
 - **New columns via migration**: Adding a column to an existing table requires an entry in the `migrations` array inside `backend/src/bootstrap/initDb.js` — not just in `schema.sql.js`. The `schema.sql.js` `CREATE TABLE IF NOT EXISTS` won't add columns to tables that already exist.
