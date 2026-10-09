@@ -360,7 +360,7 @@ function WarehouseModal({ open, onClose, mode, warehouse }: {
     city:    addr.city    || '',
     state:   addr.state   || '',
     pincode: addr.pincode || '',
-    isActive: warehouse?.isActive ?? true,
+    isActive: warehouse ? !!warehouse.isActive : true,
   });
   const [error, setError] = useState('');
 
@@ -375,7 +375,7 @@ function WarehouseModal({ open, onClose, mode, warehouse }: {
       city:    a.city    || '',
       state:   a.state   || '',
       pincode: a.pincode || '',
-      isActive: warehouse?.isActive ?? true,
+      isActive: warehouse ? !!warehouse.isActive : true,
     });
     setError('');
   }, [open, warehouse]);

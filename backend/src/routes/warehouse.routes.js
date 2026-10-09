@@ -28,7 +28,8 @@ const createSchema = z.object({
 });
 
 const updateSchema = createSchema.partial().extend({
-  isActive: z.boolean().optional(),
+  // MySQL returns 1/0 — accept that as well as true/false.
+  isActive: z.union([z.boolean(), z.number().int().min(0).max(1)]).transform((v) => !!v).optional(),
 });
 
 router.get('/', requirePermission('warehouses.read'), async (req, res) => {
