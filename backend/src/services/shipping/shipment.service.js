@@ -228,8 +228,13 @@ async function confirmOrder(orderId, { tenantId } = {}) {
       marketplaceConfirmed: fin.marketplaceConfirmed, marketplaceNote: fin.marketplaceNote || null,
     };
   } catch (err) {
-    await recordError(orderId, msg(err));
-    return { booked: false, error: msg(err) };
+    let m = msg(err);
+    // Amazon says "access denied": the app has not been given the shipping role yet. Say what to do.
+    if (/Easy Ship .*\(40[13]\)|Buy Shipping.*\(40[13]\)|mfn.*\(40[13]\)/i.test(m)) {
+      m = 'Amazon has not given Kartriq permission to book pickups yet (403 access denied). Ask Amazon to approve the "Direct-to-Consumer Shipping" role for the app, add it to the app, then press Re-authorise on the channel — "Check now" on the channel page shows when it works. Meanwhile schedule the pickup in Seller Central, or switch the channel to your own courier. (Amazon said: ' + m.replace(/^Amazon[^:]*failed \(\d+\): /, '').replace(/ — common causes.*$/, '') + ')';
+    }
+    await recordError(orderId, m);
+    return { booked: false, error: m };
   }
 }
 
