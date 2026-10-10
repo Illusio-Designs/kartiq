@@ -53,7 +53,7 @@
     "zustand": "^4.5.2"
   },
   "devDependencies": {
-    "@next/bundle-analyzer": "^14.2.35",
+    "@next/bundle-analyzer": "^16.4.0",
     "@playwright/test": "^1.48.0",
     "@storybook/addon-a11y": "^8.4.0",
     "@storybook/addon-essentials": "^8.4.0",
