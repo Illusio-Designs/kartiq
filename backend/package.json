@@ -29,7 +29,7 @@
     "google-auth-library": "^9.11.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
-    "knex": "^3.2.9",
+    "knex": "^3.3.0",
     "morgan": "^1.10.0",
     "mysql2": "^3.22.0",
     "nodemailer": "^10.0.16",
