@@ -6,7 +6,7 @@
 # Secrets are NEVER baked in: pass them at run time (environment variables or the
 # platform's secrets manager). See docs/AWS_PENTEST_AND_AMAZON_SPAPI_REGISTRATION.md.
 
-FROM node:22-alpine AS deps
+FROM node:25-alpine AS deps
 WORKDIR /app
 # npm needs every workspace manifest to validate the lockfile, but only the
 # backend's production dependencies are installed.
@@ -17,7 +17,7 @@ COPY mobile/package.json mobile/
 RUN npm ci --omit=dev --no-audit --no-fund --workspace @kartriq/backend --include-workspace-root=false \
  && npm cache clean --force
 
-FROM node:22-alpine
+FROM node:25-alpine
 ENV NODE_ENV=production \
     PORT=5001
 WORKDIR /app/backend
