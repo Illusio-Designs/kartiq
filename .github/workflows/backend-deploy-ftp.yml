@@ -47,7 +47,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Quick syntax sanity-check before we waste an upload run on
       # broken JS. Catches things Vercel-style frontend CI doesn't see
