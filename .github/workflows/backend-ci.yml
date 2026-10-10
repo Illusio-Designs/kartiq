@@ -36,7 +36,7 @@ jobs:
 
       - name: Install dependencies
         # One install at the repo root (npm workspaces + Turborepo).
-        run: npm ci --no-audit --no-fund
+        run: npm ci --no-audit --no-fund --workspace @kartriq/backend --include-workspace-root=false
 
       # No test runner that works without a live DB yet, so the build gate is
       # "all source files parse". Add `npm run test:backend` here once tests

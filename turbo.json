@@ -1,16 +1,35 @@
 {
   "$schema": "https://turborepo.com/schema.json",
   "ui": "stream",
-  "globalDependencies": ["package.json", "package-lock.json"],
-  "globalEnv": ["NODE_ENV"],
+  "globalDependencies": [
+    "package.json",
+    "package-lock.json"
+  ],
+  "globalEnv": [
+    "NODE_ENV"
+  ],
   "tasks": {
     "build": {
-      "dependsOn": ["^build"],
-      "env": ["NEXT_PUBLIC_*"],
-      "outputs": [".next/**", "!.next/cache/**"]
+      "dependsOn": [
+        "^build"
+      ],
+      "env": [
+        "NEXT_PUBLIC_*"
+      ],
+      "outputs": [
+        ".next/**",
+        "!.next/cache/**"
+      ]
     },
     "lint": {},
     "typecheck": {},
-    "dev": { "cache": false, "persistent": true }
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "start": {
+      "cache": false,
+      "persistent": true
+    }
   }
 }

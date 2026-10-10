@@ -6,14 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Monorepo (repo root — npm workspaces + Turborepo)
 ```bash
-npm install            # ONE install at the root for backend + frontend (mobile has its own)
+npm install            # ONE install at the root for backend + frontend + mobile
 npm run dev            # backend + frontend together (turbo)
 npm run lint           # lint every workspace
 npm run typecheck      # tsc for the frontend
 npm run build          # production build (frontend)
+npm run dev:mobile     # Expo dev server (or: cd mobile && npm start)
 npm test               # the one-command test runner (needs MySQL)
 ```
-Workspaces are `@kartriq/backend` and `@kartriq/frontend`; the lockfile is the root `package-lock.json` (there are no per-package lockfiles). `/mobile` is NOT a workspace (Expo/Metro needs its own install). The cPanel deploy still uploads only `backend/src` and `backend/package.json`; Vercel builds the frontend with Root Directory = `frontend`. Docker: `docker build -f backend/Dockerfile -t kartriq-backend .` from the repo root.
+Workspaces are `@kartriq/backend`, `@kartriq/frontend` and `@kartriq/mobile`; the lockfile is the root `package-lock.json` (there are no per-package lockfiles). The root `.npmrc` sets `install-strategy=nested` + `legacy-peer-deps=true` so the frontend (React 18) and the Expo app (React 19.1) keep separate dependency copies; mobile's direct dependencies that had drifted were pinned to their last-tested versions, and `connect` (a package NativeWind needs but does not declare) is a mobile devDependency. The cPanel deploy still uploads only `backend/src` and `backend/package.json`; Vercel builds the frontend with Root Directory = `frontend`. Docker: `docker build -f backend/Dockerfile -t kartriq-backend .` from the repo root.
 
 ### Backend (`/backend`)
 ```bash

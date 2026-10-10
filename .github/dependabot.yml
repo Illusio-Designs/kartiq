@@ -3,11 +3,8 @@ version: 2
 updates:
   - package-ecosystem: npm
     directory: /
-    schedule: { interval: weekly }   # root lockfile covers backend + frontend (workspaces)
+    schedule: { interval: weekly }   # root lockfile covers backend + frontend + mobile (workspaces)
     open-pull-requests-limit: 8
-  - package-ecosystem: npm
-    directory: /mobile
-    schedule: { interval: monthly }
   - package-ecosystem: docker
     directory: /backend
     schedule: { interval: monthly }

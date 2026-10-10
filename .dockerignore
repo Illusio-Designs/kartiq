@@ -7,7 +7,8 @@
 .github
 .turbo
 docs
-mobile
+mobile/**
+!mobile/package.json
 frontend/**
 !frontend/package.json
 backend/test-report

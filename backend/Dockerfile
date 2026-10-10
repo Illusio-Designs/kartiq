@@ -10,9 +10,10 @@ FROM node:22-alpine AS deps
 WORKDIR /app
 # npm needs every workspace manifest to validate the lockfile, but only the
 # backend's production dependencies are installed.
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json .npmrc ./
 COPY backend/package.json backend/
 COPY frontend/package.json frontend/
+COPY mobile/package.json mobile/
 RUN npm ci --omit=dev --no-audit --no-fund --workspace @kartriq/backend --include-workspace-root=false \
  && npm cache clean --force
 
