@@ -59,6 +59,7 @@ async function initDb() {
     // DELIVERY_FAILED, RTO_INITIATED, RTO_DELIVERED. NULL = not booked.
     { table: 'orders',   column: 'shipmentStatus',     ddl: 'VARCHAR(24) DEFAULT NULL' },
     { table: 'orders',   column: 'shipmentStatusAt',   ddl: 'DATETIME(3) DEFAULT NULL' },
+    { table: 'orders',   column: 'shipmentCheckedAt', ddl: 'DATETIME(3) DEFAULT NULL' },
     { table: 'orders',   column: 'shipmentProvider',   ddl: 'VARCHAR(32) DEFAULT NULL' },
     // A label may be a courier-hosted file instead of bytes we hold.
     // Everything Amazon returned for the order (header, items, address, buyer) — for the "Amazon data" download.

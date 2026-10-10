@@ -1,0 +1,30 @@
+# Local stack: MySQL + the backend container.   docker compose up --build
+# For development only — production secrets live in a secrets manager, not here.
+services:
+  db:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: local-dev-only
+      MYSQL_DATABASE: kartriq
+    ports: ["3306:3306"]
+    volumes: [dbdata:/var/lib/mysql]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-plocal-dev-only"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  backend:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: ./backend/.env
+    environment:
+      DB_HOST: db
+      DB_USER: root
+      DB_PASSWORD: local-dev-only
+      DB_NAME: kartriq
+      PORT: "5001"
+    ports: ["5001:5001"]
+volumes:
+  dbdata:

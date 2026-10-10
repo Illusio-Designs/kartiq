@@ -102,6 +102,10 @@ router.post('/',
       const existing = await prisma.user.findUnique({ where: { email } });
       if (existing) return res.status(409).json({ error: 'Email already in use' });
 
+      if (password) {
+        const pwProblem = require('../utils/passwordPolicy').passwordProblem(password);
+        if (pwProblem) return res.status(400).json({ error: pwProblem });
+      }
       const isInvite = !password;
       const user = await prisma.user.create({
         data: {

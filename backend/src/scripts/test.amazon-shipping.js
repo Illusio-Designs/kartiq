@@ -75,8 +75,8 @@ async function main() {
 
   const TS = Date.now();
   const SKU = `WIDGET-${TS}`;
-  const owner = { email: `owner-${TS}@test.local`, password: 'test12345', businessName: `Shipping Test ${TS}`, ownerName: 'Seller' };
-  const other = { email: `other-${TS}@test.local`, password: 'test12345', businessName: `Other ${TS}`, ownerName: 'Other' };
+  const owner = { email: `owner-${TS}@test.local`, password: 'Test@12345678', businessName: `Shipping Test ${TS}`, ownerName: 'Seller' };
+  const other = { email: `other-${TS}@test.local`, password: 'Test@12345678', businessName: `Other ${TS}`, ownerName: 'Other' };
 
   group('0. Setup (real API + real DB)');
   const o1 = await req('POST', '/auth/onboard', { body: owner });
@@ -587,9 +587,9 @@ async function main() {
   const kPkg = Object.values(fake.easyShip.packages).find((p) => p.trackingId === k.body.trackingNumber);
   kPkg.packageStatus = 'PickedUp';
   const { pollOpenShipments } = require('../services/shipping/shipment.service');
-  const poll = await pollOpenShipments({});
+  const poll = await pollOpenShipments({ tenantId });
   ok(poll.checked > 0 && poll.changed >= 1 && (await row(M[28].id)).shipmentStatus === 'PICKED_UP', `Poll moved the parcel without anyone clicking (checked ${poll.checked}, changed ${poll.changed})`);
-  const poll2 = await pollOpenShipments({});
+  const poll2 = await pollOpenShipments({ tenantId });
   ok(poll2.changed === 0, 'A second poll with no news changes nothing');
   const cron = require('../jobs/cron.job');
   const cr = await cron.pollShipmentStatus();
@@ -672,6 +672,21 @@ async function main() {
   ok((await req('GET', `/channels/${chId}/amazon/access`, { token: otherToken })).status === 404, "Another seller cannot run the check on your channel (404)");
   const flk = await req('POST', '/channels', { token, body: { name: 'Shop', type: 'SHOPIFY' } });
   ok((await req('GET', `/channels/${flk.body.id}/amazon/access`, { token })).status >= 400, 'Only Amazon channels have this check');
+
+  // ── 24. Password rule ────────────────────────────────────────────────────
+  group('24. Password rule (12+ characters, upper, lower, number, symbol)');
+  const weak = async (pw) => (await req('POST', '/auth/onboard', { body: { email: `pw-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@test.local`, password: pw, businessName: 'Pw Test', ownerName: 'Pw Tester' } }));
+  const w1 = await weak('short1A!');
+  ok(w1.status === 400 && /12 characters/.test(JSON.stringify(w1.body)), 'Too short is refused (and says why)');
+  ok((await weak('alllowercase123!')).status === 400, 'No upper-case letter is refused');
+  ok((await weak('NoSymbolsHere1234')).status === 400, 'No special character is refused');
+  ok((await weak('NoNumbersHere!!!!')).status === 400, 'No number is refused');
+  const strongOk = await weak('Str0ng!Passw0rd');
+  ok(strongOk.status === 201, `A strong password is accepted (${strongOk.status})`);
+  const chg = await req('POST', '/auth/change-password', { token, body: { currentPassword: 'Test@12345678', newPassword: 'weakpass' } });
+  ok(chg.status === 400, 'Changing to a weak password is refused');
+  const chg2 = await req('POST', '/auth/change-password', { token, body: { currentPassword: 'Test@12345678', newPassword: 'Another!Str0ngOne' } });
+  ok(chg2.status === 200, `Changing to a strong password works (${chg2.status})`);
 
   // ── Result ───────────────────────────────────────────────────────────────
   console.log(`\n\x1b[1mResult: ${passed} passed, ${failed} failed\x1b[0m`);

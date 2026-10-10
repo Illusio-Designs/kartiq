@@ -12,7 +12,7 @@ const BASE = process.env.TEST_BASE_URL || 'http://localhost:5000/api/v1';
 const TIMESTAMP = Date.now();
 const T1 = {
   email: `t1-${TIMESTAMP}@test.local`,
-  password: 'test12345',
+  password: 'Test@12345678',
   businessName: `Tenant 1 ${TIMESTAMP}`,
   ownerName: 'Alice Tester',
   token: null,
@@ -21,7 +21,7 @@ const T1 = {
 };
 const T2 = {
   email: `t2-${TIMESTAMP}@test.local`,
-  password: 'test12345',
+  password: 'Test@12345678',
   businessName: `Tenant 2 ${TIMESTAMP}`,
   ownerName: 'Bob Tester',
   token: null,

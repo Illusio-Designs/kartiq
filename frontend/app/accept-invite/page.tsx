@@ -22,6 +22,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Sparkles, ArrowRight, CheckCircle2, AlertCircle, Building2 } from 'lucide-react';
 import { inviteApi, authApi } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
+import { validatePassword } from '@/lib/validators';
 
 interface InvitePreview {
   email: string;
@@ -67,7 +68,8 @@ export default function AcceptInvitePage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
+    const pwErr = validatePassword(password, { required: true });
+    if (pwErr) { setError(pwErr); return; }
     if (password !== confirm) { setError('Passwords do not match'); return; }
     setError('');
     setSubmitting(true);
@@ -164,10 +166,10 @@ export default function AcceptInvitePage() {
                     type="password"
                     autoComplete="new-password"
                     required
-                    minLength={6}
+                    minLength={12}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="At least 6 characters"
+                    placeholder="12+ characters: upper, lower, number, symbol"
                     className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 outline-none"
                   />
                 </div>
@@ -177,7 +179,7 @@ export default function AcceptInvitePage() {
                     type="password"
                     autoComplete="new-password"
                     required
-                    minLength={6}
+                    minLength={12}
                     value={confirm}
                     onChange={(e) => setConfirm(e.target.value)}
                     className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 outline-none"

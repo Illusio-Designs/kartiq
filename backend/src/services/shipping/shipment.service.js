@@ -306,6 +306,9 @@ async function refreshShipment(orderId, { tenantId } = {}) {
   if (!order) return { error: 'Order not found' };
   if (!order.shipmentStatus) return { changed: false, status: null };
   if (TERMINAL.includes(order.shipmentStatus)) return { changed: false, status: order.shipmentStatus };
+  // Remember that we looked, so the background poll rotates through every open parcel
+  // instead of re-checking the same quiet ones forever.
+  await db('orders').where({ id: order.id }).update({ shipmentCheckedAt: new Date() }).catch(() => {});
   try {
     const { raw, none } = await fetchRawStatus(order);
     if (none || !raw) return { changed: false, status: order.shipmentStatus };
@@ -367,8 +370,13 @@ async function getHistory(orderId, tenantId) {
 }
 
 // Background poll: every order whose parcel is still on its way.
-async function pollOpenShipments({ limit = 200 } = {}) {
-  const rows = await db('orders').whereNotNull('shipmentStatus').whereNotIn('shipmentStatus', TERMINAL).orderBy('shipmentStatusAt', 'asc').limit(limit).select('id', 'tenantId');
+async function pollOpenShipments({ limit = 200, tenantId = null } = {}) {
+  const q = db('orders').whereNotNull('shipmentStatus').whereNotIn('shipmentStatus', TERMINAL)
+    .where((b) => b.whereNull('shipmentProvider').orWhereNot('shipmentProvider', 'AMAZON_BUY')) // Buy Shipping has no tracking feed
+    .orderByRaw('shipmentCheckedAt IS NOT NULL, shipmentCheckedAt ASC') // never-checked first, then longest-ago
+    .limit(limit).select('id', 'tenantId');
+  if (tenantId) q.where({ tenantId });
+  const rows = await q;
   let changed = 0;
   for (const r of rows) {
     const out = await refreshShipment(r.id, { tenantId: r.tenantId });

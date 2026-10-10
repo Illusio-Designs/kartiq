@@ -71,10 +71,12 @@ export function validateGstin(value: string, opts: BaseOpts = {}): string | null
  */
 export function validatePassword(value: string, opts: BaseOpts = {}): string | null {
   if (!value) return opts.required ? 'Password is required' : null;
-  if (value.length < 8) return 'Password must be at least 8 characters';
+  if (value.length < 12) return 'Password must be at least 12 characters';
   if (value.length > 128) return 'Password is too long';
-  if (!/[A-Za-z]/.test(value)) return 'Password must contain at least one letter';
-  if (!/\d/.test(value)) return 'Password must contain at least one number';
+  if (!/[a-z]/.test(value)) return 'Password needs a lower-case letter';
+  if (!/[A-Z]/.test(value)) return 'Password needs an upper-case letter';
+  if (!/\d/.test(value)) return 'Password needs a number';
+  if (!/[^A-Za-z0-9]/.test(value)) return 'Password needs a special character (for example ! @ # $ %)';
   return null;
 }
 

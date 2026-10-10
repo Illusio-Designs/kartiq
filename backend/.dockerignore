@@ -1,0 +1,12 @@
+node_modules
+npm-debug.log
+.env
+.env.*
+test-report
+*.log
+.git
+.vscode
+coverage
+tmp
+.seed-state.json
+scripts

@@ -1,0 +1,56 @@
+name: Security scans
+
+# Evidence for Amazon's SP-API Data Protection Policy: code scanning before release,
+# dependency vulnerability scanning, and a monthly scheduled run.
+# Critical findings must be fixed within 7 days and high ones within 30 (see
+# docs/SECURITY_CONTROLS_GUIDE.md). Results appear in the repo's Security tab.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 3 1 * *'   # monthly, 1st at 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  codeql:
+    name: CodeQL code scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@v3
+
+  backend-dependencies:
+    name: Backend dependency audit (fails on high or critical)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm audit --omit=dev --audit-level=high
+
+  frontend-dependencies:
+    name: Frontend dependency audit (report only)
+    runs-on: ubuntu-latest
+    continue-on-error: true   # Next.js needs a major upgrade to clear its findings; tracked separately
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm audit --omit=dev --audit-level=high

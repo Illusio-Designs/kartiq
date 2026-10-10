@@ -147,7 +147,7 @@ function OnboardingInner() {
               </h2>
               <Field label="Full name"   value={form.ownerName} onChange={(v) => update('ownerName', v)} error={step1Errs.ownerName} />
               <Field label="Work email"  value={form.email}     onChange={(v) => update('email', v)} type="email" error={step1Errs.email} />
-              <Field label="Password"    value={form.password}  onChange={(v) => update('password', v)} type="password" error={step1Errs.password} placeholder="At least 8 characters with a letter and a number" />
+              <Field label="Password"    value={form.password}  onChange={(v) => update('password', v)} type="password" error={step1Errs.password} placeholder="12+ characters: upper, lower, number, symbol" />
               <button
                 onClick={() => { if (validateStep1()) setStep(2); }}
                 className="btn-primary w-full mt-4"

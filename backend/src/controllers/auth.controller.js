@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { z } = require('zod');
+const { passwordSchema } = require('../utils/passwordPolicy');
 const { OAuth2Client } = require('google-auth-library');
 const prisma = require('../utils/prisma');
 const { sendWelcome } = require('../services/email.service');
@@ -10,7 +11,7 @@ const { issueSessionToken } = require('../services/session.service');
 const registerSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
-  password: z.string().min(6),
+  password: passwordSchema,
 });
 
 const loginSchema = z.object({
@@ -216,7 +217,7 @@ const getMe = async (req, res) => {
 const onboardSchema = z.object({
   ownerName: z.string().min(2),
   email: z.string().email(),
-  password: z.string().min(6),
+  password: passwordSchema,
   businessName: z.string().min(2),
   phone: z.string().optional(),
   gstin: z.string().optional(),

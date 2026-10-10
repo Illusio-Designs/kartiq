@@ -1,4 +1,5 @@
 const { Router } = require('express');
+const { passwordProblem } = require('../utils/passwordPolicy');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { register, login, googleAuth, getMe, onboardBusiness } = require('../controllers/auth.controller');
@@ -37,9 +38,8 @@ router.patch('/me', authenticate, async (req, res) => {
 router.post('/change-password', authenticate, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    if (!newPassword || newPassword.length < 6) {
-      return res.status(400).json({ error: 'New password must be at least 6 characters' });
-    }
+    const pwProblem = passwordProblem(newPassword);
+    if (pwProblem) return res.status(400).json({ error: pwProblem });
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
     if (!user?.password) {
       return res.status(400).json({ error: 'No password set — sign in with Google instead' });
@@ -97,9 +97,8 @@ router.post('/accept-invite', async (req, res) => {
   try {
     const { token, password, name } = req.body || {};
     if (!token) return res.status(400).json({ error: 'token required' });
-    if (!password || password.length < 6) {
-      return res.status(400).json({ error: 'password must be at least 6 characters' });
-    }
+    const invitePwProblem = passwordProblem(password);
+    if (invitePwProblem) return res.status(400).json({ error: invitePwProblem });
     let payload;
     try {
       payload = jwt.verify(token, process.env.JWT_SECRET);
@@ -176,9 +175,9 @@ router.get('/invite/:token', async (req, res) => {
 router.post('/reset-password', async (req, res) => {
   try {
     const { token, newPassword } = req.body || {};
-    if (!token || !newPassword || newPassword.length < 6) {
-      return res.status(400).json({ error: 'token and newPassword (>=6 chars) required' });
-    }
+    if (!token || !newPassword) return res.status(400).json({ error: 'token and newPassword required' });
+    const resetPwProblem = passwordProblem(newPassword);
+    if (resetPwProblem) return res.status(400).json({ error: resetPwProblem });
     let payload;
     try {
       payload = jwt.verify(token, process.env.JWT_SECRET);
