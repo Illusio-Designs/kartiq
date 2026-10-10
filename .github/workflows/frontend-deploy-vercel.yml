@@ -11,12 +11,18 @@ name: Deploy frontend to Vercel
 #   2. GitHub → repo Settings → Secrets and variables → Actions → add secret
 #      VERCEL_DEPLOY_HOOK = that URL.
 #   3. In Vercel, set Root Directory = `frontend` and add NEXT_PUBLIC_API_URL.
+#      The repo is an npm-workspaces/Turborepo monorepo: keep "Include source files
+#      outside of the Root Directory" ON (the default) so Vercel can see the root
+#      package-lock.json; leave Install Command and Build Command on their defaults.
 
 on:
   push:
     branches: [main]
     paths:
       - 'frontend/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'turbo.json'
       # Include this workflow so adding/editing it triggers a deploy too.
       - '.github/workflows/frontend-deploy-vercel.yml'
   workflow_dispatch: {}

@@ -4,6 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
+### Monorepo (repo root — npm workspaces + Turborepo)
+```bash
+npm install            # ONE install at the root for backend + frontend (mobile has its own)
+npm run dev            # backend + frontend together (turbo)
+npm run lint           # lint every workspace
+npm run typecheck      # tsc for the frontend
+npm run build          # production build (frontend)
+npm test               # the one-command test runner (needs MySQL)
+```
+Workspaces are `@kartriq/backend` and `@kartriq/frontend`; the lockfile is the root `package-lock.json` (there are no per-package lockfiles). `/mobile` is NOT a workspace (Expo/Metro needs its own install). The cPanel deploy still uploads only `backend/src` and `backend/package.json`; Vercel builds the frontend with Root Directory = `frontend`. Docker: `docker build -f backend/Dockerfile -t kartriq-backend .` from the repo root.
+
 ### Backend (`/backend`)
 ```bash
 npm run dev                  # Start dev server (port 5001) — auto-migrates + seeds on boot

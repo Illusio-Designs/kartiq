@@ -1,5 +1,5 @@
 {
-  "name": "omnistock-backend",
+  "name": "@kartriq/backend",
   "version": "1.0.0",
   "description": "OmniStock ERP Backend - Node.js + Express + Knex + MySQL",
   "main": "src/index.js",

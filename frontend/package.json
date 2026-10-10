@@ -1,5 +1,5 @@
 {
-  "name": "kartriq-frontend",
+  "name": "@kartriq/frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {

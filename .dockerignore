@@ -1,0 +1,17 @@
+**/node_modules
+**/.next
+**/.env
+**/.env.*
+**/*.log
+.git
+.github
+.turbo
+docs
+mobile
+frontend/**
+!frontend/package.json
+backend/test-report
+backend/scripts
+backend/.seed-state.json
+**/coverage
+**/tmp

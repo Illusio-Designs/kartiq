@@ -1,0 +1,21 @@
+{
+  "name": "kartriq",
+  "private": true,
+  "description": "Kartriq monorepo: backend (Express), frontend (Next.js). The mobile app (Expo) lives in /mobile with its own install.",
+  "workspaces": ["backend", "frontend"],
+  "packageManager": "npm@10.9.2",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "turbo run dev",
+    "dev:backend": "turbo run dev --filter=@kartriq/backend",
+    "dev:frontend": "turbo run dev --filter=@kartriq/frontend",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "npm run test:all -w @kartriq/backend",
+    "test:all": "npm run test:all -w @kartriq/backend"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.0"
+  }
+}

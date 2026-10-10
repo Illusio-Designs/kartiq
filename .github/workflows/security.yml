@@ -31,26 +31,20 @@ jobs:
   backend-dependencies:
     name: Backend dependency audit (fails on high or critical)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm audit --omit=dev --audit-level=high
+      - run: npm audit --omit=dev --audit-level=high --workspace @kartriq/backend
 
   frontend-dependencies:
     name: Frontend dependency audit (report only)
     runs-on: ubuntu-latest
     continue-on-error: true   # Next.js needs a major upgrade to clear its findings; tracked separately
-    defaults:
-      run:
-        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm audit --omit=dev --audit-level=high
+      - run: npm audit --omit=dev --audit-level=high --workspace @kartriq/frontend
