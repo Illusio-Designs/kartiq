@@ -53,7 +53,7 @@ jobs:
       # broken JS. Catches things Vercel-style frontend CI doesn't see
       # (the backend isn't built — just shipped as-is).
       - name: Setup Node 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 20
 
