@@ -761,6 +761,25 @@ async function main() {
   await setMfa(ownerRow.mfaEnabled ? 1 : 0);
   if (prevMfa === undefined) delete process.env.REQUIRE_ADMIN_MFA; else process.env.REQUIRE_ADMIN_MFA = prevMfa;
 
+  // ── 27. Exporting buyer data needs its own permission ─────────────────────
+  group('27. Permission: orders.export_buyer_data');
+  const permRow = await db('permissions').where({ code: 'orders.export_buyer_data' }).first();
+  ok(!!permRow, 'The permission exists');
+  const ownerRoles = await db('role_permissions').join('tenant_roles', 'tenant_roles.id', 'role_permissions.roleId').where({ 'tenant_roles.tenantId': tenantId, 'role_permissions.permissionId': permRow.id }).select('tenant_roles.code');
+  const held = ownerRoles.map((r) => r.code).sort().join(',');
+  ok(held === 'ADMIN,MANAGER', `New sellers get it on Admin and Manager only (${held})`);
+  const { requirePermission } = require('../middleware/auth.middleware');
+  const gate = (perms) => new Promise((resolve) => {
+    const r = { user: { id: 'u', isPlatformAdmin: false }, permissions: new Set(perms) };
+    const res = { status(c) { this.code = c; return this; }, json() { resolve(this.code); } };
+    requirePermission('orders.export_buyer_data')(r, res, () => resolve(200));
+  });
+  ok((await gate(['orders.read'])) === 403, 'Staff with only orders.read cannot export buyer data');
+  ok((await gate(['orders.read', 'orders.export_buyer_data'])) === 200, 'With the permission they can');
+  const dl = await req('GET', `/orders/amazon-data?ids=${M[1].id}`, { token, raw: true });
+  ok(dl.status === 200, 'The seller\'s admin can still download Amazon data');
+  ok((await req('GET', `/orders/amazon-data?ids=${M[1].id}`, { raw: true })).status === 401, 'No login → 401');
+
   // ── Result ───────────────────────────────────────────────────────────────
   console.log(`\n\x1b[1mResult: ${passed} passed, ${failed} failed\x1b[0m`);
   if (failed) { console.log('\nFailures:'); failures.forEach((f) => console.log('  - ' + f)); }

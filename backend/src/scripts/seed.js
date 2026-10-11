@@ -15,7 +15,7 @@ const PLATFORM_ADMIN_NAME     = process.env.PLATFORM_ADMIN_NAME     || 'Platform
 const MODULES = {
   products:   ['read', 'create', 'update', 'delete'],
   inventory:  ['read', 'create', 'update', 'delete', 'adjust'],
-  orders:     ['read', 'create', 'update', 'delete', 'fulfill', 'cancel'],
+  orders:     ['read', 'create', 'update', 'delete', 'fulfill', 'cancel', 'export_buyer_data'],
   purchases:  ['read', 'create', 'update', 'delete', 'approve'],
   vendors:    ['read', 'create', 'update', 'delete'],
   customers:  ['read', 'create', 'update', 'delete'],

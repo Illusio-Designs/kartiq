@@ -279,3 +279,6 @@ Self-shipped (MFN) Amazon orders have ONE button, **Confirm**, then **Download l
 
 ## Required MFA for admins
 `utils/mfaPolicy.js`: admins (`SUPER_ADMIN`, `ADMIN`, platform admins) must have TOTP on. Enforced in `authenticate`: until `users.mfaEnabled`, every call except `/auth/me`, `/auth/2fa/setup`, `/auth/2fa/verify`, `/auth/logout` gets `403 { code: 'MFA_SETUP_REQUIRED' }`; the frontend interceptor sends the user to `/mfa-setup`. On by default when `NODE_ENV=production`; elsewhere set `REQUIRE_ADMIN_MFA=true` (`false` turns it off). Admins cannot disable 2FA while it is required. Not done: 365-day password expiry.
+
+## Buyer-data export permission
+`orders.export_buyer_data` gates the Amazon-data CSV/JSON downloads (`/orders/amazon-data`, `/orders/:id/amazon-data`; the buttons are hidden without it). Default: Admin and Manager roles (new tenants via onboarding templates; existing tenants get it once at boot from `initDb.js`, only when the permission is first created, so later removals stick). Staff and Accountant do not have it; platform admins have `*`. Packing slips and labels still need only `orders.read`.

@@ -1,5 +1,6 @@
 'use client';
 
+import { useAuthStore } from '@/store/auth.store';
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -178,6 +179,7 @@ function shipmentVariant(status: string): 'emerald' | 'amber' | 'rose' | 'blue' 
 }
 
 export default function OrdersPage() {
+  const canExportBuyerData = useAuthStore((s) => s.hasPermission('orders.export_buyer_data'));
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -766,8 +768,8 @@ export default function OrdersPage() {
           <Button variant="primary" size="sm" leftIcon={<Truck size={13} />} loading={bookPending} onClick={confirmAndGetLabels}>Confirm &amp; get labels</Button>
           <Button variant="outline" size="sm" leftIcon={<Printer size={13} />} loading={labelsPending} onClick={printSelectedLabels}>Download labels</Button>
           <Button variant="outline" size="sm" leftIcon={<Printer size={13} />} loading={slipsPending} onClick={printSelectedSlips}>Print packing slips</Button>
-          <Button variant="outline" size="sm" leftIcon={<Download size={13} />} loading={amzDataPending} onClick={() => downloadAmazonData('csv')}>Amazon data (CSV)</Button>
-          <Button variant="outline" size="sm" leftIcon={<Download size={13} />} loading={amzDataPending} onClick={() => downloadAmazonData('json')}>Amazon data (JSON)</Button>
+          {canExportBuyerData && <Button variant="outline" size="sm" leftIcon={<Download size={13} />} loading={amzDataPending} onClick={() => downloadAmazonData('csv')}>Amazon data (CSV)</Button>}
+          {canExportBuyerData && <Button variant="outline" size="sm" leftIcon={<Download size={13} />} loading={amzDataPending} onClick={() => downloadAmazonData('json')}>Amazon data (JSON)</Button>}
           <Button variant="outline" size="sm" leftIcon={<Download size={13} />} onClick={() => exportRows(sortedOrders.filter((o: any) => selected.has(o.id)))}>Export</Button>
           <Button variant="danger" size="sm" leftIcon={<XCircle size={13} />} loading={bulkPending} onClick={cancelSelected}>Cancel</Button>
         </BulkActionBar>

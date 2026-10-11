@@ -604,6 +604,25 @@ async function initDb() {
     }
   }
 
+  // Buyer-data export permission (added later): create it once and give it to
+  // every tenant's ADMIN and MANAGER roles. Only when the permission is new, so
+  // a tenant that later removes it from a role keeps it removed.
+  try {
+    const prisma = require('../utils/prisma');
+    const code = 'orders.export_buyer_data';
+    const existing = await prisma.permission.findUnique({ where: { code } });
+    if (!existing) {
+      const perm = await prisma.permission.create({ data: { code, module: 'orders' } });
+      const roles = await db('tenant_roles').whereIn('code', ['ADMIN', 'MANAGER']).select('id');
+      for (const r of roles) {
+        await prisma.rolePermission.create({ data: { roleId: r.id, permissionId: perm.id } });
+      }
+      console.log(`[initDb] permission ${code} added to ${roles.length} role(s)`);
+    }
+  } catch (e) {
+    console.warn('[initDb] export_buyer_data permission sync skipped:', e.message);
+  }
+
   // De-duplicate public_content on boot. The seeder keys rows on a slug built
   // from a positional sortOrder, so reordering the CONTENT list over time left
   // stale rows with the same (type, category, title, href) — which render as

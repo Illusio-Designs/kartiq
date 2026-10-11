@@ -71,8 +71,8 @@ const sendAmazonData = async (req, res, ids) => {
     res.status(500).json({ error: err.message });
   }
 };
-router.get('/amazon-data', requirePermission('orders.read'), piiAudit, (req, res) => sendAmazonData(req, res, String(req.query.ids || '').split(',')));
-router.post('/amazon-data', requirePermission('orders.read'), piiAudit, (req, res) => sendAmazonData(req, res, req.body?.ids));
+router.get('/amazon-data', requirePermission('orders.read'), requirePermission('orders.export_buyer_data'), piiAudit, (req, res) => sendAmazonData(req, res, String(req.query.ids || '').split(',')));
+router.post('/amazon-data', requirePermission('orders.read'), requirePermission('orders.export_buyer_data'), piiAudit, (req, res) => sendAmazonData(req, res, req.body?.ids));
 
 // ── Bulk shipping labels — MUST be declared before /:id routes ───────────────
 // body: { ids: string[] } (max 100). Returns ONE merged PDF (base64) with a
@@ -285,7 +285,7 @@ router.post('/:id/book-shipping', requirePermission('shipments.create'), async (
 });
 
 // One order's Amazon data (?format=json|csv)
-router.get('/:id/amazon-data', requirePermission('orders.read'), piiAudit, (req, res) => sendAmazonData(req, res, [req.params.id]));
+router.get('/:id/amazon-data', requirePermission('orders.read'), requirePermission('orders.export_buyer_data'), piiAudit, (req, res) => sendAmazonData(req, res, [req.params.id]));
 
 // Download / print the label (fetched from the courier the first time, then kept).
 router.get('/:id/label', requirePermission('shipments.read'), piiAudit, async (req, res) => {

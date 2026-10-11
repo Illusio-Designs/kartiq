@@ -39,6 +39,7 @@ export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const hasFeature = useAuthStore((s) => s.hasFeature);
+  const canExportBuyerData = useAuthStore((s) => s.hasPermission('orders.export_buyer_data'));
   const vmsEnabled = hasFeature('vms');
 
   const { data: order, isLoading, isError } = useQuery({
@@ -547,11 +548,11 @@ export default function OrderDetailPage() {
               </>
             ) : null}
 
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            {canExportBuyerData && <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <span>All Amazon data for this order:</span>
               <Button size="sm" variant="secondary" loading={amzDataLoading} onClick={() => downloadAmazonData('csv')}>Download CSV</Button>
               <Button size="sm" variant="secondary" loading={amzDataLoading} onClick={() => downloadAmazonData('json')}>Download JSON</Button>
-            </div>
+            </div>}
             {shipment?.status ? (
               <ShipmentTimeline shipment={shipment} refreshing={refreshShipmentMutation.isPending} onRefresh={() => refreshShipmentMutation.mutate()} />
             ) : null}
