@@ -278,7 +278,10 @@ Self-shipped (MFN) Amazon orders have ONE button, **Confirm**, then **Download l
 - Docs: `docs/SECURITY_CONTROLS_GUIDE.md`, `docs/AWS_PENTEST_AND_AMAZON_SPAPI_REGISTRATION.md`.
 
 ## Required MFA for admins
-`utils/mfaPolicy.js`: admins (`SUPER_ADMIN`, `ADMIN`, platform admins) must have TOTP on. Enforced in `authenticate`: until `users.mfaEnabled`, every call except `/auth/me`, `/auth/2fa/setup`, `/auth/2fa/verify`, `/auth/logout` gets `403 { code: 'MFA_SETUP_REQUIRED' }`; the frontend interceptor sends the user to `/mfa-setup`. On by default when `NODE_ENV=production`; elsewhere set `REQUIRE_ADMIN_MFA=true` (`false` turns it off). Admins cannot disable 2FA while it is required. Not done: 365-day password expiry.
+`utils/mfaPolicy.js`: admins (`SUPER_ADMIN`, `ADMIN`, platform admins) must have TOTP on. Enforced in `authenticate`: until `users.mfaEnabled`, every call except `/auth/me`, `/auth/2fa/setup`, `/auth/2fa/verify`, `/auth/logout` gets `403 { code: 'MFA_SETUP_REQUIRED' }`; the frontend interceptor sends the user to `/mfa-setup`. On by default when `NODE_ENV=production`; elsewhere set `REQUIRE_ADMIN_MFA=true` (`false` turns it off). Admins cannot disable 2FA while it is required.
 
 ## Buyer-data export permission
 `orders.export_buyer_data` gates the Amazon-data CSV/JSON downloads (`/orders/amazon-data`, `/orders/:id/amazon-data`; the buttons are hidden without it). Default: Admin and Manager roles (new tenants via onboarding templates; existing tenants get it once at boot from `initDb.js`, only when the permission is first created, so later removals stick). Staff and Accountant do not have it; platform admins have `*`. Packing slips and labels still need only `orders.read`.
+
+## Password expiry
+`utils/passwordExpiry.js`: passwords expire after `PASSWORD_MAX_AGE_DAYS` (default 365, `0` = never). `users.passwordChangedAt` (migration backfills existing users with the migration time) is set on change-password, reset and invite-accept. `POST /auth/login` returns `403 { code: 'PASSWORD_EXPIRED' }` after a correct but expired password (message points to "Forgot password"); accounts without a password never expire.

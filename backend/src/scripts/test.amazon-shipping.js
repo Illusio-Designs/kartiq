@@ -780,6 +780,29 @@ async function main() {
   ok(dl.status === 200, 'The seller\'s admin can still download Amazon data');
   ok((await req('GET', `/orders/amazon-data?ids=${M[1].id}`, { raw: true })).status === 401, 'No login → 401');
 
+  // ── 28. Passwords expire after 365 days ───────────────────────────────────
+  group('28. Password expiry');
+  const pe = require('../utils/passwordExpiry');
+  const ago = (d) => new Date(Date.now() - d * 86400000);
+  ok(!pe.passwordExpired({ password: 'x', passwordChangedAt: ago(364) }) && pe.passwordExpired({ password: 'x', passwordChangedAt: ago(366) }), 'Expires after 365 days, not before');
+  ok(!pe.passwordExpired({ password: null, passwordChangedAt: ago(900) }), 'Google-only accounts (no password) never expire');
+  const ownerIdP = require('jsonwebtoken').decode(token).id;
+  const curPw = 'Another!Str0ngOne'; // set earlier by the password-policy group
+  const goodLogin = await req('POST', '/auth/login', { body: { email: owner.email, password: curPw } });
+  ok(goodLogin.status === 200 && goodLogin.body.token, 'A current password signs in');
+  await db('users').where({ id: ownerIdP }).update({ passwordChangedAt: ago(400) });
+  const expLogin = await req('POST', '/auth/login', { body: { email: owner.email, password: curPw } });
+  ok(expLogin.status === 403 && expLogin.body.code === 'PASSWORD_EXPIRED' && !expLogin.body.token, 'A 400-day-old password is refused with a clear message');
+  const badExp = await req('POST', '/auth/login', { body: { email: owner.email, password: 'Wrong@12345678' } });
+  ok(badExp.status === 401, 'A wrong password still just says invalid credentials (no leak)');
+  await db('users').where({ id: ownerIdP }).update({ passwordChangedAt: ago(10) });
+  const newPw = 'Changed@12345678';
+  const cp = await req('POST', '/auth/change-password', { token, body: { currentPassword: curPw, newPassword: newPw } });
+  ok(cp.status === 200, 'Changing the password works');
+  const stamp = (await db('users').where({ id: ownerIdP }).first()).passwordChangedAt;
+  ok(Date.now() - new Date(stamp).getTime() < 60000, 'Changing the password restarts the 365-day clock');
+  await db('users').where({ id: ownerIdP }).update({ passwordChangedAt: ago(1) });
+
   // ── Result ───────────────────────────────────────────────────────────────
   console.log(`\n\x1b[1mResult: ${passed} passed, ${failed} failed\x1b[0m`);
   if (failed) { console.log('\nFailures:'); failures.forEach((f) => console.log('  - ' + f)); }

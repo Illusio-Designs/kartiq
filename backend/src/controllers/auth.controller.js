@@ -86,6 +86,10 @@ const login = async (req, res) => {
 
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) { res.status(401).json({ error: 'Invalid credentials' }); return; }
+    if (passwordExpired(user)) {
+      res.status(403).json({ error: EXPIRED_MESSAGE, code: 'PASSWORD_EXPIRED' });
+      return;
+    }
 
     // 2FA challenge — if MFA is enabled, return a short-lived "mfa token"
     // that the frontend exchanges for a real session JWT after submitting a
@@ -191,6 +195,7 @@ const googleAuth = async (req, res) => {
 };
 
 const { needsMfaSetup } = require('../utils/mfaPolicy');
+const { passwordExpired, EXPIRED_MESSAGE } = require('../utils/passwordExpiry');
 const getMe = async (req, res) => {
   try {
     const user = await prisma.user.findUnique({

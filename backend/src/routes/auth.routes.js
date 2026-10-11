@@ -48,7 +48,7 @@ router.post('/change-password', authenticate, async (req, res) => {
     const valid = await bcrypt.compare(currentPassword, user.password);
     if (!valid) return res.status(400).json({ error: 'Current password is incorrect' });
     const hashed = await bcrypt.hash(newPassword, 12);
-    await prisma.user.update({ where: { id: req.user.id }, data: { password: hashed } });
+    await prisma.user.update({ where: { id: req.user.id }, data: { password: hashed, passwordChangedAt: new Date() } });
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -121,6 +121,7 @@ router.post('/accept-invite', async (req, res) => {
       where: { id: user.id },
       data: {
         password: hashed,
+        passwordChangedAt: new Date(),
         isActive: true,
         emailVerified: true,
         ...(name ? { name: String(name).trim().slice(0, 191) } : {}),
@@ -189,7 +190,7 @@ router.post('/reset-password', async (req, res) => {
     const user = await prisma.user.findUnique({ where: { id: payload.id } });
     if (!user || !user.isActive) return res.status(401).json({ error: 'Account not found' });
     const hashed = await bcrypt.hash(newPassword, 12);
-    await prisma.user.update({ where: { id: user.id }, data: { password: hashed } });
+    await prisma.user.update({ where: { id: user.id }, data: { password: hashed, passwordChangedAt: new Date() } });
     // A password reset signs out every device (web + mobile) — anyone holding
     // an old session must sign in again with the new password.
     await revokeAllForUser(user.id);

@@ -112,6 +112,9 @@ async function initDb() {
     { table: 'users', column: 'totpSecret', ddl: 'VARCHAR(64) DEFAULT NULL' },
     { table: 'users', column: 'mfaEnabled', ddl: 'TINYINT(1) NOT NULL DEFAULT 0' },
 
+    // Password rotation: existing rows start their clock at migration time.
+    { table: 'users', column: 'passwordChangedAt', ddl: 'DATETIME(3) NULL DEFAULT CURRENT_TIMESTAMP(3)' },
+
     // DPDP / GDPR — soft delete columns
     { table: 'users',   column: 'deletedAt', ddl: 'DATETIME(3) DEFAULT NULL' },
     { table: 'tenants', column: 'deletedAt', ddl: 'DATETIME(3) DEFAULT NULL' },
