@@ -23,6 +23,7 @@ const {
 } = require('../services/channel.service');
 const { processReviewQueue } = require('../services/review.service');
 const { pruneExpiredVideos } = require('../services/vms.service');
+const { purgeBuyerData } = require('../services/retention.service');
 
 // ── 1. Pull new orders from every active channel that supports it ───────────
 async function syncChannelOrders() {
@@ -238,6 +239,7 @@ async function runAllJobs() {
     await safe('pollShipmentStatus', pollShipmentStatus),
     await safe('processReviewQueue', () => processReviewQueue({})),
     await safe('pruneExpiredVideos', () => pruneExpiredVideos({})),
+    await safe('purgeBuyerData', () => purgeBuyerData({})),
   );
 
   console.log('[cron] done in', Date.now() - t0, 'ms', out);
@@ -302,6 +304,7 @@ function start() {
   const trackingInterval  = parseMinutes(process.env.CRON_TRACKING_MIN, 10);
   const reviewInterval    = parseMinutes(process.env.CRON_REVIEW_MIN, 60);
   const videoPruneInterval = parseMinutes(process.env.CRON_VIDEO_PRUNE_MIN, 360); // every 6h
+  const purgeInterval = parseMinutes(process.env.CRON_PII_PURGE_MIN, 360);       // buyer-data deletion, every 6h
 
   logger.info({ detail: {
     orderSyncMin: orderSyncInterval,
@@ -318,6 +321,7 @@ function start() {
     setInterval(guarded('pollShipmentStatus', pollShipmentStatus), minutes(trackingInterval)),
     setInterval(guarded('processReviewQueue', () => processReviewQueue({})), minutes(reviewInterval)),
     setInterval(guarded('pruneExpiredVideos', () => pruneExpiredVideos({})), minutes(videoPruneInterval)),
+    setInterval(guarded('purgeBuyerData', () => purgeBuyerData({})), minutes(purgeInterval)),
   );
 
   // Fast, near-real-time order pass — only new + changed orders each minute.
@@ -351,4 +355,5 @@ module.exports = {
   syncChannelOrders,
   pushInventoryToAll,
   pollShipmentStatus,
+  purgeBuyerData,
 };

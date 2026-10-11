@@ -688,6 +688,50 @@ async function main() {
   const chg2 = await req('POST', '/auth/change-password', { token, body: { currentPassword: 'Test@12345678', newPassword: 'Another!Str0ngOne' } });
   ok(chg2.status === 200, `Changing to a strong password works (${chg2.status})`);
 
+  // ── 25. Buyer data is deleted 30 days after delivery ─────────────────────
+  group('25. Retention: buyer data removed 30 days after delivery');
+  const { purgeBuyerData } = require('../services/retention.service');
+  const dayAgo = (d) => new Date(Date.now() - d * 86400000);
+  const custId = randomUUID();
+  await db('customers').insert({ id: custId, tenantId, name: 'Ravi Kumar', email: 'ravi@example.com', phone: '9876500000', address: JSON.stringify({ line1: '7 Lake Road' }), city: 'Pune', state: 'MH', country: 'IN', isB2B: 0, updatedAt: new Date() });
+  await db('orders').where({ id: M[2].id }).update({ customerId: custId, deliveredAt: dayAgo(40), channelData: '{"x":1}', billingAddress: '{"line1":"7 Lake Road"}' });
+  const lblBefore = await db('order_labels').where({ orderId: M[2].id, status: 'ACTIVE' }).first();
+  ok(!!lblBefore?.content, 'Set-up: the delivered order has a stored label (it prints the buyer\'s name and address)');
+  await db('orders').where({ id: M[11].id }).update({ deliveredAt: dayAgo(10) });          // closed, but only 10 days ago
+  const openBefore = await db('orders').where({ id: M[17].id }).first();                    // still open
+  await db('orders').where({ id: M[13].id }).update({ channelId: flk.body.id, deliveredAt: dayAgo(60) }); // an order from a non-Amazon channel
+  const keepAddr = (await db('orders').where({ id: M[13].id }).first()).shippingAddress;
+  const run1 = await purgeBuyerData({});
+  ok(run1.orders >= 1, `The job ran and cleared ${run1.orders} old closed Amazon order(s)`);
+  const p2 = await db('orders').where({ id: M[2].id }).first();
+  ok(p2.piiPurgedAt && JSON.stringify(typeof p2.shippingAddress === 'string' ? JSON.parse(p2.shippingAddress) : p2.shippingAddress) === '{"state":"MH","country":"IN"}', 'Address reduced to state and country only');
+  ok(p2.channelData === null && p2.billingAddress === null, 'Cached Amazon copy and billing address removed');
+  ok(p2.trackingNumber && Number(p2.total) > 0 && p2.orderNumber, 'Order number, amount and tracking kept (business records)');
+  ok((await db('order_labels').where({ orderId: M[2].id }).first()).content === null, 'The label file is removed');
+  const cust = await db('customers').where({ id: custId }).first();
+  ok(cust.name === 'Deleted customer' && cust.email === null && cust.phone === null && cust.address === null && cust.city === null, 'The customer\'s name, email, phone and address are cleared');
+  ok(!(await db('orders').where({ id: M[11].id }).first()).piiPurgedAt, 'Delivered only 10 days ago: left alone');
+  ok(!(await db('orders').where({ id: M[17].id }).first()).piiPurgedAt && JSON.stringify(openBefore.shippingAddress) === JSON.stringify((await db('orders').where({ id: M[17].id }).first()).shippingAddress), 'An open order is never touched');
+  ok(!(await db('orders').where({ id: M[13].id }).first()).piiPurgedAt && JSON.stringify((await db('orders').where({ id: M[13].id }).first()).shippingAddress) === JSON.stringify(keepAddr), 'Orders that are not from Amazon are never touched');
+  const run2 = await purgeBuyerData({});
+  ok(run2.orders === 0, 'Running it again does nothing (already purged)');
+  const b2b = randomUUID();
+  await db('customers').insert({ id: b2b, tenantId, name: 'Acme Traders', email: 'acme@example.com', phone: '1', address: JSON.stringify({ line1: 'Mill St' }), isB2B: 1, gstIn: '24ABCDE1234F1Z5', updatedAt: new Date() });
+  await db('orders').where({ id: M[3].id }).update({ customerId: b2b, status: 'DELIVERED', deliveredAt: dayAgo(45) });
+  await purgeBuyerData({});
+  ok((await db('customers').where({ id: b2b }).first()).name === 'Acme Traders', 'A business (B2B / GST) customer is never anonymised');
+  const auditRow = await db('audit_logs').where({ action: 'retention.purge' }).orderBy('createdAt', 'desc').first();
+  ok(!!auditRow, 'Each deletion run is written to the audit log');
+  const aBefore = Number((await db('audit_logs').where({ tenantId, action: 'pii.access' }).count({ c: '*' }).first()).c);
+  await req('GET', `/orders/${M[1].id}/packing-slip`, { token, raw: true });
+  await req('GET', `/orders/${M[1].id}`, { token });
+  await req('GET', `/orders/amazon-data?ids=${M[1].id}`, { token, raw: true });
+  await sleep(300);
+  const aAfter = Number((await db('audit_logs').where({ tenantId, action: 'pii.access' }).count({ c: '*' }).first()).c);
+  ok(aAfter - aBefore === 3, `Viewing an order, printing a slip and downloading Amazon data are each logged (${aAfter - aBefore} new log entries)`);
+  const lastLog = await db('audit_logs').where({ tenantId, action: 'pii.access' }).orderBy('createdAt', 'desc').first();
+  ok(lastLog.userEmail && lastLog.path && !/Ravi|7 Lake/.test(JSON.stringify(lastLog)), 'The log says who and what, and never contains the buyer data itself');
+
   // ── Result ───────────────────────────────────────────────────────────────
   console.log(`\n\x1b[1mResult: ${passed} passed, ${failed} failed\x1b[0m`);
   if (failed) { console.log('\nFailures:'); failures.forEach((f) => console.log('  - ' + f)); }

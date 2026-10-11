@@ -67,6 +67,8 @@ async function initDb() {
     // Last quantity we pushed to the marketplace — unchanged stock is not re-sent every cycle.
     { table: 'channel_listings', column: 'lastPushedQty', ddl: 'INT DEFAULT NULL' },
     { table: 'channel_listings', column: 'lastPushedAt',  ddl: 'DATETIME(3) DEFAULT NULL' },
+    // Set when the buyer's personal data was removed (30 days after delivery; see services/retention.service.js).
+    { table: 'orders',   column: 'piiPurgedAt',      ddl: 'DATETIME(3) DEFAULT NULL' },
     { table: 'order_labels', column: 'url',            ddl: 'TEXT DEFAULT NULL' },
     // Why the last automatic booking failed (cleared on success) — shown on the
     // order with a Retry action.

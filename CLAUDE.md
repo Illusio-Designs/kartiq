@@ -267,3 +267,12 @@ Self-shipped (MFN) Amazon orders have ONE button, **Confirm**, then **Download l
 - Channel `needsReauth` (Amazon "invalid grant") drives the red banner + **Re-authorise** on the channel's manage page; `/oauth/amazon/status` returns `authorizedAt`.
 - Courier-adapter details (endpoints, status words) were written from public docs and are **unverified against live accounts** — treat as best effort until smoke-tested.
 - New npm packages used lazily (`pdf-lib`, `fflate`): the server must run "NPM install" after deploy.
+
+---
+
+## Buyer data (PII) controls
+
+- **30-day deletion:** `backend/src/services/retention.service.js` (cron `purgeBuyerData`, every 6 h, `CRON_PII_PURGE_MIN`) removes buyer data from CLOSED **Amazon** orders 30 days after delivery: address reduced to state + country, `orders.channelData` (cached raw Amazon copy) and billing address cleared, label file/link removed, and the imported customer's name/email/phone/address cleared (B2B/GST customers and non-Amazon or open orders are never touched). Marked by `orders.piiPurgedAt`. Retention can only be shortened (`PII_RETENTION_DAYS` ≤ 30).
+- **Audit trail:** routes that show or export buyer data (`GET /orders/:id`, packing slips, labels, Amazon-data downloads) run the `piiAudit` middleware → `audit_logs` action `pii.access` (who, path, time; never the data). Each purge run logs `retention.purge`.
+- **Passwords:** 12+ characters with upper, lower, number and symbol (`backend/src/utils/passwordPolicy.js`; frontend `lib/validators.ts`).
+- Docs: `docs/SECURITY_CONTROLS_GUIDE.md`, `docs/AWS_PENTEST_AND_AMAZON_SPAPI_REGISTRATION.md`.

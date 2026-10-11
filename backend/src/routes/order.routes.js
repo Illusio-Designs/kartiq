@@ -7,6 +7,9 @@ const {
 const { requestReviewForOrder, processReviewQueue, REVIEW_DELAY_HOURS } = require('../services/review.service');
 const { buildBulkLabelsPdf } = require('../services/amazonShipping.service');
 const shipment = require('../services/shipping/shipment.service');
+const { auditAction } = require('../services/audit.service');
+// Anything that shows or exports buyer data (names, addresses) is written to the audit log.
+const piiAudit = auditAction('pii.access', 'order');
 const { buildPackingSlip, buildBulkPackingSlips } = require('../services/packingSlip.service');
 const { rankWarehouses, pickBestWarehouse } = require('../services/routing.service');
 const { scoreAndPersist } = require('../services/rto.service');
@@ -26,7 +29,7 @@ router.use(authenticate, requireTenant);
 // body: { ids: string[] } (max 100). Returns ONE printable HTML document with a
 // slip per page, plus which orders were skipped and why (FBA, cancelled, not
 // found). JSON (not raw HTML) so the UI can report the skips.
-router.post('/packing-slips', requirePermission('orders.read'), async (req, res) => {
+router.post('/packing-slips', requirePermission('orders.read'), piiAudit, async (req, res) => {
   try {
     const r = await buildBulkPackingSlips(req.body?.ids, req.tenant.id);
     if (r.error) return res.status(r.status).json({ error: r.error, skipped: r.skipped || [] });
@@ -68,13 +71,13 @@ const sendAmazonData = async (req, res, ids) => {
     res.status(500).json({ error: err.message });
   }
 };
-router.get('/amazon-data', requirePermission('orders.read'), (req, res) => sendAmazonData(req, res, String(req.query.ids || '').split(',')));
-router.post('/amazon-data', requirePermission('orders.read'), (req, res) => sendAmazonData(req, res, req.body?.ids));
+router.get('/amazon-data', requirePermission('orders.read'), piiAudit, (req, res) => sendAmazonData(req, res, String(req.query.ids || '').split(',')));
+router.post('/amazon-data', requirePermission('orders.read'), piiAudit, (req, res) => sendAmazonData(req, res, req.body?.ids));
 
 // ── Bulk shipping labels — MUST be declared before /:id routes ───────────────
 // body: { ids: string[] } (max 100). Returns ONE merged PDF (base64) with a
 // label per page, plus which orders were skipped and why.
-router.post('/labels', requirePermission('shipments.read'), async (req, res) => {
+router.post('/labels', requirePermission('shipments.read'), piiAudit, async (req, res) => {
   try {
     const r = await buildBulkLabelsPdf(req.body?.ids, req.tenant.id);
     if (r.error) return res.status(r.status).json({ error: r.error, skipped: r.skipped || [] });
@@ -259,7 +262,7 @@ router.post('/:id/approve', requirePermission('orders.update'), async (req, res)
 
 // ── Packing slip (goes inside the parcel; no prices) ─────────────────────────
 // Self-fulfilled orders only. Returns a print-ready HTML page.
-router.get('/:id/packing-slip', requirePermission('orders.read'), async (req, res) => {
+router.get('/:id/packing-slip', requirePermission('orders.read'), piiAudit, async (req, res) => {
   try {
     const r = await buildPackingSlip(req.params.id, req.tenant.id);
     if (r.error) return res.status(r.status).json({ error: r.error });
@@ -282,10 +285,10 @@ router.post('/:id/book-shipping', requirePermission('shipments.create'), async (
 });
 
 // One order's Amazon data (?format=json|csv)
-router.get('/:id/amazon-data', requirePermission('orders.read'), (req, res) => sendAmazonData(req, res, [req.params.id]));
+router.get('/:id/amazon-data', requirePermission('orders.read'), piiAudit, (req, res) => sendAmazonData(req, res, [req.params.id]));
 
 // Download / print the label (fetched from the courier the first time, then kept).
-router.get('/:id/label', requirePermission('shipments.read'), async (req, res) => {
+router.get('/:id/label', requirePermission('shipments.read'), piiAudit, async (req, res) => {
   try {
     const order = await prisma.order.findFirst({ where: { id: req.params.id, tenantId: req.tenant.id } });
     if (!order) return res.status(404).json({ error: 'Order not found' });
@@ -553,7 +556,7 @@ router.delete('/:id/videos/:videoId', requirePermission('orders.update'), requir
 
 router.get('/',              requirePermission('orders.read'),    getOrders);
 router.get('/stats',         requirePermission('orders.read'),    getOrderStats);
-router.get('/:id',           requirePermission('orders.read'),    getOrder);
+router.get('/:id',           requirePermission('orders.read'), piiAudit, getOrder);
 router.post('/',             requirePermission('orders.create'),  createOrder);
 router.patch('/:id/status',  requirePermission('orders.update'),  updateOrderStatus);
 router.patch('/:id/cancel',  requirePermission('orders.cancel'),  cancelOrder);
