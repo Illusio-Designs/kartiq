@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const prisma = require('../utils/prisma');
 const { isSessionActive } = require('../services/session.service');
+const { needsMfaSetup, pathAllowed } = require('../utils/mfaPolicy');
 
 
 // ── In-process cache for permissions/plan to avoid hitting DB on every req
@@ -35,7 +36,7 @@ async function loadUserContext(userId, { byEmail = false } = {}) {
   const ctx = {
     user: {
       id: user.id, email: user.email, name: user.name, phone: user.phone,
-      role: user.role, isPlatformAdmin: user.isPlatformAdmin,
+      role: user.role, isPlatformAdmin: user.isPlatformAdmin, mfaEnabled: !!user.mfaEnabled,
       tenantId: user.tenantId,
     },
     tenant: user.tenant ? {
@@ -146,6 +147,13 @@ const authenticate = async (req, res, next) => {
     req.plan = ctx.plan;
     req.subscription = ctx.subscription;
     req.permissions = ctx.permissions;
+    // Admins must enrol in MFA first; until then only the enrolment calls work.
+    if (needsMfaSetup(req.user) && !pathAllowed(req)) {
+      return res.status(403).json({
+        error: 'Admin accounts must turn on two-factor authentication before continuing.',
+        code: 'MFA_SETUP_REQUIRED',
+      });
+    }
     await applyImpersonation(req);
     next();
   } catch (err) {

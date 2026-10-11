@@ -37,6 +37,8 @@ api.interceptors.response.use(
         localStorage.removeItem('token');
         localStorage.removeItem('kartriq-auth');
         window.location.href = '/login';
+      } else if (status === 403 && err.response?.data?.code === 'MFA_SETUP_REQUIRED') {
+        if (!window.location.pathname.startsWith('/mfa-setup')) window.location.href = '/mfa-setup';
       } else if (status === 402 && err.response?.data?.upgradeUrl) {
         // Trial / past-due lockout: send the user to the billing page.
         const target = String(err.response.data.upgradeUrl);

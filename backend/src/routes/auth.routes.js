@@ -7,6 +7,7 @@ const { authenticate, invalidateUserCache, requirePermission } = require('../mid
 const prisma = require('../utils/prisma');
 const db = require('../utils/db');
 const { generateSecret, verifyTOTP, otpauthUrl } = require('../utils/totp');
+const { mfaRequired, isAdminUser } = require('../utils/mfaPolicy');
 const { audit } = require('../services/audit.service');
 const { sendPasswordReset } = require('../services/email.service');
 const { issueSessionToken, revokeSession, revokeAllForUser } = require('../services/session.service');
@@ -238,6 +239,7 @@ router.post('/2fa/verify', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Invalid code' });
     }
     await db('users').where({ id: user.id }).update({ mfaEnabled: 1 });
+    invalidateUserCache(user.id);
     audit({ req, action: 'auth.2fa.enable', resource: 'user', resourceId: user.id });
     res.json({ ok: true });
   } catch (err) {
@@ -250,6 +252,9 @@ router.post('/2fa/disable', authenticate, async (req, res) => {
     const { password, token } = req.body || {};
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
     if (!user) return res.status(404).json({ error: 'User not found' });
+    if (mfaRequired() && isAdminUser(user)) {
+      return res.status(403).json({ error: 'Two-factor authentication is required for admin accounts and cannot be turned off.' });
+    }
     if (!user.password) return res.status(400).json({ error: 'OAuth-only accounts have no password to confirm with' });
     const ok = await bcrypt.compare(password || '', user.password);
     if (!ok) return res.status(400).json({ error: 'Password is incorrect' });
@@ -257,6 +262,7 @@ router.post('/2fa/disable', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Invalid 2FA code' });
     }
     await db('users').where({ id: user.id }).update({ mfaEnabled: 0, totpSecret: null });
+    invalidateUserCache(user.id);
     audit({ req, action: 'auth.2fa.disable', resource: 'user', resourceId: user.id });
     res.json({ ok: true });
   } catch (err) {

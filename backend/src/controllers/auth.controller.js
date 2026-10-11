@@ -190,6 +190,7 @@ const googleAuth = async (req, res) => {
   }
 };
 
+const { needsMfaSetup } = require('../utils/mfaPolicy');
 const getMe = async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
@@ -202,6 +203,8 @@ const getMe = async (req, res) => {
     if (!user) { res.status(404).json({ error: 'User not found' }); return; }
     res.json({
       ...user,
+      mfaEnabled: !!req.user.mfaEnabled,
+      mfaSetupRequired: needsMfaSetup(req.user),
       tenant: req.tenant,
       plan: req.plan,
       subscription: req.subscription,

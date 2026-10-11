@@ -732,6 +732,35 @@ async function main() {
   const lastLog = await db('audit_logs').where({ tenantId, action: 'pii.access' }).orderBy('createdAt', 'desc').first();
   ok(lastLog.userEmail && lastLog.path && !/Ravi|7 Lake/.test(JSON.stringify(lastLog)), 'The log says who and what, and never contains the buyer data itself');
 
+  // ── 26. Admin accounts must use two-factor authentication ────────────────
+  group('26. Required MFA for admins');
+  const mfa = require('../utils/mfaPolicy');
+  const { authenticate: authMw, invalidateUserCache: dropCtx } = require('../middleware/auth.middleware');
+  const prevMfa = process.env.REQUIRE_ADMIN_MFA;
+  process.env.REQUIRE_ADMIN_MFA = 'true';
+  ok(mfa.needsMfaSetup({ role: 'ADMIN', mfaEnabled: false }) && mfa.needsMfaSetup({ role: 'STAFF', isPlatformAdmin: true }), 'Admins and platform admins without 2FA must enrol');
+  ok(!mfa.needsMfaSetup({ role: 'ADMIN', mfaEnabled: true }) && !mfa.needsMfaSetup({ role: 'STAFF', mfaEnabled: false }), 'Admins with 2FA, and non-admin staff, are not asked');
+  const callMw = (url, method = 'GET') => new Promise((resolve) => {
+    const r = { headers: { authorization: `Bearer ${token}` }, originalUrl: url, method };
+    const res = { status(c) { this.code = c; return this; }, json(b) { resolve({ code: this.code, body: b }); } };
+    authMw(r, res, () => resolve({ code: 200 }));
+  });
+  const ownerId = require('jsonwebtoken').decode(token).id;
+  const ownerRow = await db('users').where({ id: ownerId }).first();
+  const setMfa = async (v) => { await db('users').where({ id: ownerId }).update({ mfaEnabled: v }); dropCtx(ownerId); };
+  ok(mfa.isAdminUser(ownerRow), `The test seller's owner is an admin (${ownerRow.role})`);
+  await setMfa(0);
+  const blocked = await callMw('/api/v1/orders');
+  ok(blocked.code === 403 && blocked.body.code === 'MFA_SETUP_REQUIRED', 'An admin without 2FA is blocked from normal API calls');
+  ok((await callMw('/api/v1/auth/2fa/setup', 'POST')).code === 200 && (await callMw('/api/v1/auth/me')).code === 200, 'But can still reach the 2FA setup and profile calls');
+  await setMfa(1);
+  ok((await callMw('/api/v1/orders')).code === 200, 'Once 2FA is on, the admin is let through');
+  process.env.REQUIRE_ADMIN_MFA = 'false';
+  await setMfa(0);
+  ok((await callMw('/api/v1/orders')).code === 200, 'The rule can be switched off with REQUIRE_ADMIN_MFA=false');
+  await setMfa(ownerRow.mfaEnabled ? 1 : 0);
+  if (prevMfa === undefined) delete process.env.REQUIRE_ADMIN_MFA; else process.env.REQUIRE_ADMIN_MFA = prevMfa;
+
   // ── Result ───────────────────────────────────────────────────────────────
   console.log(`\n\x1b[1mResult: ${passed} passed, ${failed} failed\x1b[0m`);
   if (failed) { console.log('\nFailures:'); failures.forEach((f) => console.log('  - ' + f)); }

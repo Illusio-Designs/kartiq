@@ -276,3 +276,6 @@ Self-shipped (MFN) Amazon orders have ONE button, **Confirm**, then **Download l
 - **Audit trail:** routes that show or export buyer data (`GET /orders/:id`, packing slips, labels, Amazon-data downloads) run the `piiAudit` middleware → `audit_logs` action `pii.access` (who, path, time; never the data). Each purge run logs `retention.purge`.
 - **Passwords:** 12+ characters with upper, lower, number and symbol (`backend/src/utils/passwordPolicy.js`; frontend `lib/validators.ts`).
 - Docs: `docs/SECURITY_CONTROLS_GUIDE.md`, `docs/AWS_PENTEST_AND_AMAZON_SPAPI_REGISTRATION.md`.
+
+## Required MFA for admins
+`utils/mfaPolicy.js`: admins (`SUPER_ADMIN`, `ADMIN`, platform admins) must have TOTP on. Enforced in `authenticate`: until `users.mfaEnabled`, every call except `/auth/me`, `/auth/2fa/setup`, `/auth/2fa/verify`, `/auth/logout` gets `403 { code: 'MFA_SETUP_REQUIRED' }`; the frontend interceptor sends the user to `/mfa-setup`. On by default when `NODE_ENV=production`; elsewhere set `REQUIRE_ADMIN_MFA=true` (`false` turns it off). Admins cannot disable 2FA while it is required. Not done: 365-day password expiry.
