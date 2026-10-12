@@ -17,7 +17,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 
 const http = require('http');
 
-const { fake, callsTo, install: installFakeAmazon, amazonOrder } = require('./lib/fakeAmazon');
+const { fake, callsTo, install: installFakeAmazon, amazonOrder, flipkartShipment } = require('./lib/fakeAmazon');
 const { PDFDocument } = require('pdf-lib');
 installFakeAmazon();
 
@@ -802,6 +802,78 @@ async function main() {
   const stamp = (await db('users').where({ id: ownerIdP }).first()).passwordChangedAt;
   ok(Date.now() - new Date(stamp).getTime() < 60000, 'Changing the password restarts the 365-day clock');
   await db('users').where({ id: ownerIdP }).update({ passwordChangedAt: ago(1) });
+
+  // ── 29. Flipkart: Confirm → label → status ────────────────────────────────
+  // Uses a fake Flipkart that follows the published API reference. The real API's
+  // field names are UNVERIFIED (Flipkart sandbox needs a support ticket) — this proves
+  // Kartriq's own flow, not Flipkart's exact responses.
+  group('29. Flipkart: shipment-centric Confirm → label → status');
+  const fkCh = await req('POST', '/channels', { token, body: { name: 'Flipkart Store', type: 'FLIPKART' } });
+  ok(fkCh.status === 201, `Flipkart channel created (${fkCh.status})`);
+  const fkId = fkCh.body.id;
+  await db('channels').where({ id: fkId }).update({ credentials: JSON.stringify(encryptCredentials({ appId: 'APP', appSecret: 'SEC', locationId: 'LOC123' })) });
+  const FKSKU = `FK-${TS}`;
+  await req('POST', '/products', { token, body: { name: 'Flipkart Kurta', sku: FKSKU, costPrice: 100, mrp: 799, sellingPrice: 499 } });
+  fake.flipkart.mode = 'ok'; fake.flipkart.shipments = {};
+  const fkS = (id, o) => { fake.flipkart.shipments[id] = flipkartShipment(id, { sku: FKSKU, ...o }); };
+  fkS('SHP1'); fkS('SHP2', { qty: 2 }); fkS('SHP3');
+  const fkSync = await req('POST', `/channels/${fkId}/sync/orders`, { token, body: {} });
+  ok(fkSync.status === 200 && fkSync.body.imported === 3, `Sync imported the 3 open shipments (${fkSync.status}, imported=${fkSync.body?.imported}${fkSync.body?.errors?.length ? ', ' + fkSync.body.errors[0] : ''})`);
+  const fk_F1 = await db('orders').where({ tenantId, channelId: fkId, channelOrderId: 'SHP1' }).first();
+  ok(fk_F1 && fk_F1.fulfillmentType === 'SELF' && fk_F1.channelFulfillmentCenter === 'LOC123', 'Order keyed by the Flipkart SHIPMENT id, SELF-fulfilled, location LOC123 kept');
+  ok(Number((await db('orders').where({ tenantId, channelId: fkId, channelOrderId: 'SHP2' }).first()).total) === 998, 'Quantity 2 × ₹499 = ₹998 total');
+
+  const fkBefore = fake.calls.length;
+  const fk_c1 = await confirm(fk_F1.id);
+  ok(fk_c1.status === 200 && fk_c1.body.booked === true && fk_c1.body.provider === 'FLIPKART', `Confirm books via Flipkart (${fk_c1.status} ${fk_c1.body.error || ''})`);
+  ok(fk_c1.body.trackingNumber === 'FKTSHP1' && /Ekart/.test(fk_c1.body.carrier || ''), `Tracking and courier come from Flipkart (${fk_c1.body.trackingNumber}, ${fk_c1.body.carrier})`);
+  const fkCalls = fake.calls.slice(fkBefore).filter((c) => /flipkart/.test(c.host || '') && !/oauth/.test(c.path)).map((c) => `${c.method} ${c.path}`);
+  const fk_iLab = fkCalls.findIndex((x) => x === 'POST /v3/shipments/labels');
+  const fk_iGet = fkCalls.findIndex((x) => /^GET \/v3\/shipments\/SHP1\/labels/.test(x));
+  const fk_iRtd = fkCalls.findIndex((x) => x === 'POST /v3/shipments/dispatch');
+  ok(fk_iLab >= 0 && fk_iGet > fk_iLab && fk_iRtd > fk_iGet, `Flipkart is called in order: pack/label → download → ready-to-dispatch (${fkCalls.join(' | ')})`);
+  const fkLab = await labelGet(fk_F1.id);
+  ok(fkLab.status === 200 && /pdf/i.test(fkLab.headers?.['content-type'] || ''), 'The label downloads as a PDF');
+  const fk_F1b = await row(fk_F1.id);
+  ok(fk_F1b.shipmentStatus === 'PICKUP_SCHEDULED' && fk_F1b.status === 'CONFIRMED' && fk_F1b.shipmentProvider === 'FLIPKART', 'Shipment PICKUP_SCHEDULED (ready to dispatch), order CONFIRMED');
+  ok((await confirm(fk_F1.id)).body.booked === false, 'Pressing Confirm again does not book twice');
+
+  fake.flipkart.shipments.SHP1.status = 'PICKUP_COMPLETE';
+  const fkR1 = await refresh(fk_F1.id);
+  ok((await row(fk_F1.id)).shipmentStatus === 'PICKED_UP' && (await row(fk_F1.id)).status === 'SHIPPED', `Flipkart "PICKUP_COMPLETE" → Picked up, order SHIPPED (${fkR1.status})`);
+  fake.flipkart.shipments.SHP1.status = 'DELIVERED';
+  await refresh(fk_F1.id);
+  ok((await row(fk_F1.id)).shipmentStatus === 'DELIVERED' && (await row(fk_F1.id)).status === 'DELIVERED', 'Flipkart "DELIVERED" → Delivered');
+
+  const fk_F2 = await db('orders').where({ tenantId, channelId: fkId, channelOrderId: 'SHP2' }).first();
+  fake.flipkart.mode = 'dispatchFails';
+  const fk_c2 = await confirm(fk_F2.id);
+  ok(fk_c2.body.booked === false && /not in Packed/i.test(fk_c2.body.error || ''), `If Flipkart refuses the dispatch, nothing is saved and the reason is shown ("${(fk_c2.body.error || '').slice(0, 50)}")`);
+  ok(!(await db('order_labels').where({ orderId: fk_F2.id }).first()), 'No half-booked label is left behind');
+  fake.flipkart.mode = 'ok';
+  ok((await confirm(fk_F2.id)).body.booked === true, 'Retrying after Flipkart recovers works');
+  const fk_cancel2 = await req('DELETE', `/orders/${fk_F2.id}/label`, { token });
+  ok(fk_cancel2.status === 400 && /Flipkart seller panel/i.test(JSON.stringify(fk_cancel2.body)), 'Cancelling is left to the Flipkart panel (it affects the seller rating)');
+
+  fake.flipkart.mode = 'labelFails';
+  const fk_F3 = await db('orders').where({ tenantId, channelId: fkId, channelOrderId: 'SHP3' }).first();
+  const fk_c3 = await confirm(fk_F3.id);
+  ok(fk_c3.body.booked === false && /Invoice details missing/.test(fk_c3.body.error || ''), 'Flipkart\'s own error text is passed on (e.g. missing invoice details)');
+  fake.flipkart.mode = 'ok';
+
+  const FkAdapter = require('../services/channels/ecom/flipkart');
+  const fk_inv0 = fake.calls.length;
+  await new FkAdapter({ appId: 'APP', appSecret: 'SEC', locationId: 'LOC123' }).updateInventoryLevel('SKU-A', 7);
+  const fk_invCall = fake.calls.slice(fk_inv0).find((c) => /update\/inventory/.test(c.path));
+  ok(fk_invCall && fk_invCall.body['SKU-A'].locations[0].id === 'LOC123' && fk_invCall.body['SKU-A'].locations[0].inventory === 7, 'Stock update sends the SKU, location and quantity');
+  let fk_noLoc = null;
+  try { await new FkAdapter({ appId: 'APP', appSecret: 'SEC' }).updateInventoryLevel('SKU-A', 1); } catch (e) { fk_noLoc = e.message; }
+  ok(/location id/i.test(fk_noLoc || ''), 'Without a location id the error says what to add');
+  fake.flipkart.mode = 'badSecret';
+  let fk_bad401 = null;
+  try { await new FkAdapter({ appId: 'APP', appSecret: 'WRONG', locationId: 'L' }).testConnection(); } catch (e) { fk_bad401 = e.response?.status; }
+  ok(fk_bad401 === 401, 'A wrong Application Secret fails the connection test with 401');
+  fake.flipkart.mode = 'ok';
 
   // ── Result ───────────────────────────────────────────────────────────────
   console.log(`\n\x1b[1mResult: ${passed} passed, ${failed} failed\x1b[0m`);

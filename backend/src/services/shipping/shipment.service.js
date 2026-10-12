@@ -28,6 +28,7 @@ const CANCELLABLE = ['BOOKED', 'PICKUP_SCHEDULED']; // before the courier collec
 const CLOSED_ORDER = ['SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED'];
 
 const isAmazonType = (t) => String(t || '').toUpperCase().includes('AMAZON');
+const isFlipkartType = (t) => String(t || '').toUpperCase() === 'FLIPKART';
 const msg = (e) => String(e?.response?.data?.message || e?.response?.data?.error || e?.message || e).slice(0, 500);
 
 function parcelForCourier(parcel) {
@@ -87,7 +88,8 @@ async function loadContext(orderId, tenantId) {
 async function resolveProvider(order, channel) {
   if (!channel || !order.channelOrderId) return { skip: 'Not a marketplace order' };
   if (order.fulfillmentType !== 'SELF') return { skip: 'Fulfilled by the marketplace (FBA) — no label needed' };
-  if (!isAmazonType(channel.type)) return { skip: 'Booking is available for Amazon orders' };
+  if (isFlipkartType(channel.type)) return { kind: 'FLIPKART' };
+  if (!isAmazonType(channel.type)) return { skip: 'Booking is available for Amazon and Flipkart orders' };
   if (String(channel.mfnShipping || 'AMAZON').toUpperCase() === 'OWN') {
     if (!channel.shippingProviderId) return { error: 'Choose your courier partner in Manage channel first' };
     const courier = await prisma.channel.findFirst({ where: { id: channel.shippingProviderId, tenantId: order.tenantId } });
@@ -128,7 +130,7 @@ async function finishBooking(order, b) {
   }
   // Own courier: tell the marketplace the tracking now (Amazon wants it within the
   // handling time). Amazon's own couriers already report it themselves.
-  if (!String(b.provider).startsWith('AMAZON_')) {
+  if (!/^(AMAZON_|FLIPKART)/.test(String(b.provider))) {
     const r = await confirmChannelShipment(fresh, { trackingNumber: b.tracking, courierName: b.carrier });
     return { marketplaceConfirmed: !!r?.confirmed, marketplaceNote: r?.error || r?.skipped || null };
   }
@@ -171,6 +173,19 @@ async function bookAmazonBuyShipping(order, channel, wh, parcel) {
   return { provider: 'AMAZON_BUY', tracking: r.trackingId, carrier: r.carrier || 'Amazon', shipmentId: r.shipmentId, labelId, hasLabel: !!r.label, cost: r.cost || null };
 }
 
+// Flipkart arranges the courier: pack + label, then mark ready to dispatch.
+// Nothing is saved until both succeed, so a failed Confirm can simply be retried.
+async function bookFlipkart(order, channel) {
+  const adapter = getAdapter(channel);
+  const r = await adapter.packAndGetLabel(order.channelOrderId, order.channelFulfillmentCenter);
+  await adapter.markReadyToDispatch(order.channelOrderId, order.channelFulfillmentCenter);
+  const carrier = r.courier || 'Flipkart logistics';
+  const labelId = await savedLabel({
+    order, channelId: channel.id, shipmentId: order.channelOrderId, tracking: r.trackingNumber, carrier, serviceName: 'Flipkart', label: r.label,
+  });
+  return { provider: 'FLIPKART', tracking: r.trackingNumber, carrier, shipmentId: order.channelOrderId, labelId, hasLabel: !!r.label, firstStatus: 'PICKUP_SCHEDULED', firstRaw: 'READY_TO_DISPATCH' };
+}
+
 async function bookCourier(order, courier, wh, parcel) {
   const adapter = getAdapter(courier);
   const forAdapter = { ...order, parcel: parcelForCourier(parcel) };
@@ -206,6 +221,15 @@ async function confirmOrder(orderId, { tenantId } = {}) {
     const provider = await resolveProvider(order, channel);
     if (provider.skip) return { booked: false, skipped: provider.skip };
     if (provider.error) { await recordError(order.id, provider.error); return { booked: false, error: provider.error }; }
+
+    if (provider.kind === 'FLIPKART') {
+      const b = await bookFlipkart(order, channel); // pickup address lives in Flipkart (location id), not here
+      const fin = await finishBooking(order, b);
+      return {
+        booked: true, labelId: b.labelId, trackingNumber: b.tracking || null, carrier: b.carrier || null, provider: b.provider,
+        hasLabel: b.hasLabel, labelError: null, usedDefaults: false, cost: null, marketplaceConfirmed: true, marketplaceNote: fin.marketplaceNote || null,
+      };
+    }
 
     const wh = order.warehouseId ? await prisma.warehouse.findFirst({ where: { id: order.warehouseId, tenantId } }) : null;
     if (!wh) { const m = 'No ship-from warehouse on this order'; await recordError(order.id, m); return { booked: false, error: m }; }
@@ -269,6 +293,9 @@ async function getLabelFile(orderId, tenantId) {
       const res = await axios.get(label.url, { responseType: 'arraybuffer', timeout: 20000 });
       const buf = Buffer.from(res.data);
       got = { contentBase64: buf.toString('base64'), mime: String(res.headers['content-type'] || 'application/pdf').split(';')[0] };
+    } else if (label.serviceName === 'Flipkart') {
+      const channel = await prisma.channel.findFirst({ where: { id: label.channelId, tenantId } });
+      got = await getAdapter(channel).getLabel(label.shipmentId);
     } else if (label.carrier === 'Amazon Easy Ship') {
       const order = await prisma.order.findFirst({ where: { id: orderId, tenantId } });
       const channel = await prisma.channel.findFirst({ where: { id: label.channelId, tenantId } });
@@ -293,6 +320,11 @@ async function fetchRawStatus(order) {
     return { raw: r.packageStatus };
   }
   if (order.shipmentProvider === 'AMAZON_BUY') return { none: true }; // Amazon gives no tracking feed for Buy Shipping
+  if (order.shipmentProvider === 'FLIPKART') {
+    const ch = await prisma.channel.findFirst({ where: { id: label.channelId, tenantId: order.tenantId } });
+    const r = await getAdapter(ch).getShipmentStatus(order.channelOrderId);
+    return { raw: r.status };
+  }
   const courier = await prisma.channel.findFirst({ where: { id: label.channelId, tenantId: order.tenantId } });
   if (!courier) return { none: true };
   const adapter = getAdapter(courier);
@@ -352,6 +384,9 @@ async function cancelBooking(orderId, tenantId) {
     const ch = await prisma.channel.findFirst({ where: { id: label.channelId, tenantId } });
     if (!ch) return { cancelled: false, error: 'Channel not found', status: 404 };
     const adapter = getAdapter(ch);
+    if (order.shipmentProvider === 'FLIPKART') {
+      return { cancelled: false, error: 'Flipkart bookings are cancelled in the Flipkart seller panel (a cancellation counts against your seller rating, so Kartriq does not do it for you)', status: 400 };
+    }
     if (order.shipmentProvider === 'AMAZON_EASYSHIP') await adapter.cancelScheduledPackage(order.channelOrderId, label.shipmentId);
     else if (order.shipmentProvider === 'AMAZON_BUY') await adapter.cancelMfnShipping(label.shipmentId);
     else if (typeof adapter.cancelShipment === 'function') await adapter.cancelShipment(order.trackingNumber);

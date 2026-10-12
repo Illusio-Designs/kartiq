@@ -17,6 +17,7 @@ const fake = {
   deny: [],             // regexes of `METHOD /path` that answer 403 (missing role)
   labels: {},           // shipmentId -> the exact bytes Amazon "sent"
   easyShip: { mode: 'ok', nextPkg: 1, packages: {}, labelMode: 'ok' }, // mode: ok | noSlots ; labelMode: ok | fails
+  flipkart: { mode: 'ok', shipments: {}, labelPackedCalls: 0 }, // mode: ok | dispatchFails | labelFails
   courier: { mode: 'ok', n: 1, status: {}, cancelled: [], labelMode: 'ok' }, // status: awb -> raw status text
   rates: [
     { id: 'svc-express', offer: 'off-express', name: 'Express', carrier: 'FastCo', amount: 140, eta: '2026-10-12T00:00:00Z' },
@@ -155,6 +156,11 @@ function fakeEasyShip(config, url, method, path, body) {
 const realAdapter = axios.defaults.adapter;
 function fakeAdapter(config) {
   const url = new URL(config.url, config.baseURL || 'http://x');
+  if (/flipkart\.net/.test(url.host)) {
+    let b = config.data;
+    if (typeof b === 'string') { try { b = JSON.parse(b); } catch { /* leave */ } }
+    return fakeFlipkart(config, url, String(config.method || 'get').toUpperCase(), b);
+  }
   if (COURIER_HOST.test(url.host)) {
     let b = config.data;
     if (typeof b === 'string') { try { b = JSON.parse(b); } catch { /* leave */ } }
@@ -242,6 +248,52 @@ function fakeAdapter(config) {
 }
 
 // Route all Amazon-bound axios calls to the fake; everything else stays real.
+
+// Flipkart Order Management / Listing API (shapes follow Flipkart's published
+// reference; UNVERIFIED against a live account — see services/channels/ecom/flipkart.js).
+function fakeFlipkart(config, url, method, body) {
+  const f = fake.flipkart;
+  const path = url.pathname.replace(/^\/sellers/, '');
+  fake.calls.push({ method, path, body, params: config.params, host: url.host });
+  const ok = (d) => amazonResponse(config, 200, d);
+  if (/oauth-service\/oauth\/token/.test(url.pathname)) {
+    const basic = String(config.headers?.Authorization || config.headers?.authorization || '');
+    if (f.mode === 'badSecret') return amazonResponse(config, 401, { error: 'invalid_client' });
+    return ok({ access_token: 'fk-token', expires_in: 3600, token_type: 'bearer' });
+  }
+  if (method === 'POST' && /\/v3\/shipments\/filter/.test(path)) {
+    const list = Object.values(f.shipments).filter((s) => s.status !== 'DELIVERED');
+    return ok({ hasMore: false, shipments: list.slice(0, body?.pagination?.pageSize || 20) });
+  }
+  if (method === 'GET' && /^\/v3\/shipments$/.test(path)) {
+    const ids = String(config.params?.shipmentIds || '').split(',');
+    return ok({ shipments: ids.map((i) => f.shipments[i]).filter(Boolean) });
+  }
+  if (method === 'POST' && /\/v3\/shipments\/labels/.test(path)) {
+    if (f.mode === 'labelFails') return amazonResponse(config, 400, { message: 'Invoice details missing for shipment' });
+    for (const s of body?.shipments || []) { const sh = f.shipments[s.shipmentId]; if (sh) { sh.status = 'PACKED'; sh.trackingId = sh.trackingId || `FKT${s.shipmentId}`; sh.courierName = 'Ekart Logistics'; f.labelPackedCalls++; } }
+    return ok({ status: 'SUCCESS' });
+  }
+  const lab = path.match(/^\/v3\/shipments\/([^/]+)\/labels$/);
+  if (method === 'GET' && lab) return pdfBytes(`FLIPKART-LABEL ${lab[1]}`).then((b) => amazonResponse(config, 200, b).then((r) => { r.headers = { 'content-type': 'application/pdf' }; return r; }));
+  if (method === 'POST' && /\/v3\/shipments\/dispatch/.test(path)) {
+    if (f.mode === 'dispatchFails') return amazonResponse(config, 400, { message: 'Shipment not in Packed state' });
+    for (const s of body?.shipments || []) { const sh = f.shipments[s.shipmentId]; if (sh) sh.status = 'READY_TO_DISPATCH'; }
+    return ok({ status: 'SUCCESS' });
+  }
+  if (method === 'POST' && /\/listings\/v3\/update\/inventory/.test(path)) return ok({ status: 'SUCCESS' });
+  return amazonResponse(config, 404, { message: `fake Flipkart: no route ${method} ${path}` });
+}
+
+function flipkartShipment(id, { sku = 'FK-SKU-1', qty = 1, price = 499, loc = 'LOC123', status = 'APPROVED' } = {}) {
+  return {
+    shipmentId: id, locationId: loc, status, dispatchByDate: '2026-10-14T00:00:00Z',
+    orderItems: [{ orderItemId: `OI-${id}`, orderId: `OD-${id}`, orderDate: '2026-10-11T08:00:00Z', quantity: qty, sku, title: 'Cotton Kurta', status, priceComponents: { sellingPrice: price * qty, totalPrice: price * qty }, paymentType: 'PREPAID' }],
+    buyerDetails: { firstName: 'Asha', lastName: 'Rao', contactNumber: '9000000000' },
+    deliveryAddress: { addressLine1: '12 MG Road', city: 'Pune', state: 'Maharashtra', pinCode: '411001' },
+  };
+}
+
 function install() { axios.defaults.adapter = fakeAdapter; }
 
 function amazonOrder(id, fc, sku, qty, price) {
@@ -259,4 +311,4 @@ function amazonOrder(id, fc, sku, qty, price) {
 }
 
 
-module.exports = { fake, callsTo, install, amazonOrder };
+module.exports = { fake, callsTo, install, amazonOrder, flipkartShipment };

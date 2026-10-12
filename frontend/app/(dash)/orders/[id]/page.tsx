@@ -352,7 +352,8 @@ export default function OrderDetailPage() {
   // Amazon seller-account channel, order the seller ships (MFN): the simple
   // "Confirm & get label → Print" flow. (SmartBiz/FBA channels are Amazon-run.)
   const amazonSeller = isAmazonChannel && !['AMAZON_SMARTBIZ', 'AMAZON_FBA'].includes(String(order.channel?.type || '').toUpperCase());
-  const amazonSimple = amazonSeller && order.fulfillmentType === 'SELF'; // MFN: Confirm → label → shipment status
+  const flipkartSelf = String(order.channel?.type || '').toUpperCase() === 'FLIPKART' && order.fulfillmentType === 'SELF';
+  const amazonSimple = (amazonSeller && order.fulfillmentType === 'SELF') || flipkartSelf; // Confirm → label → shipment status (Amazon MFN, Flipkart)
   const booked = !!savedLabel || !!shipment?.status;
   const canConfirm = amazonSimple && !booked && !['SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED'].includes(String(order.status || ''));
 

@@ -9,6 +9,20 @@ const { getEndpoint } = require('../../../config/channel-endpoints');
 //   flipkart.appId, flipkart.appSecret
 //
 // Endpoint flips with CHANNEL_MODE in .env (production ↔ sandbox).
+//
+// Order Management API v3 is SHIPMENT-centric (docs: seller.flipkart.com/api-docs):
+//   search   POST /v3/shipments/filter       (preDispatch / postDispatch / cancelled)
+//   details  GET  /v3/shipments?shipmentIds=
+//   pack     POST /v3/shipments/labels       (moves to Packed, generates label + invoice)
+//   label    GET  /v3/shipments/{id}/labels  (PDF)
+//   RTD      POST /v3/shipments/dispatch     (ready to dispatch)
+//   stock    POST /listings/v3/update/inventory  (≤10 SKUs, per location)
+// UNVERIFIED: these paths come from Flipkart's published reference as summarised by
+// third parties; request/response field names were NOT checked against a live or
+// sandbox account (Flipkart gives sandbox access only via a support ticket). Every
+// shape-dependent line is in this one file — fix it here after the first sandbox run.
+// For a Flipkart order, orders.channelOrderId is the SHIPMENT id and
+// orders.channelFulfillmentCenter is the Flipkart location id (LOC…).
 
 const BASE_URL = getEndpoint('FLIPKART', 'api');
 const AUTH_URL = getEndpoint('FLIPKART', 'auth');
@@ -60,24 +74,90 @@ class FlipkartAdapter {
     return resp.data;
   }
 
+  get locationId() { return this.creds.locationId || null; }
+
   async testConnection() {
-    const data = await this._request('GET', '/v3/listings');
-    return { success: true, listingsCount: data.total_count };
+    await this._getAccessToken(); // proves the Application ID / Secret
+    const data = await this._request('POST', '/v3/shipments/filter/', {
+      filter: { type: 'preDispatch' }, pagination: { pageSize: 1 },
+    });
+    return { success: true, openShipments: (data.shipments || []).length, locationConfigured: !!this.locationId };
   }
 
+  // Seller-fulfilled shipments that still need work (pack / dispatch), newest page(s) first.
   async fetchOrders(sinceDate) {
-    const params = { states: 'APPROVED,PACKING_IN_PROGRESS,PACKED,READY_TO_DISPATCH,PICKUP_COMPLETE', 'pagination_offset': 0, 'pagination_limit': 20 };
-    const data = await this._request('GET', '/v3/orders', null, params);
-    const orders = data.order_items || [];
-    return orders.map(o => this._transformOrder(o));
+    const body = {
+      filter: {
+        type: 'preDispatch',
+        ...(sinceDate ? { orderDate: { from: new Date(sinceDate).toISOString() } } : {}),
+      },
+      pagination: { pageSize: 20 },
+      sort: { field: 'dispatchByDate', order: 'asc' },
+    };
+    const out = [];
+    let data = await this._request('POST', '/v3/shipments/filter/', body);
+    for (let page = 0; page < 5; page++) { // ≤100 shipments per sync; the next sync continues
+      for (const sh of data.shipments || []) out.push(this._transformShipment(sh));
+      if (!data.hasMore || !data.nextPageUrl) break;
+      data = await this._request('GET', String(data.nextPageUrl).replace(/^https?:\/\/[^/]+/, '').replace(/^\/?sellers/, ''));
+    }
+    return out;
   }
 
-  async updateInventoryLevel(sku, quantity) {
-    const payload = {
-      skuId: sku,
-      available: { inventory_count: quantity },
+  async getShipments(ids) {
+    const list = Array.isArray(ids) ? ids : [ids];
+    const data = await this._request('GET', '/v3/shipments', null, { shipmentIds: list.join(',') });
+    return data.shipments || [];
+  }
+
+  // Current Flipkart status text + tracking for one shipment.
+  async getShipmentStatus(shipmentId) {
+    const [sh] = await this.getShipments(shipmentId);
+    if (!sh) throw new Error(`Flipkart has no shipment ${shipmentId}`);
+    const item = (sh.orderItems || [])[0] || {};
+    return {
+      status: sh.status || item.status || null,
+      trackingNumber: sh.trackingId || sh.trackingNumber || sh.packageDetails?.trackingId || item.trackingId || null,
+      courier: sh.courierName || sh.serviceProfile || sh.packageDetails?.courierName || null,
     };
-    await this._request('PUT', `/v3/listings/${sku}`, payload);
+  }
+
+  // Confirm step 1+2: "labels" packs the shipment and generates label + invoice;
+  // then the PDF is downloaded. Safe to repeat for an already-packed shipment.
+  async packAndGetLabel(shipmentId, locationId = null) {
+    const loc = locationId || this.locationId;
+    if (!loc) throw new Error('Flipkart location id is missing — add it (LOC…) in Manage channel');
+    await this._request('POST', '/v3/shipments/labels', { shipments: [{ shipmentId, locationId: loc }] });
+    const label = await this.getLabel(shipmentId);
+    const st = await this.getShipmentStatus(shipmentId).catch(() => ({}));
+    return { ...st, label };
+  }
+
+  async getLabel(shipmentId) {
+    const token = await this._getAccessToken();
+    const resp = await axios({
+      method: 'GET', url: `${BASE_URL}/v3/shipments/${encodeURIComponent(shipmentId)}/labels`,
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/pdf' }, responseType: 'arraybuffer',
+    });
+    const buf = Buffer.from(resp.data);
+    if (!buf.length) throw new Error('Flipkart returned an empty label');
+    return { contentBase64: buf.toString('base64'), mime: String(resp.headers?.['content-type'] || 'application/pdf').split(';')[0] };
+  }
+
+  // Confirm step 3: tell Flipkart the parcel is packed and ready for its courier.
+  async markReadyToDispatch(shipmentId, locationId = null) {
+    const loc = locationId || this.locationId;
+    if (!loc) throw new Error('Flipkart location id is missing — add it (LOC…) in Manage channel');
+    await this._request('POST', '/v3/shipments/dispatch', { shipments: [{ shipmentId, locationId: loc }] });
+    return { dispatched: true };
+  }
+
+  // Stock per SKU. Flipkart takes ≤10 SKUs per call and needs the location id.
+  async updateInventoryLevel(sku, quantity) {
+    if (!this.locationId) throw new Error('Flipkart location id is missing — add it (LOC…) in Manage channel');
+    await this._request('POST', '/listings/v3/update/inventory', {
+      [sku]: { locations: [{ id: this.locationId, inventory: Math.max(0, Math.floor(Number(quantity) || 0)) }] },
+    });
     return { updated: true, sku };
   }
 
@@ -92,51 +172,51 @@ class FlipkartAdapter {
     return { channel: 'FLIPKART', sku, response: data };
   }
 
-  // Flipkart Ratings & Reviews — request a review for a delivered order
+  // Flipkart Ratings & Reviews — request a review for a delivered order.
+  // UNVERIFIED: no public documentation for this endpoint was found.
   async requestReview(orderItemId) {
     const data = await this._request('POST', `/v3/orders/${orderItemId}/request-review`, {});
     return { channel: 'FLIPKART', orderId: orderItemId, response: data };
   }
 
-  _transformOrder(o) {
+  // One Flipkart shipment (1+ order items) → one Kartriq order.
+  _transformShipment(sh) {
+    const items = sh.orderItems || [];
+    const first = items[0] || {};
+    const buyer = sh.buyerDetails || first.buyerDetails || {};
+    const addr = sh.deliveryAddress || first.deliveryAddress || {};
+    const amt = (it) => {
+      const pc = it.priceComponents || {};
+      const v = pc.totalPrice ?? pc.sellingPrice ?? it.selling_price?.amount ?? it.sellingPrice ?? 0;
+      return parseFloat(v) || 0;
+    };
+    const lines = items.map((it) => {
+      const qty = Number(it.quantity) || 1;
+      const total = amt(it);
+      return { channelSku: it.sku || it.skuId, name: it.title || it.product_title, qty, unitPrice: total / qty, discount: 0, tax: 0 };
+    });
+    const total = lines.reduce((n, l) => n + l.unitPrice * l.qty, 0);
+    const fbf = [first.fulfilmentType, first.fulfilment_source, sh.shipmentType, sh.fulfilmentType].some((v) => /FBF|SMART|FLIPKART_FULFIL|FLIPKART$/i.test(String(v || '')));
     return {
-      channelOrderId: o.order_item_id,
-      channelOrderNumber: o.order_id,
+      channelOrderId: String(sh.shipmentId),
+      channelOrderNumber: first.orderId || sh.orderId || String(sh.shipmentId),
       customer: {
-        name: o.buyer_address?.first_name
-          ? `${o.buyer_address.first_name} ${o.buyer_address.last_name}`.trim()
-          : 'Flipkart Customer',
+        name: [buyer.firstName, buyer.lastName].filter(Boolean).join(' ') || [addr.firstName, addr.lastName].filter(Boolean).join(' ') || 'Flipkart Customer',
         email: null,
-        phone: o.buyer_address?.contact_number,
+        phone: buyer.contactNumber || addr.contactNumber || null,
       },
       shippingAddress: {
-        line1: o.delivery_address?.address1,
-        line2: o.delivery_address?.address2,
-        city: o.delivery_address?.city,
-        state: o.delivery_address?.state,
-        pincode: o.delivery_address?.pincode,
-        country: 'India',
+        line1: addr.addressLine1 || addr.address1 || null, line2: addr.addressLine2 || addr.address2 || null,
+        city: addr.city || null, state: addr.state || null, pincode: addr.pinCode || addr.pincode || null, country: 'India',
       },
-      items: [{
-        channelSku: o.sku,
-        name: o.product_title,
-        qty: o.quantity,
-        unitPrice: parseFloat(o.selling_price?.amount || 0),
-        discount: 0,
-        tax: 0,
-      }],
-      subtotal: parseFloat(o.selling_price?.amount || 0),
-      shippingCharge: 0,
-      tax: 0,
-      total: parseFloat(o.selling_price?.amount || 0),
-      discount: 0,
-      paymentMethod: 'Flipkart',
+      items: lines,
+      subtotal: total, shippingCharge: 0, tax: 0, total, discount: 0,
+      paymentMethod: /cod|cash/i.test(String(first.paymentType || sh.paymentType || '')) ? 'COD' : 'Flipkart',
       paymentStatus: 'PAID',
       status: 'PENDING',
-      orderedAt: new Date(o.created_on || Date.now()),
-      // Flipkart fulfillment: FLIPKART (Smart Fulfillment) = CHANNEL, SELLER = SELF
-      fulfillmentType: o.fulfilment_source === 'FLIPKART' ? 'CHANNEL' : 'SELF',
-      fulfillmentCenter: o.warehouse_id || null,
+      orderedAt: new Date(first.orderDate || sh.orderDate || Date.now()),
+      fulfillmentType: fbf ? 'CHANNEL' : 'SELF',
+      fulfillmentCenter: sh.locationId || this.locationId || null,
     };
   }
 }

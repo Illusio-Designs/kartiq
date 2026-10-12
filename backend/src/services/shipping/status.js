@@ -32,6 +32,13 @@ const AMAZON_PACKAGE = {
   LabelCanceled: 'CANCELLED',
 };
 
+// Flipkart shipment states (exact values from the Order Management API).
+const FLIPKART_STATE = {
+  APPROVED: 'BOOKED', PACKING_IN_PROGRESS: 'BOOKED', PACKED: 'BOOKED', FORM_FAILED: 'BOOKED',
+  READY_TO_DISPATCH: 'PICKUP_SCHEDULED', PICKUP_COMPLETE: 'PICKED_UP', SHIPPED: 'IN_TRANSIT',
+  DELIVERED: 'DELIVERED', CANCELLED: 'CANCELLED', RETURNED: 'RTO_DELIVERED', RETURN_REQUESTED: 'RTO_INITIATED',
+};
+
 // Turn whatever a courier (or Amazon) calls a status into one of ours, or null
 // when we can't tell (then nothing changes). Courier wording varies ("PICKUP
 // SCHEDULED", "Out For Delivery", "RTO Initiated", "Undelivered - consignee
@@ -40,6 +47,7 @@ function normalizeStatus(raw) {
   if (raw == null) return null;
   const exact = String(raw).trim();
   if (AMAZON_PACKAGE[exact]) return AMAZON_PACKAGE[exact];
+  if (FLIPKART_STATE[exact.toUpperCase().replace(/[ -]+/g, '_')]) return FLIPKART_STATE[exact.toUpperCase().replace(/[ -]+/g, '_')];
   const s = exact.toLowerCase().replace(/[_-]+/g, ' ');
   if (!s) return null;
   if (/cancel/.test(s)) return 'CANCELLED';

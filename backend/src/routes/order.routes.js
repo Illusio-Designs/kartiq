@@ -297,7 +297,7 @@ router.get('/:id/label', requirePermission('shipments.read'), piiAudit, async (r
       if (!l) return res.status(404).json({ error: 'No label for this order yet' });
       return res.json({
         id: l.id, trackingNumber: l.trackingNumber, carrier: l.carrier, serviceName: l.serviceName, cost: l.cost, currency: l.currency,
-        mime: l.mime, createdAt: l.createdAt, available: !!(l.content || l.url || l.carrier === 'Amazon Easy Ship'),
+        mime: l.mime, createdAt: l.createdAt, available: !!(l.content || l.url || l.carrier === 'Amazon Easy Ship' || l.serviceName === 'Flipkart'),
       });
     }
     const f = await shipment.getLabelFile(order.id, req.tenant.id);
