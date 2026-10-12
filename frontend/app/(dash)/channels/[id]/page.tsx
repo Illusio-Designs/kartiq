@@ -125,7 +125,7 @@ export default function ChannelDetailPage() {
   useEffect(() => {
     if (channel) {
       setNameInput(channel.name || '');
-      setMfn({ mfnShipping: channel.mfnShipping === 'OWN' ? 'OWN' : 'AMAZON', shippingProviderId: channel.shippingProviderId || null });
+      setMfn({ mfnShipping: channel.mfnShipping === 'OWN' || channel.type === 'SHOPIFY' ? 'OWN' : 'AMAZON', shippingProviderId: channel.shippingProviderId || null });
       setFulfilment(channel.defaultFulfillmentType === 'CHANNEL' ? 'CHANNEL' : 'SELF');
     }
     // Re-seed only when the channel identity changes, so refetches don't clobber edits.
@@ -271,6 +271,8 @@ export default function ChannelDetailPage() {
   const isAmazon = channel.type === 'AMAZON_SMARTBIZ' || channel.type === 'AMAZON_FBA';
   // Buy Shipping (auto-book courier) exists on seller-account Amazon channels, not SmartBiz/FBA.
   const canAutoBook = String(channel.type || '').startsWith('AMAZON') && !isAmazon;
+  // Shopify has no marketplace courier: orders are always shipped with the seller's own courier partner.
+  const ownCourierOnly = channel.type === 'SHOPIFY';
   const canReauth = channel.type === 'AMAZON' || channel.type === 'AMAZON_SMARTBIZ';
   const lastSync = channel.lastSyncAt ? formatDateTime(channel.lastSyncAt) : 'never';
   const listingCount = listings?.length || 0;
@@ -844,11 +846,15 @@ export default function ChannelDetailPage() {
               ]}
             />
           </div>
-          {canAutoBook && (
+          {(canAutoBook || ownCourierOnly) && (
             <div className="mx-5 mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4" data-testid="manage-mfn">
-              <div className="text-sm font-bold text-slate-800">How orders you ship yourself (MFN) work</div>
-              <p className="text-xs text-slate-500 mt-1 mb-3">A change applies to new orders. Orders already confirmed keep the courier they were booked with.</p>
-              <MfnShippingPicker value={mfn} onChange={setMfn} />
+              <div className="text-sm font-bold text-slate-800">{ownCourierOnly ? 'Which courier ships your orders?' : 'How orders you ship yourself (MFN) work'}</div>
+              <p className="text-xs text-slate-500 mt-1 mb-3">
+                {ownCourierOnly
+                  ? 'Confirm books this courier, gives you the label, and marks the order fulfilled in Shopify with the tracking number.'
+                  : 'A change applies to new orders. Orders already confirmed keep the courier they were booked with.'}
+              </p>
+              <MfnShippingPicker value={mfn} onChange={setMfn} ownOnly={ownCourierOnly} />
             </div>
           )}
           <div className="flex justify-end px-5 pb-5">
@@ -856,11 +862,11 @@ export default function ChannelDetailPage() {
               size="sm"
               leftIcon={<Save size={14} />}
               loading={updateChannelMutation.isPending}
-              disabled={!nameInput.trim() || (canAutoBook && mfn.mfnShipping === 'OWN' && !mfn.shippingProviderId)}
+              disabled={!nameInput.trim() || ((canAutoBook || ownCourierOnly) && mfn.mfnShipping === 'OWN' && !mfn.shippingProviderId)}
               onClick={() => updateChannelMutation.mutate({
                 name: nameInput.trim(),
                 defaultFulfillmentType: fulfilment,
-                ...(canAutoBook ? { mfnShipping: mfn.mfnShipping, shippingProviderId: mfn.shippingProviderId } : {}),
+                ...(canAutoBook || ownCourierOnly ? { mfnShipping: mfn.mfnShipping, shippingProviderId: mfn.shippingProviderId } : {}),
               })}
             >
               Save settings

@@ -1,11 +1,19 @@
 const axios = require('axios');
 
 // Credentials shape: { shopUrl: "mystore.myshopify.com", accessToken: "shpat_xxx" }
+//   optional: notifyCustomer (default true) — Shopify emails the customer the tracking link.
+// The token needs these Admin API scopes: read_orders (+ read_all_orders for orders older than
+// 60 days), read_products/write_products, read_inventory/write_inventory,
+// read_merchant_managed_fulfillment_orders + write_merchant_managed_fulfillment_orders.
+// UNVERIFIED: the fulfilment GraphQL (fulfillmentOrders / fulfillmentCreate) follows
+// Shopify's documented API but was not run against a real shop — test on a development store.
+const API_VERSION = process.env.SHOPIFY_API_VERSION || '2026-04';
 
 class ShopifyAdapter {
   constructor(credentials) {
+    this.notifyCustomer = credentials.notifyCustomer !== false;
     this.client = axios.create({
-      baseURL: `https://${credentials.shopUrl}/admin/api/2024-01`,
+      baseURL: `https://${credentials.shopUrl}/admin/api/${API_VERSION}`,
       headers: {
         'X-Shopify-Access-Token': credentials.accessToken,
         'Content-Type': 'application/json',
@@ -21,8 +29,51 @@ class ShopifyAdapter {
   async fetchOrders(sinceDate) {
     const params = { status: 'any', limit: 250 };
     if (sinceDate) params.created_at_min = sinceDate;
-    const { data } = await this.client.get('/orders.json', { params });
-    return data.orders.map(o => this._transformOrder(o));
+    const orders = [];
+    let url = '/orders.json';
+    let query = params;
+    for (let page = 0; page < 4 && url; page++) { // ≤1000 orders per sync; the next sync continues
+      const res = await this.client.get(url, { params: query });
+      orders.push(...(res.data.orders || []));
+      // Shopify paginates with a Link header: <…page_info=XYZ>; rel="next"
+      const next = String(res.headers?.link || '').split(',').find((l) => /rel="?next"?/.test(l));
+      const m = next && next.match(/[?&]page_info=([^&>]+)/);
+      url = m ? '/orders.json' : null;
+      query = m ? { limit: 250, page_info: decodeURIComponent(m[1]) } : null;
+    }
+    return orders.map(o => this._transformOrder(o));
+  }
+
+  async _graphql(query, variables) {
+    const { data } = await this.client.post('/graphql.json', { query, variables });
+    if (data.errors?.length) throw new Error(`Shopify: ${data.errors.map((e) => e.message).join('; ').slice(0, 300)}`);
+    return data.data;
+  }
+
+  // Tell Shopify the order has shipped (with tracking). Idempotent: an order with nothing
+  // left to fulfil returns { alreadyFulfilled: true } instead of failing.
+  async confirmShipment(orderId, { trackingNumber, carrierName } = {}) {
+    const gid = `gid://shopify/Order/${orderId}`;
+    const q = await this._graphql(
+      `query($id: ID!) { order(id: $id) { fulfillmentOrders(first: 20) { nodes { id status } } } }`,
+      { id: gid },
+    );
+    if (!q.order) throw new Error(`Shopify has no order ${orderId}`);
+    const open = (q.order.fulfillmentOrders?.nodes || []).filter((n) => ['OPEN', 'IN_PROGRESS'].includes(n.status));
+    if (!open.length) return { alreadyFulfilled: true };
+    const r = await this._graphql(
+      `mutation($f: FulfillmentInput!) { fulfillmentCreate(fulfillment: $f) { fulfillment { id status } userErrors { field message } } }`,
+      {
+        f: {
+          notifyCustomer: this.notifyCustomer,
+          trackingInfo: { number: String(trackingNumber), ...(carrierName ? { company: String(carrierName) } : {}) },
+          lineItemsByFulfillmentOrder: open.map((n) => ({ fulfillmentOrderId: n.id })),
+        },
+      },
+    );
+    const errs = r.fulfillmentCreate?.userErrors || [];
+    if (errs.length) throw new Error(`Shopify: ${errs.map((e) => e.message).join('; ').slice(0, 300)}`);
+    return { fulfillmentId: r.fulfillmentCreate?.fulfillment?.id || null, fulfilled: open.length };
   }
 
   // Shopify — partial product update. Finds variant by SKU then PUTs changes.

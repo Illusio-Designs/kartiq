@@ -15,8 +15,8 @@ export const SUPPORTED_COURIERS = ['ITHINK', 'SHIPROCKET', 'DELHIVERY', 'XPRESSB
  * or the seller's own courier partner (which must already be connected under Channels).
  */
 export function MfnShippingPicker({
-  value, onChange, disabled,
-}: { value: MfnChoice; onChange: (v: MfnChoice) => void; disabled?: boolean }) {
+  value, onChange, disabled, ownOnly,
+}: { value: MfnChoice; onChange: (v: MfnChoice) => void; disabled?: boolean; ownOnly?: boolean }) {
   const { data } = useQuery({
     queryKey: ['channels', 'LOGISTICS'],
     queryFn: () => channelApi.list({ category: 'LOGISTICS' }).then((r) => r.data),
@@ -48,20 +48,20 @@ export function MfnShippingPicker({
 
   return (
     <div className="space-y-3">
-      <Option
+      {!ownOnly && <Option
         id="amazon"
         title="Amazon arranges the courier"
         text="You confirm the order, Amazon books the courier and gives you the label. You just print it."
         active={value.mfnShipping === 'AMAZON'}
         onClick={() => onChange({ mfnShipping: 'AMAZON', shippingProviderId: null })}
-      />
-      <Option
+      />}
+      {!ownOnly && <Option
         id="own"
         title="I use my own courier partner"
         text="You confirm the order, we book it with your courier (iThink, Shiprocket, Delhivery or Xpressbees) and get the label."
         active={value.mfnShipping === 'OWN'}
         onClick={() => onChange({ mfnShipping: 'OWN', shippingProviderId: value.shippingProviderId || couriers[0]?.id || null })}
-      />
+      />}
       {value.mfnShipping === 'OWN' && (
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="mfn-couriers">
           {couriers.length ? (

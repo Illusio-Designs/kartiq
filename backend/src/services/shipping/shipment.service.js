@@ -29,6 +29,9 @@ const CLOSED_ORDER = ['SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED'];
 
 const isAmazonType = (t) => String(t || '').toUpperCase().includes('AMAZON');
 const isFlipkartType = (t) => String(t || '').toUpperCase() === 'FLIPKART';
+// Stores where the seller ships with their own courier and we report the tracking back.
+const COURIER_ONLY_TYPES = ['SHOPIFY'];
+const isCourierOnlyType = (t) => COURIER_ONLY_TYPES.includes(String(t || '').toUpperCase());
 const msg = (e) => String(e?.response?.data?.message || e?.response?.data?.error || e?.message || e).slice(0, 500);
 
 function parcelForCourier(parcel) {
@@ -89,8 +92,9 @@ async function resolveProvider(order, channel) {
   if (!channel || !order.channelOrderId) return { skip: 'Not a marketplace order' };
   if (order.fulfillmentType !== 'SELF') return { skip: 'Fulfilled by the marketplace (FBA) — no label needed' };
   if (isFlipkartType(channel.type)) return { kind: 'FLIPKART' };
-  if (!isAmazonType(channel.type)) return { skip: 'Booking is available for Amazon and Flipkart orders' };
-  if (String(channel.mfnShipping || 'AMAZON').toUpperCase() === 'OWN') {
+  if (!isAmazonType(channel.type) && !isCourierOnlyType(channel.type)) return { skip: 'Booking is available for Amazon, Flipkart and Shopify orders' };
+  // Shopify has no marketplace courier: it is always the seller's own courier partner.
+  if (isCourierOnlyType(channel.type) || String(channel.mfnShipping || 'AMAZON').toUpperCase() === 'OWN') {
     if (!channel.shippingProviderId) return { error: 'Choose your courier partner in Manage channel first' };
     const courier = await prisma.channel.findFirst({ where: { id: channel.shippingProviderId, tenantId: order.tenantId } });
     if (!courier || courier.category !== 'LOGISTICS' && !courier.isActive) return { error: 'Your courier partner is not connected any more — reconnect it under Channels' };

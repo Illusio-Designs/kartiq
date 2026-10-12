@@ -17,7 +17,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 
 const http = require('http');
 
-const { fake, callsTo, install: installFakeAmazon, amazonOrder, flipkartShipment } = require('./lib/fakeAmazon');
+const { fake, callsTo, install: installFakeAmazon, amazonOrder, flipkartShipment, shopifyOrder } = require('./lib/fakeAmazon');
 const { PDFDocument } = require('pdf-lib');
 installFakeAmazon();
 
@@ -874,6 +874,51 @@ async function main() {
   try { await new FkAdapter({ appId: 'APP', appSecret: 'WRONG', locationId: 'L' }).testConnection(); } catch (e) { fk_bad401 = e.response?.status; }
   ok(fk_bad401 === 401, 'A wrong Application Secret fails the connection test with 401');
   fake.flipkart.mode = 'ok';
+
+  // ── 30. Shopify: your own courier, tracking written back to the store ─────
+  group('30. Shopify: Confirm with your own courier, fulfilment pushed to Shopify');
+  const shCh = await req('POST', '/channels', { token, body: { name: 'Shopify Store', type: 'SHOPIFY' } });
+  ok(shCh.status === 201, `Shopify channel created (${shCh.status})`);
+  const shId = shCh.body.id;
+  await db('channels').where({ id: shId }).update({ credentials: JSON.stringify(encryptCredentials({ shopUrl: 'demo.myshopify.com', accessToken: 'shpat_test' })) });
+  const SHSKU = `SH-${TS}`;
+  await req('POST', '/products', { token, body: { name: 'Handloom Saree', sku: SHSKU, costPrice: 300, mrp: 1299, sellingPrice: 799 } });
+  fake.shopify.mode = 'ok'; fake.shopify.fulfilled = []; fake.shopify.fulfillmentOrders = {};
+  fake.shopify.pages = true;
+  fake.shopify.orders = [shopifyOrder('5550001', { sku: SHSKU }), shopifyOrder('5550002', { sku: SHSKU }), shopifyOrder('5550003', { sku: SHSKU }), shopifyOrder('5550004', { sku: SHSKU, fulfilled: true })];
+  const shSync = await req('POST', `/channels/${shId}/sync/orders`, { token, body: {} });
+  ok(shSync.status === 200 && shSync.body.imported === 4, `Sync follows Shopify's "next page" link and imports all 4 orders (${shSync.status}, imported=${shSync.body?.imported}${shSync.body?.errors?.length ? ', ' + shSync.body.errors[0] : ''})`);
+  fake.shopify.pages = false;
+  await db('orders').where({ tenantId, channelId: shId }).update({ warehouseId: whId }); // earlier groups left an address-less warehouse that routing may pick
+  const sh1 = await db('orders').where({ tenantId, channelId: shId, channelOrderId: '5550001' }).first();
+  ok(sh1.fulfillmentType === 'SELF' && sh1.status !== 'SHIPPED', 'An unfulfilled Shopify order is SELF-fulfilled and open');
+  ok((await db('orders').where({ tenantId, channelId: shId, channelOrderId: '5550004' }).first()).status === 'SHIPPED', 'One already fulfilled in Shopify arrives as Shipped');
+
+  const shNoCourier = await confirm(sh1.id);
+  ok(shNoCourier.body.booked === false && /courier partner/i.test(shNoCourier.body.error || ''), `Without a courier chosen, Confirm says what to do ("${(shNoCourier.body.error || '').slice(0, 55)}")`);
+  const shIT = await mkCourier('ITHINK', 'iThink for Shopify', { accessToken: 'AT', secretKey: 'SK', pickupAddressId: '77' });
+  const shPick = await req('PUT', `/channels/${shId}`, { token, body: { mfnShipping: 'OWN', shippingProviderId: shIT } });
+  ok(shPick.status === 200 && shPick.body.shippingProviderId === shIT, 'A Shopify channel can be set to use your own courier');
+
+  const shC = await confirm(sh1.id);
+  ok(shC.status === 200 && shC.body.booked === true && shC.body.provider === 'ITHINK' && shC.body.trackingNumber, `Confirm books the courier (${shC.body.provider}, tracking ${shC.body.trackingNumber})`);
+  ok(shC.body.marketplaceConfirmed === true, 'Shopify was told the order is fulfilled');
+  const shF = fake.shopify.fulfilled[0];
+  ok(shF && shF.trackingInfo.number === shC.body.trackingNumber && shF.notifyCustomer === true && shF.lineItemsByFulfillmentOrder.length === 1, 'The fulfilment carries the tracking number, notifies the customer, and covers the open fulfilment order');
+  ok(fake.calls.some((c) => /myshopify/.test(c.host || '') && /^20\d\d-\d\d$/.test(c.version || '')), 'Calls use a dated Shopify API version (2026-04 by default)');
+  ok((await labelGet(sh1.id)).status === 200, 'The courier label downloads');
+
+  const sh2 = await db('orders').where({ tenantId, channelId: shId, channelOrderId: '5550002' }).first();
+  fake.shopify.mode = 'userError';
+  const shC2 = await confirm(sh2.id);
+  ok(shC2.body.booked === true && shC2.body.marketplaceConfirmed === false && /fulfillable state/.test(shC2.body.marketplaceNote || ''), 'If Shopify refuses, the courier booking still stands and Shopify\'s reason is shown');
+  fake.shopify.mode = 'ok';
+
+  const sh3 = await db('orders').where({ tenantId, channelId: shId, channelOrderId: '5550003' }).first();
+  fake.shopify.fulfillmentOrders['5550003'] = [{ id: 'gid://shopify/FulfillmentOrder/31', status: 'CLOSED' }];
+  const before3 = fake.shopify.fulfilled.length;
+  const shC3 = await confirm(sh3.id);
+  ok(shC3.body.booked === true && fake.shopify.fulfilled.length === before3, 'An order Shopify already shows as fulfilled is not fulfilled twice');
 
   // ── Result ───────────────────────────────────────────────────────────────
   console.log(`\n\x1b[1mResult: ${passed} passed, ${failed} failed\x1b[0m`);

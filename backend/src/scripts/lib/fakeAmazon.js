@@ -18,6 +18,7 @@ const fake = {
   labels: {},           // shipmentId -> the exact bytes Amazon "sent"
   easyShip: { mode: 'ok', nextPkg: 1, packages: {}, labelMode: 'ok' }, // mode: ok | noSlots ; labelMode: ok | fails
   flipkart: { mode: 'ok', shipments: {}, labelPackedCalls: 0 }, // mode: ok | dispatchFails | labelFails
+  shopify: { mode: 'ok', orders: [], fulfillmentOrders: {}, fulfilled: [], pages: false }, // mode: ok | userError | noOrder
   courier: { mode: 'ok', n: 1, status: {}, cancelled: [], labelMode: 'ok' }, // status: awb -> raw status text
   rates: [
     { id: 'svc-express', offer: 'off-express', name: 'Express', carrier: 'FastCo', amount: 140, eta: '2026-10-12T00:00:00Z' },
@@ -156,6 +157,11 @@ function fakeEasyShip(config, url, method, path, body) {
 const realAdapter = axios.defaults.adapter;
 function fakeAdapter(config) {
   const url = new URL(config.url, config.baseURL || 'http://x');
+  if (/myshopify\.com/.test(url.host)) {
+    let b = config.data;
+    if (typeof b === 'string') { try { b = JSON.parse(b); } catch { /* leave */ } }
+    return fakeShopify(config, url, String(config.method || 'get').toUpperCase(), b);
+  }
   if (/flipkart\.net/.test(url.host)) {
     let b = config.data;
     if (typeof b === 'string') { try { b = JSON.parse(b); } catch { /* leave */ } }
@@ -294,6 +300,48 @@ function flipkartShipment(id, { sku = 'FK-SKU-1', qty = 1, price = 499, loc = 'L
   };
 }
 
+
+// Shopify Admin API (REST orders + GraphQL fulfilment).
+function fakeShopify(config, url, method, body) {
+  const f = fake.shopify;
+  const path = url.pathname.replace(/^\/admin\/api\/[^/]+/, '');
+  fake.calls.push({ method, path, body, params: config.params, host: url.host, version: (String(config.baseURL || '').match(/\/api\/([^/]+)/) || [])[1] });
+  const ok = (d, headers = {}) => { const r = { data: d, status: 200, statusText: '200', headers, config, request: {} }; return Promise.resolve(r); };
+  if (method === 'GET' && path === '/orders.json') {
+    const pi = config.params?.page_info;
+    if (f.pages) { // two pages of orders, linked by a Link header
+      if (!pi) return ok({ orders: f.orders.slice(0, 1) }, { link: `<https://${url.host}/admin/api/2026-04/orders.json?limit=250&page_info=P2>; rel="next"` });
+      return ok({ orders: f.orders.slice(1) });
+    }
+    return ok({ orders: f.orders });
+  }
+  if (method === 'POST' && path === '/graphql.json') {
+    const q = String(body?.query || '');
+    if (/fulfillmentOrders\(/.test(q)) {
+      if (f.mode === 'noOrder') return ok({ data: { order: null } });
+      const id = String(body.variables.id).split('/').pop();
+      return ok({ data: { order: { fulfillmentOrders: { nodes: f.fulfillmentOrders[id] || [{ id: `gid://shopify/FulfillmentOrder/${id}1`, status: 'OPEN' }] } } } });
+    }
+    if (/fulfillmentCreate/.test(q)) {
+      if (f.mode === 'userError') return ok({ data: { fulfillmentCreate: { fulfillment: null, userErrors: [{ field: ['fulfillment'], message: 'Fulfillment order is not in a fulfillable state' }] } } });
+      f.fulfilled.push(body.variables.f);
+      return ok({ data: { fulfillmentCreate: { fulfillment: { id: 'gid://shopify/Fulfillment/9', status: 'SUCCESS' }, userErrors: [] } } });
+    }
+  }
+  return amazonResponse(config, 404, { errors: `fake Shopify: no route ${method} ${path}` });
+}
+
+function shopifyOrder(id, { sku = 'SH-SKU', qty = 1, price = 799, fulfilled = false } = {}) {
+  return {
+    id, order_number: 1000 + Number(String(id).slice(-3)), email: 'buyer@example.com', phone: '9000000001',
+    created_at: '2026-10-11T08:00:00Z', financial_status: 'paid', fulfillment_status: fulfilled ? 'fulfilled' : null,
+    payment_gateway: 'razorpay', subtotal_price: String(price * qty), total_price: String(price * qty), total_tax: '0.00', total_discounts: '0.00',
+    customer: { first_name: 'Meera', last_name: 'Shah', email: 'buyer@example.com' },
+    shipping_address: { address1: '9 Park Street', city: 'Kolkata', province: 'West Bengal', zip: '700016', country: 'India' },
+    line_items: [{ sku, name: 'Handloom Saree', quantity: qty, price: String(price), total_discount: '0.00' }],
+  };
+}
+
 function install() { axios.defaults.adapter = fakeAdapter; }
 
 function amazonOrder(id, fc, sku, qty, price) {
@@ -311,4 +359,4 @@ function amazonOrder(id, fc, sku, qty, price) {
 }
 
 
-module.exports = { fake, callsTo, install, amazonOrder, flipkartShipment };
+module.exports = { fake, callsTo, install, amazonOrder, flipkartShipment, shopifyOrder };
